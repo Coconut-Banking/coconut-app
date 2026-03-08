@@ -1,7 +1,7 @@
 {
   "name": "coconut-app",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -9,10 +9,19 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "expo": "~55.0.5",
+    "expo-build-properties": "^55.0.9",
+    "expo-constants": "^55.0.7",
+    "expo-dev-client": "^55.0.11",
+    "expo-linking": "^55.0.7",
+    "expo-router": "^55.0.4",
     "expo-status-bar": "~55.0.4",
     "react": "19.2.0",
-    "react-native": "0.83.2"
+    "react-native": "0.83.2",
+    "react-native-safe-area-context": "^5.7.0",
+    "react-native-screens": "^4.24.0",
+    "react-native-square-in-app-payments": "^2.0.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
