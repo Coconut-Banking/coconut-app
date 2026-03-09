@@ -56,8 +56,7 @@ export default function InsightsScreen() {
     ? groupsSummary.totalOwedToMe - groupsSummary.totalIOwe
     : 0;
 
-  const openSettings = () =>
-    Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
+  const openSettings = () => router.push("/settings");
 
   if (!linked) {
     return (

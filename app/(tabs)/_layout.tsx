@@ -52,6 +52,20 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="email-receipts"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }

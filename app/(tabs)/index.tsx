@@ -180,7 +180,7 @@ export default function HomeScreen() {
 
   const openConnect = () =>
     Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect?from_app=1`);
-  const openSettings = () => Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
+  const openSettings = () => router.push("/settings");
 
   // Loading — never show dashboard until we know linked status
   if (loading) {
