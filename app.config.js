@@ -1,6 +1,16 @@
 export default {
   expo: {
     name: "Coconut",
+    extra: {
+      eas: {
+        projectId: "d1b6394a-093c-413c-bf89-ac740a528dbb",
+      },
+      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+        "pk_test_YWJzb2x1dGUtbGVtdXItNjguY2xlcmsuYWNjb3VudHMuZGV2JA",
+      EXPO_PUBLIC_API_URL:
+        process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app",
+    },
     slug: "coconut-app",
     version: "1.0.0",
     orientation: "portrait",
@@ -10,6 +20,12 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.coconut.app",
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+      },
+      entitlements: {
+        "com.apple.developer.proximity-reader.payment.acceptance": true,
+      },
     },
     android: {
       adaptiveIcon: {
@@ -24,27 +40,15 @@ export default {
     plugins: [
       "expo-router",
       [
-        "react-native-square-in-app-payments/app.plugin.js",
+        "@stripe/stripe-terminal-react-native/app.plugin",
         {
-          cardEntryStyle: {
-            statusBarColor: "#3D8E62",
-            actionBarColor: "#3D8E62",
-            backgroundColor: "#ffffff",
-            textColorHint: "#3D8E62",
-            editTextStyle: {
-              accentColor: "#3D8E62",
-              errorColor: "#DC2626",
-              textColor: "#1F2937",
-            },
-            saveButtonStyle: {
-              backgroundColor: "#3D8E62",
-              textColor: "#ffffff",
-              text: "Pay",
-            },
-          },
+          bluetoothBackgroundMode: true,
+          tapToPayCheck: true,
+          locationWhenInUsePermission:
+            "Location access is required to accept payments.",
         },
       ],
-      ["expo-build-properties", { android: { minSdkVersion: 24 } }],
+      ["expo-build-properties", { android: { minSdkVersion: 26 } }],
     ],
     experiments: { typedRoutes: true },
   },

@@ -15,6 +15,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
         }}
       />
@@ -23,6 +24,13 @@ export default function TabLayout() {
         options={{
           title: "Shared",
           tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="receipt"
+        options={{
+          title: "Receipt",
+          tabBarIcon: ({ color, size }) => <Ionicons name="receipt" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
