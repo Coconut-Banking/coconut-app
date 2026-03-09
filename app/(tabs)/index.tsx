@@ -161,8 +161,18 @@ export default function HomeScreen() {
     Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect?from_app=1`);
   const openSettings = () => Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
 
-  // Not linked — show Connect CTA
-  if (!linked && !loading) {
+  // Loading — never show dashboard until we know linked status
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#3D8E62" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // Not linked — show Connect CTA only; never show dashboard
+  if (!linked) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.connectCard}>
@@ -180,15 +190,7 @@ export default function HomeScreen() {
     );
   }
 
-  if (loading && linked) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#3D8E62" />
-        <Text style={styles.loadingText}>Loading your money...</Text>
-      </View>
-    );
-  }
-
+  // Linked — show dashboard
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
