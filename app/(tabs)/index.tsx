@@ -117,6 +117,7 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [semanticResults, setSemanticResults] = useState<Transaction[] | null>(null);
   const [semanticSearching, setSemanticSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const monthlySpend = useMemo(() => deriveMonthlySpend(transactions), [transactions]);
   const subsTotal = useMemo(
@@ -181,16 +182,30 @@ export default function HomeScreen() {
           <Text style={styles.connectSubtitle}>
             Link your account to see spending, transactions, and split receipts with friends.
           </Text>
+          <Text style={styles.connectHint}>
+            Important: Stay in the browser until you see &quot;Bank connected!&quot; and tap &quot;Return to app&quot;.
+            Don&apos;t close early on Plaid&apos;s &quot;Continue to Coconut&quot; screen.
+          </Text>
           <TouchableOpacity style={styles.connectButton} onPress={openConnect}>
             <Text style={styles.connectButtonText}>Connect in web app</Text>
             <Ionicons name="open-outline" size={16} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.connectRefreshButton}
-            onPress={() => refetch(true)}
+            onPress={() => {
+              setRefreshing(true);
+              refetch(true).finally(() => setRefreshing(false));
+            }}
+            disabled={refreshing}
           >
-            <Ionicons name="refresh" size={16} color="#3D8E62" />
-            <Text style={styles.connectRefreshText}>Just connected? Tap to refresh</Text>
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#3D8E62" />
+            ) : (
+              <Ionicons name="refresh" size={16} color="#3D8E62" />
+            )}
+            <Text style={styles.connectRefreshText}>
+              {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -475,6 +490,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
+  },
+  connectHint: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 12,
+    lineHeight: 18,
+    paddingHorizontal: 8,
   },
   connectButton: {
     flexDirection: "row",

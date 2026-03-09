@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useAuth } from "@clerk/expo";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
 
 export function useApiFetch() {
   const { getToken } = useAuth();

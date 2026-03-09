@@ -23,11 +23,11 @@ export function useTransactions() {
   const [loading, setLoading] = useState(true);
   const hasShownInitialLoad = useRef(false);
 
-  const fetchData = useCallback((silent = false) => {
+  const fetchData = useCallback((silent = false): Promise<void> => {
     let cancelled = false;
     const isFirstLoad = !hasShownInitialLoad.current;
     if (!silent && isFirstLoad) setLoading(true);
-    apiFetch("/api/plaid/status")
+    return apiFetch("/api/plaid/status")
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -53,8 +53,8 @@ export function useTransactions() {
           hasShownInitialLoad.current = true;
           setLoading(false);
         }
-      });
-    return () => { cancelled = true; };
+      })
+      .catch(() => { /* swallow so refetch never rejects */ });
   }, [apiFetch]);
 
   useEffect(() => {
