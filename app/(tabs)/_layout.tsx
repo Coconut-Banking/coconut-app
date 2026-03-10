@@ -43,7 +43,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="pay"
         options={{
-          href: null,
+          title: "Pay",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="phone-portrait-outline" color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen

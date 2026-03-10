@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,9 +11,13 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Share,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@clerk/expo";
+import { router } from "expo-router";
 import { useApiFetch } from "../../lib/api";
 import {
   useGroupsSummary,
@@ -47,6 +51,7 @@ function formatTimeAgo(iso: string): string {
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F"];
 
 export default function SharedScreen() {
+  const { userId } = useAuth();
   const apiFetch = useApiFetch();
   const { summary, loading, refetch } = useGroupsSummary();
   const { activity, refetch: refetchActivity } = useRecentActivity(true);
@@ -61,6 +66,23 @@ export default function SharedScreen() {
   const { detail: personDetail, loading: personLoading, refetch: refetchPerson } =
     usePersonDetail(selectedPersonKey);
   const [plaidLinked, setPlaidLinked] = useState<boolean | null>(null);
+  const [requestingPayment, setRequestingPayment] = useState(false);
+  const [recordingSettlement, setRecordingSettlement] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetch(),
+        refetchActivity(),
+        selectedGroupId ? refetchGroup(true) : Promise.resolve(),
+        selectedPersonKey ? refetchPerson(true) : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch, refetchActivity, refetchGroup, refetchPerson, selectedGroupId, selectedPersonKey]);
 
   useEffect(() => {
     apiFetch("/api/plaid/status")
@@ -139,9 +161,100 @@ export default function SharedScreen() {
     refetch();
   };
 
+  const requestPayment = async () => {
+    if (!personDetail || personDetail.balance <= 0) return;
+    setRequestingPayment(true);
+    try {
+      const s = (personDetail.settlements ?? [])[0];
+      const res = await apiFetch("/api/stripe/create-payment-link", {
+        method: "POST",
+        body: {
+          amount: personDetail.balance,
+          description: "expenses",
+          recipientName: personDetail.displayName,
+          groupId: s?.groupId,
+          payerMemberId: s?.fromMemberId,
+          receiverMemberId: s?.toMemberId,
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        await Share.share({
+          message: `You owe me $${personDetail.balance.toFixed(2)}. Pay here: ${data.url}`,
+          url: data.url,
+          title: "Payment request",
+        });
+      } else {
+        Alert.alert("Error", (data as { error?: string })?.error ?? "Could not create payment link");
+      }
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setRequestingPayment(false);
+    }
+  };
+
+  const recordSettlement = async () => {
+    if (!personDetail || (personDetail.settlements ?? []).length === 0) return;
+    Alert.alert(
+      "Mark as paid",
+      `Mark $${Math.abs(personDetail.balance).toFixed(2)} as paid?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Mark paid",
+          onPress: async () => {
+            setRecordingSettlement(true);
+            try {
+              for (const s of personDetail?.settlements ?? []) {
+                await apiFetch("/api/settlements", {
+                  method: "POST",
+                  body: {
+                    groupId: s.groupId,
+                    payerMemberId: s.fromMemberId,
+                    receiverMemberId: s.toMemberId,
+                    amount: s.amount,
+                    method: "manual",
+                  },
+                });
+              }
+              refetch();
+              refetchPerson();
+              goBack();
+            } catch {
+              Alert.alert("Error", "Could not record settlement");
+            } finally {
+              setRecordingSettlement(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const settleWithTapToPay = () => {
+    if (!personDetail || personDetail.balance <= 0) return;
+    const s = (personDetail.settlements ?? [])[0];
+    if (!s) return;
+    router.push({
+      pathname: "/(tabs)/pay",
+      params: {
+        amount: personDetail.balance.toFixed(2),
+        groupId: s.groupId,
+        payerMemberId: s.fromMemberId,
+        receiverMemberId: s.toMemberId,
+      },
+    });
+  };
+
   if (selectedPersonKey && personDetail) {
     return (
-      <ScrollView style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
+        }
+      >
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={20} color="#6B7280" />
           <Text style={styles.backText}>Back</Text>
@@ -180,6 +293,43 @@ export default function SharedScreen() {
             </Text>
           </View>
         )}
+        {personDetail.balance !== 0 && (
+          <View style={styles.settleActions}>
+            {personDetail.balance > 0 && (
+              <>
+                <TouchableOpacity
+                  style={[styles.settleButton, styles.settleButtonPrimary]}
+                  onPress={requestPayment}
+                  disabled={requestingPayment}
+                >
+                  {requestingPayment ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.settleButtonPrimaryText}>Request</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.settleButton, styles.settleTapToPay]}
+                  onPress={settleWithTapToPay}
+                >
+                  <Ionicons name="phone-portrait-outline" size={18} color="#fff" />
+                  <Text style={styles.settleButtonPrimaryText}>Tap to Pay</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity
+              style={[styles.settleButton, styles.settleButtonSecondary]}
+              onPress={recordSettlement}
+              disabled={recordingSettlement}
+            >
+              {recordingSettlement ? (
+                <ActivityIndicator size="small" color="#374151" />
+              ) : (
+                <Text style={styles.settleButtonSecondaryText}>Mark paid</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     );
   }
@@ -189,7 +339,13 @@ export default function SharedScreen() {
     const allSettled = (groupDetail.balances?.filter((b) => b.total !== 0).length ?? 0) === 0;
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
+          }
+        >
           <View style={styles.screenPadding}>
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
               <Ionicons name="arrow-back" size={20} color="#6B7280" />
@@ -231,6 +387,128 @@ export default function SharedScreen() {
                 </View>
               ))
             )}
+            {groupDetail.suggestions && groupDetail.suggestions.length > 0 && (
+              <View style={styles.settleSection}>
+                <Text style={styles.sectionTitle}>Settle</Text>
+                {groupDetail.suggestions.map((s) => {
+                  const fromName = groupDetail.members.find((m) => m.id === s.fromMemberId)?.display_name ?? "?";
+                  const toName = groupDetail.members.find((m) => m.id === s.toMemberId)?.display_name ?? "?";
+                  const myMemberId = groupDetail.members.find((m) => m.user_id === userId)?.id;
+                  const theyPayMe = myMemberId && s.toMemberId === myMemberId;
+                  const iPayThem = myMemberId && s.fromMemberId === myMemberId;
+                  return (
+                    <View key={`${s.fromMemberId}-${s.toMemberId}`} style={styles.suggestionRow}>
+                      <Text style={styles.suggestionText}>
+                        <Text style={styles.suggestionBold}>{fromName}</Text> →{" "}
+                        <Text style={styles.suggestionBold}>{toName}</Text>{" "}
+                        <Text style={styles.suggestionAmount}>${s.amount.toFixed(2)}</Text>
+                      </Text>
+                      <View style={styles.suggestionActions}>
+                        {theyPayMe && (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.settleButtonSmall, styles.settleButtonPrimary]}
+                              onPress={async () => {
+                                setRequestingPayment(true);
+                                try {
+                                  const res = await apiFetch("/api/stripe/create-payment-link", {
+                                    method: "POST",
+                                    body: {
+                                      amount: s.amount,
+                                      description: groupDetail.name,
+                                      recipientName: fromName,
+                                      groupId: selectedGroupId,
+                                      payerMemberId: s.fromMemberId,
+                                      receiverMemberId: s.toMemberId,
+                                    },
+                                  });
+                                  const data = await res.json();
+                                  if (res.ok && data.url) {
+                                    await Share.share({
+                                      message: `You owe me $${s.amount.toFixed(2)} for ${groupDetail.name}. Pay here: ${data.url}`,
+                                      url: data.url,
+                                      title: "Payment request",
+                                    });
+                                  } else {
+                                    Alert.alert("Error", (data as { error?: string })?.error ?? "Could not create link");
+                                  }
+                                } finally {
+                                  setRequestingPayment(false);
+                                }
+                              }}
+                              disabled={requestingPayment}
+                            >
+                              <Text style={styles.settleButtonPrimaryText}>Request</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.settleButtonSmall, styles.settleTapToPay]}
+                              onPress={() =>
+                                router.push({
+                                  pathname: "/(tabs)/pay",
+                                  params: {
+                                    amount: s.amount.toFixed(2),
+                                    groupId: selectedGroupId!,
+                                    payerMemberId: s.fromMemberId,
+                                    receiverMemberId: s.toMemberId,
+                                  },
+                                })
+                              }
+                            >
+                              <Ionicons name="phone-portrait-outline" size={14} color="#fff" />
+                              <Text style={styles.settleButtonPrimaryText}>Tap</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                        {(theyPayMe || iPayThem) && (
+                          <TouchableOpacity
+                            style={[styles.settleButtonSmall, styles.settleButtonSecondary]}
+                            onPress={async () => {
+                              Alert.alert(
+                                "Mark as paid",
+                                `Mark $${s.amount.toFixed(2)} as paid?`,
+                                [
+                                  { text: "Cancel", style: "cancel" },
+                                  {
+                                    text: "Mark paid",
+                                    onPress: async () => {
+                                      setRecordingSettlement(true);
+                                      try {
+                                        const res = await apiFetch("/api/settlements", {
+                                          method: "POST",
+                                          body: {
+                                            groupId: selectedGroupId,
+                                            payerMemberId: s.fromMemberId,
+                                            receiverMemberId: s.toMemberId,
+                                            amount: s.amount,
+                                            method: "manual",
+                                          },
+                                        });
+                                        if (res.ok) {
+                                          refetchGroup();
+                                          refetch();
+                                        } else {
+                                          const data = await res.json();
+                                          Alert.alert("Error", (data as { error?: string })?.error ?? "Could not record");
+                                        }
+                                      } finally {
+                                        setRecordingSettlement(false);
+                                      }
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                            disabled={recordingSettlement}
+                          >
+                            <Text style={styles.settleButtonSecondaryText}>Mark paid</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
             {hasActivity && allSettled && (
               <View style={styles.settledBadge}>
                 <Ionicons name="checkmark-circle" size={20} color="#2D7A52" />
@@ -249,6 +527,9 @@ export default function SharedScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
+        }
       >
         <View style={styles.screenPadding}>
         <View style={[styles.row, { marginBottom: 8 }]}>
@@ -828,4 +1109,55 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   connectButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  settleActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 20,
+  },
+  settleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    minWidth: 100,
+  },
+  settleButtonPrimary: { backgroundColor: "#3D8E62" },
+  settleButtonSecondary: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#fff",
+  },
+  settleTapToPay: { backgroundColor: "#4A6CF7" },
+  settleButtonPrimaryText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  settleButtonSecondaryText: { color: "#374151", fontSize: 14 },
+  settleSection: { marginTop: 24, marginBottom: 16 },
+  suggestionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 8,
+  },
+  suggestionText: { fontSize: 14, color: "#374151", flex: 1 },
+  suggestionBold: { fontWeight: "600", color: "#1F2937" },
+  suggestionAmount: { fontWeight: "600", color: "#3D8E62" },
+  suggestionActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  settleButtonSmall: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
 });

@@ -11,13 +11,21 @@ import {
 } from "react-native";
 import { useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 import type { Reader } from "@stripe/stripe-terminal-react-native";
+import { ErrorCode } from "@stripe/stripe-terminal-react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useApiFetch } from "../../lib/api";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
 
 export default function PayScreen() {
+  const params = useLocalSearchParams<{
+    amount?: string;
+    groupId?: string;
+    payerMemberId?: string;
+    receiverMemberId?: string;
+  }>();
   const apiFetch = useApiFetch();
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(params.amount ?? "");
   const [connecting, setConnecting] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [lastPayment, setLastPayment] = useState<string | null>(null);
@@ -29,14 +37,13 @@ export default function PayScreen() {
     connectReader,
     disconnectReader,
     isInitialized,
-    connectionStatus,
     connectedReader,
     collectPaymentMethod,
     processPaymentIntent,
     retrievePaymentIntent,
   } = useStripeTerminal({
     onUpdateDiscoveredReaders: (readers) => setDiscoveredReaders(readers),
-    onDidReportUnexpectedReaderDisconnect: () => {
+    onDidDisconnect: () => {
       setConnecting(false);
       Alert.alert("Disconnected", "Tap to Pay reader disconnected.");
     },
@@ -45,6 +52,10 @@ export default function PayScreen() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    if (params.amount) setAmount(params.amount);
+  }, [params.amount]);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -103,16 +114,22 @@ export default function PayScreen() {
       return;
     }
 
-    if (connectionStatus !== "connected" || !connectedReader) {
+    if (!connectedReader) {
       Alert.alert("Not connected", "Connect to Tap to Pay first");
       return;
     }
 
     setCollecting(true);
     try {
+      const body: Record<string, unknown> = { amount: amt };
+      if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+        body.groupId = params.groupId;
+        body.payerMemberId = params.payerMemberId;
+        body.receiverMemberId = params.receiverMemberId;
+      }
       const piRes = await apiFetch("/api/stripe/terminal/create-payment-intent", {
         method: "POST",
-        body: { amount: amt },
+        body,
       });
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
@@ -134,7 +151,7 @@ export default function PayScreen() {
         paymentIntent: retrieveResult.paymentIntent,
       });
       if (collectResult.error) {
-        if (collectResult.error.code === "Canceled") {
+        if (collectResult.error.code === ErrorCode.CANCELED) {
           setCollecting(false);
           return;
         }
@@ -164,7 +181,9 @@ export default function PayScreen() {
     }
   }, [
     amount,
-    connectionStatus,
+    params.groupId,
+    params.payerMemberId,
+    params.receiverMemberId,
     connectedReader,
     apiFetch,
     retrievePaymentIntent,
@@ -172,7 +191,7 @@ export default function PayScreen() {
     processPaymentIntent,
   ]);
 
-  const isConnected = connectionStatus === "connected";
+  const isConnected = !!connectedReader;
 
   return (
     <View style={styles.container}>
