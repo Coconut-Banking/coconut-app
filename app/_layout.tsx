@@ -52,6 +52,7 @@ function AuthSwitch() {
     return (
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="connected" options={{ headerShown: false }} />
       </Stack>
     );
   }
@@ -61,6 +62,7 @@ function AuthSwitch() {
       <TerminalTokenProvider>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="connected" options={{ headerShown: false }} />
         </Stack>
       </TerminalTokenProvider>
     );
