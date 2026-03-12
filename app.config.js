@@ -23,14 +23,9 @@ export default {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
-      // Tap to Pay: include only for local dev (CoconutTesting has it). EAS managed profiles don't.
-      ...(process.env.EAS_BUILD
-        ? {}
-        : {
-            entitlements: {
-              "com.apple.developer.proximity-reader.payment.acceptance": true,
-            },
-          }),
+      entitlements: {
+        "com.apple.developer.proximity-reader.payment.acceptance": true,
+      },
     },
     android: {
       adaptiveIcon: {
