@@ -124,6 +124,7 @@ export default function HomeScreen() {
   const [semanticResults, setSemanticResults] = useState<Transaction[] | null>(null);
   const [semanticSearching, setSemanticSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
@@ -258,12 +259,30 @@ export default function HomeScreen() {
               {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
             </Text>
           </TouchableOpacity>
-          {accountHint && signOut ? (
+          {signOut ? (
             <TouchableOpacity
               style={styles.connectSignOutButton}
-              onPress={() => signOut()}
+              onPress={async () => {
+                if (signingOut) return;
+                setSigningOut(true);
+                try {
+                  await signOut();
+                } finally {
+                  setSigningOut(false);
+                }
+              }}
+              disabled={signingOut}
             >
-              <Text style={styles.connectSignOutText}>Sign out &amp; switch account</Text>
+              {signingOut ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <ActivityIndicator size="small" color="#6B7280" />
+                  <Text style={styles.connectSignOutText}>Signing out…</Text>
+                </View>
+              ) : (
+                <Text style={styles.connectSignOutText}>
+                  {accountHint ? "Sign out &amp; switch account" : "Sign out"}
+                </Text>
+              )}
             </TouchableOpacity>
           ) : null}
         </View>
