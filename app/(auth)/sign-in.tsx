@@ -10,13 +10,34 @@ import {
   Platform,
 } from "react-native";
 import { useSignIn } from "@clerk/expo";
+import { useSignInWithGoogle } from "@clerk/expo/google";
 
 export default function SignInScreen() {
   const signInData = useSignIn();
+  const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    if (Platform.OS !== "ios" && Platform.OS !== "android") return;
+    setError("");
+    setGoogleLoading(true);
+    try {
+      const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+      }
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
+      setError(err.message ?? "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSignIn = async () => {
     const signIn = (signInData as { signIn?: { create: (p: object) => Promise<{ createdSessionId?: string }> } }).signIn;
@@ -53,6 +74,26 @@ export default function SignInScreen() {
     >
       <Text style={styles.title}>Coconut</Text>
       <Text style={styles.subtitle}>Sign in to continue</Text>
+      {(Platform.OS === "ios" || Platform.OS === "android") && (
+        <>
+          <TouchableOpacity
+            style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            )}
+          </TouchableOpacity>
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+        </>
+      )}
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -141,6 +182,33 @@ const styles = StyleSheet.create({
   linkText: {
     marginTop: 16,
     textAlign: "center",
+    color: "#6B7280",
+    fontSize: 14,
+  },
+  googleButton: {
+    backgroundColor: "#4285F4",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  googleButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E5E7EB",
+  },
+  dividerText: {
+    marginHorizontal: 12,
     color: "#6B7280",
     fontSize: 14,
   },

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
+import { useClerk, useUser } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
@@ -111,8 +112,10 @@ function filterExact(transactions: Transaction[], q: string): Transaction[] {
 }
 
 export default function HomeScreen() {
+  const { signOut } = useClerk();
+  const { user } = useUser();
   const apiFetch = useApiFetch();
-  const { transactions, linked, loading, refetch } = useTransactions();
+  const { transactions, linked, loading, status, refetch } = useTransactions();
   const { subscriptions } = useSubscriptions();
   const { summary: groupsSummary } = useGroupsSummary();
 
@@ -123,9 +126,19 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
   useEffect(() => {
     if (!isFocused) setShowFabMenu(false);
   }, [isFocused]);
+
+  // Refetch when returning to this tab (e.g. from connected screen after bank link)
+  useEffect(() => {
+    if (isFocused && !prevFocused.current) {
+      refetch(true);
+    }
+    prevFocused.current = isFocused;
+  }, [isFocused, refetch]);
 
   const monthlySpend = useMemo(() => deriveMonthlySpend(transactions), [transactions]);
   const subsTotal = useMemo(
@@ -194,14 +207,32 @@ export default function HomeScreen() {
 
   // Not linked — show Connect CTA only; never show dashboard
   if (!linked) {
+    const accountHint =
+      status === "unauthorized"
+        ? "Sign in with the same account you used on the website."
+        : status === "not_linked"
+          ? "Connected on a different account? Sign in with that email here."
+          : null;
+
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.connectCard}>
           <Ionicons name="wallet-outline" size={48} color="#3D8E62" />
           <Text style={styles.connectTitle}>Connect your bank</Text>
+          {user?.primaryEmailAddress?.emailAddress ? (
+            <Text style={styles.connectAccountEmail}>
+              Signed in as {user.primaryEmailAddress.emailAddress}
+            </Text>
+          ) : null}
           <Text style={styles.connectSubtitle}>
             Link your account to see spending, transactions, and split receipts with friends.
           </Text>
+          <Text style={styles.connectHint}>
+            When you tap &quot;Connect in web app&quot;, sign in on the web with this same account before connecting your bank.
+          </Text>
+          {accountHint ? (
+            <Text style={styles.connectHintImportant}>{accountHint}</Text>
+          ) : null}
           <Text style={styles.connectHint}>
             Important: Stay in the browser until you see &quot;Bank connected!&quot; and tap &quot;Return to app&quot;.
             Don&apos;t close early on Plaid&apos;s &quot;Continue to Coconut&quot; screen.
@@ -227,6 +258,14 @@ export default function HomeScreen() {
               {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
             </Text>
           </TouchableOpacity>
+          {accountHint && signOut ? (
+            <TouchableOpacity
+              style={styles.connectSignOutButton}
+              onPress={() => signOut()}
+            >
+              <Text style={styles.connectSignOutText}>Sign out &amp; switch account</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -583,12 +622,27 @@ const styles = StyleSheet.create({
     borderColor: "#EEF7F2",
   },
   connectTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginTop: 20 },
+  connectAccountEmail: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 6,
+    textAlign: "center",
+  },
   connectSubtitle: {
     fontSize: 15,
     color: "#6B7280",
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
+  },
+  connectHintImportant: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#B45309",
+    textAlign: "center",
+    marginTop: 12,
+    lineHeight: 20,
+    paddingHorizontal: 12,
   },
   connectHint: {
     fontSize: 12,
@@ -617,6 +671,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   connectRefreshText: { color: "#3D8E62", fontSize: 14, fontWeight: "500" },
+  connectSignOutButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+  },
+  connectSignOutText: { color: "#6B7280", fontSize: 14, textDecorationLine: "underline" },
   fab: {
     position: "absolute",
     bottom: 100,

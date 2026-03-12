@@ -5,8 +5,8 @@ import { router } from "expo-router";
 import { useApiFetch } from "../lib/api";
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_WAIT_MS = 25000; // 25s max, then show button
-const SHOW_SKIP_AFTER_MS = 8000; // Show "Continue" button after 8s
+const MAX_WAIT_MS = 15000; // 15s max
+const SHOW_SKIP_AFTER_MS = 3000; // Show "Continue" button after 3s
 
 /**
  * Handles coconut://connected deep link from web connect flow.

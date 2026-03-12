@@ -23,9 +23,14 @@ export default {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
-      entitlements: {
-        "com.apple.developer.proximity-reader.payment.acceptance": true,
-      },
+      // Tap to Pay: include only for local dev (CoconutTesting has it). EAS managed profiles don't.
+      ...(process.env.EAS_BUILD
+        ? {}
+        : {
+            entitlements: {
+              "com.apple.developer.proximity-reader.payment.acceptance": true,
+            },
+          }),
     },
     android: {
       adaptiveIcon: {
@@ -39,6 +44,7 @@ export default {
     },
     plugins: [
       "expo-router",
+      "@clerk/expo", // Reads EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME from env for native Google Sign-In
       [
         "@stripe/stripe-terminal-react-native/app.plugin",
         {

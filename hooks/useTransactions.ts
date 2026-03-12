@@ -16,45 +16,68 @@ export interface Transaction {
   merchantColor: string;
 }
 
+export type PlaidStatus = "ok" | "unauthorized" | "not_linked";
+
 export function useTransactions() {
   const apiFetch = useApiFetch();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [linked, setLinked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<PlaidStatus>("ok");
   const hasShownInitialLoad = useRef(false);
 
   const fetchData = useCallback((silent = false): Promise<void> => {
     let cancelled = false;
+    setStatus("ok");
     const isFirstLoad = !hasShownInitialLoad.current;
     if (!silent && isFirstLoad) setLoading(true);
-    return apiFetch("/api/plaid/status")
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (!data.linked) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    return apiFetch("/api/plaid/status", { signal: controller.signal })
+      .then((r) => {
+        clearTimeout(timeout);
+        if (cancelled) return null;
+        if (r.status === 401 || r.status === 404) {
+          // 404 = Clerk's protect() for unauthenticated; 401 = our middleware
+          setStatus("unauthorized");
           setLoading(false);
-          return;
+          return null;
+        }
+        if (!r.ok) {
+          setLoading(false);
+          return null;
+        }
+        return r.json();
+      })
+      .then((data) => {
+        if (cancelled || !data) return null;
+        if (!data.linked) {
+          setStatus("not_linked");
+          setLoading(false);
+          return null;
         }
         setLinked(true);
         return apiFetch("/api/plaid/transactions");
       })
       .then((r) => {
-        if (!r || cancelled) return r?.json?.();
+        if (cancelled || !r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
         if (cancelled) return;
-        if (Array.isArray(data)) {
-          setTransactions(data as Transaction[]);
-        }
+        if (Array.isArray(data)) setTransactions(data as Transaction[]);
       })
       .finally(() => {
         if (!cancelled) {
+          clearTimeout(timeout);
           hasShownInitialLoad.current = true;
           setLoading(false);
         }
       })
-      .catch(() => { /* swallow so refetch never rejects */ });
+      .catch(() => {
+        clearTimeout(timeout);
+        if (!cancelled) setLoading(false);
+      });
   }, [apiFetch]);
 
   useEffect(() => {
@@ -70,5 +93,5 @@ export function useTransactions() {
     return () => sub.remove();
   }, [fetchData]);
 
-  return { transactions, linked, loading, refetch: fetchData };
+  return { transactions, linked, loading, status, refetch: fetchData };
 }
