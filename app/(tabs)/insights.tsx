@@ -69,7 +69,7 @@ export default function InsightsScreen() {
         </Text>
         <TouchableOpacity
           style={styles.connectButton}
-          onPress={() => Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect?from_app=1`)}
+          onPress={() => Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect-from-app`)}
         >
           <Text style={styles.connectButtonText}>Connect in web app</Text>
         </TouchableOpacity>

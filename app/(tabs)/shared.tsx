@@ -107,7 +107,7 @@ export default function SharedScreen() {
           {API_URL ? (
             <TouchableOpacity
               style={styles.connectButton}
-              onPress={() => Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect?from_app=1`)}
+              onPress={() => Linking.openURL(`${API_URL.replace(/\/$/, "")}/connect-from-app`)}
             >
               <Text style={styles.connectButtonText}>Open web app</Text>
             </TouchableOpacity>
