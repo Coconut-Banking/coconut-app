@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { Redirect } from "expo-router";
 import {
   View,
   Text,
@@ -112,7 +113,7 @@ function filterExact(transactions: Transaction[], q: string): Transaction[] {
 }
 
 export default function HomeScreen() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded: authLoaded, isSignedIn, sessionId } = useAuth();
   const { signOut } = useClerk();
   const { user } = useUser();
   const apiFetch = useApiFetch();
@@ -126,13 +127,25 @@ export default function HomeScreen() {
   const [semanticSearching, setSemanticSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [showFabMenu, setShowFabMenu] = useState(false);
+  const [loadingTooLong, setLoadingTooLong] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
 
   useEffect(() => {
     if (!isFocused) setShowFabMenu(false);
   }, [isFocused]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingTooLong(false);
+      return;
+    }
+    const timer = setTimeout(() => setLoadingTooLong(true), 9000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Refetch when returning to this tab (e.g. from connected screen after bank link)
   useEffect(() => {
@@ -193,7 +206,16 @@ export default function HomeScreen() {
     }
   };
 
+  // Auto-redirect to sign-up when auth is loaded but user is not signed in
+  if (authLoaded && !isSignedIn) {
+    return <Redirect href="/(auth)/sign-up" />;
+  }
+
   const openConnect = async () => {
+    setConnectError(null);
+    if (!isSignedIn) {
+      return;
+    }
     const base = API_URL.replace(/\/$/, "");
     const email = user?.primaryEmailAddress?.emailAddress;
     try {
@@ -208,8 +230,11 @@ export default function HomeScreen() {
         if (res.ok) {
           const { url } = await res.json();
           if (url) {
-            Linking.openURL(url);
-            return;
+            const canOpenHandoff = await Linking.canOpenURL(url);
+            if (canOpenHandoff) {
+              await Linking.openURL(url);
+              return;
+            }
           }
         }
       }
@@ -217,17 +242,96 @@ export default function HomeScreen() {
       /* fallback */
     }
     const fallback = `${base}/connect-from-app`;
-    Linking.openURL(email ? `${fallback}?hint=${encodeURIComponent(email)}` : fallback);
+    const fallbackUrl = email ? `${fallback}?hint=${encodeURIComponent(email)}` : fallback;
+    try {
+      const canOpenFallback = await Linking.canOpenURL(fallbackUrl);
+      if (!canOpenFallback) throw new Error("cannot_open");
+      await Linking.openURL(fallbackUrl);
+    } catch {
+      setConnectError("Could not open browser. Please sign in first, then try again.");
+    }
   };
   const openSettings = () => Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
 
-  // Loading — never show dashboard until we know linked status
-  if (loading) {
+  // Loading — show escape hatches FIRST; cached session can land us here, then API/token may hang
+  const webLoginUrl = `${API_URL.replace(/\/$/, "")}/login`;
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      // AuthSwitch will switch to (auth) automatically; router ensures we land on sign-in
+      router.replace("/(auth)/sign-in");
+    } catch (e) {
+      console.error("[home] signOut failed:", e);
+    }
+  };
+
+  if (loading && !loadingTooLong) {
     return (
-      <View style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center, { padding: 24 }]}>
         <ActivityIndicator size="large" color="#3D8E62" />
         <Text style={styles.loadingText}>Loading...</Text>
+        <TouchableOpacity
+          onPress={handleSignOut}
+          style={{
+            marginTop: 24,
+            paddingVertical: 14,
+            paddingHorizontal: 32,
+            borderRadius: 12,
+            borderWidth: 2,
+            borderColor: "#3D8E62",
+          }}
+        >
+          <Text style={{ color: "#3D8E62", fontWeight: "700", fontSize: 17 }}>Sign out</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => Linking.openURL(webLoginUrl)}
+          style={{
+            marginTop: 16,
+            backgroundColor: "#3D8E62",
+            paddingVertical: 16,
+            paddingHorizontal: 32,
+            borderRadius: 12,
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 17 }}>Open login in browser</Text>
+        </TouchableOpacity>
       </View>
+    );
+  }
+
+  if (loading && loadingTooLong) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={[styles.connectCard, { padding: 24 }]}>
+          <Ionicons name="time-outline" size={44} color="#3D8E62" />
+          <Text style={styles.connectTitle}>Still loading</Text>
+          <Text style={styles.connectSubtitle}>
+            Tap below to sign out or open the web app.
+          </Text>
+          <TouchableOpacity
+            style={[styles.connectButton, { marginBottom: 12 }]}
+            onPress={handleSignOut}
+          >
+            <Text style={styles.connectButtonText}>Sign out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectButton}
+            onPress={() => Linking.openURL(webLoginUrl)}
+          >
+            <Text style={styles.connectButtonText}>Open login in browser</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectRefreshButton}
+            onPress={() => {
+              setLoadingTooLong(false);
+              refetch(false);
+            }}
+          >
+            <Ionicons name="refresh" size={16} color="#3D8E62" />
+            <Text style={styles.connectRefreshText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -255,22 +359,36 @@ export default function HomeScreen() {
               Clerk user: {user.id}
             </Text>
           ) : null}
+          {(!user?.id || !user?.primaryEmailAddress?.emailAddress) ? (
+            <Text style={styles.connectAccountId}>
+              Auth loaded: {String(authLoaded)} | Signed in: {String(isSignedIn)}
+            </Text>
+          ) : null}
           <Text style={styles.connectSubtitle}>
             Link your account to see spending, transactions, and split receipts with friends.
           </Text>
           <Text style={styles.connectHint}>
-            When you tap &quot;Connect in web app&quot;, sign in on the web with this same account before connecting your bank.
+            1) Tap "Connect in web app" and sign in with this same account.
           </Text>
           {accountHint ? (
             <Text style={styles.connectHintImportant}>{accountHint}</Text>
           ) : null}
+          {connectError ? (
+            <Text style={styles.connectErrorText}>{connectError}</Text>
+          ) : null}
+          {signOutError ? (
+            <Text style={styles.connectErrorText}>{signOutError}</Text>
+          ) : null}
           <Text style={styles.connectHint}>
-            Important: Stay in the browser until you see &quot;Bank connected!&quot; and tap &quot;Return to app&quot;.
-            Don&apos;t close early on Plaid&apos;s &quot;Continue to Coconut&quot; screen.
+            2) Stay in the browser until you see "Bank connected!" and then tap "Return to app".
           </Text>
-          <TouchableOpacity style={styles.connectButton} onPress={openConnect}>
-            <Text style={styles.connectButtonText}>Connect in web app</Text>
-            <Ionicons name="open-outline" size={16} color="#fff" />
+          <Text style={styles.connectHint}>Do not close early on Plaid's "Continue to Coconut" screen.</Text>
+          <TouchableOpacity
+            style={styles.connectButton}
+            onPress={openConnect}
+          >
+            <Text style={styles.connectButtonText}>{isSignedIn ? "Connect in web app" : "Sign in to continue"}</Text>
+            {isSignedIn ? <Ionicons name="open-outline" size={16} color="#fff" /> : null}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.connectRefreshButton}
@@ -289,14 +407,29 @@ export default function HomeScreen() {
               {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
             </Text>
           </TouchableOpacity>
-          {signOut ? (
+          {signOut && isSignedIn ? (
             <TouchableOpacity
               style={styles.connectSignOutButton}
               onPress={async () => {
                 if (signingOut) return;
                 setSigningOut(true);
+                setSignOutError(null);
                 try {
-                  await signOut();
+                  const signOutPromise = sessionId ? signOut({ sessionId }) : signOut();
+                  const signOutWithTimeout = Promise.race([
+                    signOutPromise,
+                    new Promise((_, reject) =>
+                      setTimeout(() => reject(new Error("Sign out timed out")), 12000),
+                    ),
+                  ]);
+                  await signOutWithTimeout;
+                } catch (e) {
+                  const err = e as { message?: string };
+                  setSignOutError(
+                    err.message === "Sign out timed out"
+                      ? "Sign out is taking too long. Please try again."
+                      : (err.message ?? "Sign out failed. Please try again."),
+                  );
                 } finally {
                   setSigningOut(false);
                 }
@@ -310,7 +443,7 @@ export default function HomeScreen() {
                 </View>
               ) : (
                 <Text style={styles.connectSignOutText}>
-                  {accountHint ? "Sign out &amp; switch account" : "Sign out"}
+                  {accountHint ? "Sign out & switch account" : "Sign out"}
                 </Text>
               )}
             </TouchableOpacity>
@@ -441,7 +574,7 @@ export default function HomeScreen() {
           </View>
           {searchMode === "semantic" && (
             <Text style={styles.searchHint}>
-              Try: &quot;coffee last week&quot;, &quot;dinner with Alex&quot; — tap search icon
+              Try: "coffee last week", "dinner with Alex" - tap search icon
             </Text>
           )}
         </View>
@@ -698,6 +831,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     lineHeight: 20,
     paddingHorizontal: 12,
+  },
+  connectErrorText: {
+    fontSize: 12,
+    color: "#DC2626",
+    textAlign: "center",
+    marginTop: 10,
+    lineHeight: 18,
+    paddingHorizontal: 8,
   },
   connectHint: {
     fontSize: 12,
