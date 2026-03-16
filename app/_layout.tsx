@@ -22,10 +22,13 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
       if (token) break;
       if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
     }
+    if (!token) {
+      throw new Error("Auth token unavailable — cannot fetch connection token");
+    }
     const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/stripe/terminal/connection-token`, {
       method: "POST",
       headers: {
-        Authorization: token ? `Bearer ${token}` : "",
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
