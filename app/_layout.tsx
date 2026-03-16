@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
@@ -14,11 +14,13 @@ if (!publishableKey) {
 
 function TerminalTokenProvider({ children }: { children: React.ReactElement | React.ReactElement[] }) {
   const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
-  const fetchConnectionToken = async () => {
+  const fetchConnectionToken = useCallback(async () => {
     let token: string | null = null;
     for (let i = 0; i < 4; i++) {
-      token = await getToken({ skipCache: i > 0 });
+      token = await getTokenRef.current({ skipCache: i > 0 });
       if (token) break;
       if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
     }
@@ -35,7 +37,7 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
     return data.secret;
-  };
+  }, []);
 
   return (
     <StripeTerminalProvider
