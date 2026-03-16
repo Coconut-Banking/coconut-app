@@ -113,7 +113,7 @@ export default function RootLayout() {
   return (
     <ClerkProvider
       publishableKey={publishableKey ?? ""}
-      tokenCache={SKIP_AUTH || FORCE_SIGN_OUT_ON_LAUNCH ? undefined : tokenCache}
+      tokenCache={SKIP_AUTH ? undefined : tokenCache}
     >
       <StatusBar style="auto" />
       <AuthSwitch />
