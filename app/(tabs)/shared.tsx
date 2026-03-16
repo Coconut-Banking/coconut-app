@@ -86,8 +86,11 @@ export default function SharedScreen() {
 
   useEffect(() => {
     apiFetch("/api/plaid/status")
-      .then((r) => r.json())
-      .then((d) => setPlaidLinked(d.linked === true))
+      .then((r) => {
+        if (r.status === 425) return;
+        if (!r.ok) { setPlaidLinked(false); return; }
+        return r.json().then((d) => setPlaidLinked(d.linked === true));
+      })
       .catch(() => setPlaidLinked(false));
   }, [apiFetch]);
 
