@@ -33,7 +33,7 @@ export default {
         backgroundImage: "./assets/android-icon-background.png",
       },
       package: "com.coconut.app",
-      minSdkVersion: 24,
+      minSdkVersion: 26,
       permissions: ["INTERNET"],
     },
     plugins: [
