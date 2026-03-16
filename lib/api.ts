@@ -74,7 +74,7 @@ export function useApiFetch() {
       let body: FormData | string | undefined;
       if (opts.body instanceof FormData) {
         body = opts.body;
-      } else if (opts.body && typeof opts.body === "object" && !("uri" in opts.body)) {
+      } else if (opts.body && typeof opts.body === "object") {
         body = JSON.stringify(opts.body);
       } else {
         body = undefined;
