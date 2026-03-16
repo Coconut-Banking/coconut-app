@@ -252,8 +252,9 @@ export default function SharedScreen() {
 
   if (selectedPersonKey && personDetail) {
     return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
-        style={styles.container}
+        style={{ flex: 1 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
         }
@@ -334,6 +335,7 @@ export default function SharedScreen() {
           </View>
         )}
       </ScrollView>
+      </SafeAreaView>
     );
   }
 
