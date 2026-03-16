@@ -125,13 +125,14 @@ export default function SignUpScreen() {
         </>
       )}
       <TextInput
-        style={styles.input}
+        style={[styles.input, pendingVerification && { backgroundColor: "#F3F4F6", color: "#6B7280" }]}
         placeholder="Email"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
         autoComplete="email"
+        editable={!pendingVerification}
       />
       {pendingVerification ? (
         <>
