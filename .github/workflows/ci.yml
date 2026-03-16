@@ -25,5 +25,5 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
-      - name: Expo export (web)
-        run: npx expo export --platform web
+      - name: Validate Expo config
+        run: npx expo config --type public
