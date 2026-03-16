@@ -20,7 +20,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit
 
       - name: Generate Expo Router typed routes
         run: npx expo customize tsconfig.json
