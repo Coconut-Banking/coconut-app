@@ -123,9 +123,9 @@ export default function SharedScreen() {
 
   if (loading && showOverview) {
     return (
-      <View style={styles.center}>
+      <SafeAreaView style={[styles.container, styles.center]} edges={["top"]}>
         <ActivityIndicator size="large" color="#3D8E62" />
-      </View>
+      </SafeAreaView>
     );
   }
 
