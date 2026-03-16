@@ -70,6 +70,8 @@ export function useTransactions() {
         if (cancelled || !data) return null;
         if (!data.linked) {
           console.log("[useTransactions] not linked, loading=false");
+          setLinked(false);
+          setTransactions([]);
           setStatus("not_linked");
           setLoading(false);
           return null;
