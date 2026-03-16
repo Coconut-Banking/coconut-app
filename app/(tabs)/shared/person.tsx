@@ -15,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useApiFetch } from "../../../lib/api";
 import { usePersonDetail } from "../../../hooks/useGroups";
-import { DEMO_MODE, DEMO_PERSON_DETAILS } from "../../../lib/demo-data";
+import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 
@@ -33,9 +33,10 @@ function MemberAvatar({ name, size = 40 }: { name: string; size?: number }) {
 export default function PersonScreen() {
   const { key } = useLocalSearchParams<{ key: string }>();
   const apiFetch = useApiFetch();
-  const demo = DEMO_MODE ? useDemoData() : null;
-  const { detail: realDetail, loading, refetch } = usePersonDetail(DEMO_MODE ? null : (key ?? null));
-  const detail = demo && key ? demo.personDetails[key] ?? null : realDetail;
+  const { isDemoOn } = useDemoMode();
+  const demo = useDemoData();
+  const { detail: realDetail, loading, refetch } = usePersonDetail(isDemoOn ? null : (key ?? null));
+  const detail = isDemoOn && key ? demo.personDetails[key] ?? null : realDetail;
 
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
@@ -52,7 +53,7 @@ export default function PersonScreen() {
 
   const handleRequest = async () => {
     if (detail.balance <= 0) return;
-    if (DEMO_MODE) { Alert.alert("Demo", "Payment request sent!"); return; }
+    if (isDemoOn) { Alert.alert("Demo", "Payment request sent!"); return; }
     setRequestingPayment(true);
     try {
       const se = (detail.settlements ?? [])[0];
@@ -80,7 +81,7 @@ export default function PersonScreen() {
 
   const handleMarkPaid = () => {
     if ((detail.settlements ?? []).length === 0) return;
-    if (DEMO_MODE && demo && key) { haptic.success(); demo.settlePerson(key); router.back(); return; }
+    if (isDemoOn && key) { haptic.success(); demo.settlePerson(key); router.back(); return; }
     Alert.alert("Mark as paid", `Mark $${Math.abs(detail.balance).toFixed(2)} as paid?`, [
       { text: "Cancel", style: "cancel" },
       {
@@ -110,7 +111,7 @@ export default function PersonScreen() {
 
   const handleTapToPay = () => {
     if (detail.balance <= 0) return;
-    if (DEMO_MODE) { Alert.alert("Demo", "Opening Tap to Pay..."); return; }
+    if (isDemoOn) { Alert.alert("Demo", "Opening Tap to Pay..."); return; }
     const se = (detail.settlements ?? [])[0];
     if (!se) return;
     router.push({

@@ -1,6 +1,5 @@
 import { Stack } from "expo-router";
 import { DemoProvider } from "../../../lib/demo-context";
-import { DEMO_MODE } from "../../../lib/demo-data";
 
 function SharedStack() {
   return (
@@ -16,12 +15,9 @@ function SharedStack() {
 }
 
 export default function SharedLayout() {
-  if (DEMO_MODE) {
-    return (
-      <DemoProvider>
-        <SharedStack />
-      </DemoProvider>
-    );
-  }
-  return <SharedStack />;
+  return (
+    <DemoProvider>
+      <SharedStack />
+    </DemoProvider>
+  );
 }

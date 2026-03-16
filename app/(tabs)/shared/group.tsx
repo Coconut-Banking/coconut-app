@@ -16,7 +16,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../../lib/api";
 import { useGroupDetail, useGroupsSummary } from "../../../hooks/useGroups";
-import { DEMO_MODE } from "../../../lib/demo-data";
+import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
@@ -44,10 +44,11 @@ export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
-  const demo = DEMO_MODE ? useDemoData() : null;
-  const { detail: realDetail, loading, refetch } = useGroupDetail(DEMO_MODE ? null : (id ?? null));
+  const { isDemoOn } = useDemoMode();
+  const demo = useDemoData();
+  const { detail: realDetail, loading, refetch } = useGroupDetail(isDemoOn ? null : (id ?? null));
   const { refetch: refetchSummary } = useGroupsSummary();
-  const detail = demo && id ? demo.groupDetails[id] ?? null : realDetail;
+  const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
 
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
@@ -139,7 +140,7 @@ export default function GroupScreen() {
                       <TouchableOpacity
                         style={[s.miniBtn, s.miniBtnPrimary]}
                         onPress={async () => {
-                          if (DEMO_MODE) { Alert.alert("Sent", `Payment request for $${su.amount.toFixed(2)} sent!`); return; }
+                          if (isDemoOn) { Alert.alert("Sent", `Payment request for $${su.amount.toFixed(2)} sent!`); return; }
                           setRequestingPayment(true);
                           try {
                             const res = await apiFetch("/api/stripe/create-payment-link", {
@@ -162,7 +163,7 @@ export default function GroupScreen() {
                       <TouchableOpacity
                         style={[s.miniBtn, s.miniBtnSecondary]}
                         onPress={() => {
-                          if (DEMO_MODE && demo && id) { demo.settleGroupSuggestion(id, su.fromMemberId, su.toMemberId); return; }
+                          if (isDemoOn && id) { demo.settleGroupSuggestion(id, su.fromMemberId, su.toMemberId); return; }
                           Alert.alert("Mark as paid", `Mark $${su.amount.toFixed(2)} as paid?`, [
                             { text: "Cancel", style: "cancel" },
                             {

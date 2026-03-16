@@ -14,7 +14,8 @@ import { useRouter, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
 import { useGroupsSummary } from "../../hooks/useGroups";
-import { DEMO_MODE, DEMO_SUMMARY } from "../../lib/demo-data";
+import { useDemoMode } from "../../lib/demo-mode-context";
+import { DEMO_SUMMARY } from "../../lib/demo-data";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -31,8 +32,9 @@ const SPLITS: { key: SplitMethod; label: string; icon: string }[] = [
 export default function AddExpenseScreen() {
   const nav = useRouter();
   const apiFetch = useApiFetch();
+  const { isDemoOn } = useDemoMode();
   const { summary: realSummary, loading } = useGroupsSummary();
-  const summary = DEMO_MODE ? DEMO_SUMMARY : realSummary;
+  const summary = isDemoOn ? DEMO_SUMMARY : realSummary;
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -109,7 +111,7 @@ export default function AddExpenseScreen() {
     if (!valid && splitMethod === "exact") { setError(`Must add up to $${total.toFixed(2)}`); return; }
     if (!valid && splitMethod === "percent") { setError("Must add up to 100%"); return; }
 
-    if (DEMO_MODE) { setStep(3); return; }
+    if (isDemoOn) { setStep(3); return; }
     setSaving(true);
     try {
       const t = targets[0];

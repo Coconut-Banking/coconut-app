@@ -5,7 +5,7 @@ import type {
   RecentActivityItem,
 } from "../hooks/useGroups";
 
-export const DEMO_MODE = true;
+// DEMO_MODE is now a runtime toggle (default off). See lib/demo-mode-context.tsx
 
 const daysAgo = (n: number) => {
   const d = new Date();

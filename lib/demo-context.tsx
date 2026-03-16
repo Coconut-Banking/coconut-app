@@ -13,9 +13,10 @@ import {
   DEMO_PERSON_DETAILS,
   DEMO_ACTIVITY,
 } from "./demo-data";
+import { useDemoMode } from "./demo-mode-context";
 
 interface DemoState {
-  summary: GroupsSummary;
+  summary: GroupsSummary | null;
   groupDetails: Record<string, GroupDetail>;
   personDetails: Record<string, PersonDetail>;
   activity: RecentActivityItem[];
@@ -26,7 +27,10 @@ interface DemoState {
 
 const DemoContext = createContext<DemoState | null>(null);
 
+const noop = () => {};
+
 export function DemoProvider({ children }: { children: React.ReactNode }) {
+  const { isDemoOn } = useDemoMode();
   const [summary, setSummary] = useState<GroupsSummary>({ ...DEMO_SUMMARY });
   const [groupDetails, setGroupDetails] = useState<Record<string, GroupDetail>>({ ...DEMO_GROUP_DETAILS });
   const [personDetails, setPersonDetails] = useState<Record<string, PersonDetail>>({ ...DEMO_PERSON_DETAILS });
@@ -145,8 +149,20 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const value: DemoState = isDemoOn
+    ? { summary, groupDetails, personDetails, activity, addExpense, settlePerson, settleGroupSuggestion }
+    : {
+        summary: null,
+        groupDetails: {},
+        personDetails: {},
+        activity: [],
+        addExpense: noop,
+        settlePerson: noop,
+        settleGroupSuggestion: noop,
+      };
+
   return (
-    <DemoContext.Provider value={{ summary, groupDetails, personDetails, activity, addExpense, settlePerson, settleGroupSuggestion }}>
+    <DemoContext.Provider value={value}>
       {children}
     </DemoContext.Provider>
   );

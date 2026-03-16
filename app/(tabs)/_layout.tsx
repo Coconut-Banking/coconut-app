@@ -1,8 +1,10 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { DemoModeProvider } from "../../lib/demo-mode-context";
 
 export default function TabLayout() {
   return (
+    <DemoModeProvider>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: "#3D8E62",
@@ -65,5 +67,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </DemoModeProvider>
   );
 }

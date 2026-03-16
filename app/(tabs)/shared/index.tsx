@@ -10,8 +10,7 @@ import {
   Animated,
   Alert,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
+  Switch,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,7 +19,7 @@ import { router } from "expo-router";
 import { useApiFetch } from "../../../lib/api";
 import { useGroupsSummary, useRecentActivity } from "../../../hooks/useGroups";
 import type { GroupsSummary, FriendBalance, GroupSummary as GroupSummaryType, RecentActivityItem } from "../../../hooks/useGroups";
-import { DEMO_MODE } from "../../../lib/demo-data";
+import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { SnapPress, SharedSkeletonScreen, haptic } from "../../../components/ui";
 
@@ -210,13 +209,14 @@ function ActivityPage({ items, w }: { items: RecentActivityItem[]; w: number }) 
 export default function SharedIndex() {
   const { width } = useWindowDimensions();
   const apiFetch = useApiFetch();
-  const demo = DEMO_MODE ? useDemoData() : null;
+  const { isDemoOn, setIsDemoOn } = useDemoMode();
+  const demo = useDemoData();
 
   const { summary: realSummary, loading, refetch } = useGroupsSummary();
-  const { activity: realActivity } = useRecentActivity(true);
+  const { activity: realActivity } = useRecentActivity(!isDemoOn);
 
-  const summary = demo?.summary ?? realSummary;
-  const activity = demo?.activity ?? realActivity;
+  const summary = isDemoOn ? demo.summary : realSummary;
+  const activity = isDemoOn ? demo.activity : realActivity;
 
   const [tab, setTab] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -236,7 +236,7 @@ export default function SharedIndex() {
 
   const createGroup = async () => {
     if (!groupName.trim()) return;
-    if (DEMO_MODE) { Alert.alert("Demo", `"${groupName}" created`); setShowCreate(false); setGroupName(""); return; }
+    if (isDemoOn) { Alert.alert("Demo", `"${groupName}" created`); setShowCreate(false); setGroupName(""); return; }
     setCreating(true);
     try {
       const res = await apiFetch("/api/groups", { method: "POST", body: { name: groupName.trim(), ownerDisplayName: "You" } as object });
@@ -264,10 +264,21 @@ export default function SharedIndex() {
         {/* Header */}
         <View style={st.header}>
           <Text style={st.title}>Shared</Text>
-          <TouchableOpacity style={st.addExpBtn} onPress={() => router.push("/(tabs)/add-expense")} activeOpacity={0.7}>
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={st.addExpText}>Expense</Text>
-          </TouchableOpacity>
+          <View style={st.headerRight}>
+            <View style={st.demoToggle}>
+              <Text style={st.demoLabel}>Demo</Text>
+              <Switch
+                value={isDemoOn}
+                onValueChange={setIsDemoOn}
+                trackColor={{ false: "#E5E7EB", true: "#C3E0D3" }}
+                thumbColor={isDemoOn ? "#3D8E62" : "#F9FAFB"}
+              />
+            </View>
+            <TouchableOpacity style={st.addExpBtn} onPress={() => router.push("/(tabs)/add-expense")} activeOpacity={0.7}>
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={st.addExpText}>Expense</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {summary && <BalanceCard s={summary} />}
@@ -333,6 +344,9 @@ const st = StyleSheet.create({
 
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   title: { fontSize: 28, fontWeight: "900", color: "#1F2937", letterSpacing: -0.8 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  demoToggle: { flexDirection: "row", alignItems: "center", gap: 6 },
+  demoLabel: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
   addExpBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#3D8E62", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   addExpText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 
