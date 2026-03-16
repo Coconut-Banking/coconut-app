@@ -20,7 +20,16 @@ function getClerkErrorMessage(e: unknown, fallback: string): string {
 }
 
 export default function SignUpScreen() {
-  const { isLoaded, signUp, setActive } = useSignUp();
+  // Clerk v3 types changed but runtime still provides these properties
+  const { isLoaded, signUp, setActive } = useSignUp() as unknown as {
+    isLoaded: boolean;
+    signUp: {
+      create: (params: { emailAddress: string; password: string }) => Promise<void>;
+      prepareEmailAddressVerification: (opts: { strategy: string }) => Promise<void>;
+      attemptEmailAddressVerification: (opts: { code: string }) => Promise<{ status: string; createdSessionId?: string }>;
+    } | undefined;
+    setActive: ((opts: { session: string }) => Promise<void>) | undefined;
+  };
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

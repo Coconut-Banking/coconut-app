@@ -38,7 +38,12 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 }
 
 export default function SignInScreen() {
-  const { isLoaded, signIn, setActive } = useSignIn();
+  // Clerk v3 types changed but runtime still provides these properties
+  const { isLoaded, signIn, setActive } = useSignIn() as unknown as {
+    isLoaded: boolean;
+    signIn: { create: (params: { identifier: string; password: string }) => Promise<{ createdSessionId?: string }> } | undefined;
+    setActive: ((opts: { session: string }) => Promise<void>) | undefined;
+  };
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const [email, setEmail] = useState("");
 

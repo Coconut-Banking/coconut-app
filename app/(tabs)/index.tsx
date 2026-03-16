@@ -370,7 +370,7 @@ export default function HomeScreen() {
               {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
             </Text>
           </TouchableOpacity>
-          {signOut && isSignedIn ? (
+          {isSignedIn ? (
             <TouchableOpacity
               style={styles.connectSignOutButton}
               onPress={async () => {
