@@ -102,5 +102,5 @@ export const colors = {
   },
 };
 
-export type ThemeColors = typeof colors.light;
+export type ThemeColors = Omit<typeof colors.light, "statusBarStyle"> & { statusBarStyle: "dark" | "light" };
 export type ThemeMode = "auto" | "light" | "dark";
