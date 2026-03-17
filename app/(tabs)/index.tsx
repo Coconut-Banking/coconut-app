@@ -24,6 +24,7 @@ import { getMerchantLogoUrl } from "../../lib/merchant-logos";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { useAccounts } from "../../hooks/useAccounts";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
@@ -47,6 +48,13 @@ function hashColor(str: string): string {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
   return MERCHANT_COLORS[Math.abs(h) % MERCHANT_COLORS.length];
+}
+
+const INSTITUTION_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6", "#EC4899", "#06B6D4", "#F97316"];
+function hashInstitutionColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return INSTITUTION_COLORS[Math.abs(h) % INSTITUTION_COLORS.length];
 }
 
 function fmtDate(dateStr: string): string {
@@ -219,10 +227,13 @@ function BankTag({ tx }: { tx: Transaction }) {
 }
 
 
-const TransactionRow = React.memo(function TransactionRow({ tx, onPress }: { tx: Transaction; onPress?: () => void }) {
+const TransactionRow = React.memo(function TransactionRow({ tx, onPress, institutionColor }: { tx: Transaction; onPress?: () => void; institutionColor?: string }) {
   const { text: amountText, isInflow } = formatAmountDisplay(tx);
   return (
     <Pressable style={styles.txRow} onPress={onPress}>
+      {institutionColor ? (
+        <View style={[styles.txInstitutionBar, { backgroundColor: institutionColor }]} />
+      ) : null}
       <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
       <View style={styles.txInfo}>
         <View style={styles.txMerchantRow}>
@@ -335,6 +346,11 @@ export default function HomeScreen() {
   const { transactions, linked, loading, status, refetch } = useTransactions();
   const { subscriptions } = useSubscriptions();
   const { summary: groupsSummary } = useGroupsSummary();
+  const { accounts: bankAccounts, byInstitution } = useAccounts();
+
+  const [selectedInstitution, setSelectedInstitution] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [showAccountSheet, setShowAccountSheet] = useState<string | null>(null);
 
   const [searchMode, setSearchMode] = useState<SearchMode>("exact");
   const [searchQuery, setSearchQuery] = useState("");
@@ -386,6 +402,30 @@ export default function HomeScreen() {
 
   const onPressTx = useCallback((tx: Transaction) => setSelectedTx(tx), []);
 
+  // Map transaction accountName/accountMask to institution_name
+  const txInstitutionMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const acct of bankAccounts) {
+      // Key by name and by mask for lookup
+      if (acct.name) map[`name:${acct.name}`] = acct.institution_name;
+      if (acct.mask) map[`mask:${acct.mask}`] = acct.institution_name;
+    }
+    return map;
+  }, [bankAccounts]);
+
+  const getInstitutionForTx = useCallback(
+    (tx: Transaction): string | null => {
+      if (tx.accountName && txInstitutionMap[`name:${tx.accountName}`]) {
+        return txInstitutionMap[`name:${tx.accountName}`];
+      }
+      if (tx.accountMask && txInstitutionMap[`mask:${tx.accountMask}`]) {
+        return txInstitutionMap[`mask:${tx.accountMask}`];
+      }
+      return null;
+    },
+    [txInstitutionMap],
+  );
+
   const displayTransactions = useMemo(() => {
     let list: Transaction[];
     if (searchMode === "exact") {
@@ -395,13 +435,31 @@ export default function HomeScreen() {
     } else {
       list = transactions;
     }
+    // Apply institution / account filter
+    if (selectedInstitution) {
+      const acctIds = (byInstitution[selectedInstitution] || []).map((a) => a.id);
+      const acctNames = (byInstitution[selectedInstitution] || []).map((a) => a.name);
+      const acctMasks = (byInstitution[selectedInstitution] || []).map((a) => a.mask);
+      list = list.filter((tx) => {
+        if (selectedAccountId) {
+          const acct = bankAccounts.find((a) => a.id === selectedAccountId);
+          if (!acct) return false;
+          return (tx.accountName && tx.accountName === acct.name) ||
+            (tx.accountMask && tx.accountMask === acct.mask);
+        }
+        return (
+          (tx.accountName && acctNames.includes(tx.accountName)) ||
+          (tx.accountMask && acctMasks.includes(tx.accountMask))
+        );
+      });
+    }
     // Sort: pending first, then by date desc (recent first) — match web
     return [...list].sort((a, b) => {
       if ((a.isPending ? 0 : 1) !== (b.isPending ? 0 : 1))
         return (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1);
       return b.date.localeCompare(a.date);
     });
-  }, [searchMode, transactions, semanticResults, searchQuery, hasSearchedSemantic]);
+  }, [searchMode, transactions, semanticResults, searchQuery, hasSearchedSemantic, selectedInstitution, selectedAccountId, byInstitution, bankAccounts]);
 
   const { pendingTxs, postedTxs } = useMemo(() => {
     const pendingTxs: Transaction[] = [];
@@ -778,6 +836,124 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Bank filter chips */}
+        {Object.keys(byInstitution).length >= 2 && (
+          <View style={styles.bankChipSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bankChipScroll}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.bankChip,
+                  !selectedInstitution && styles.bankChipActive,
+                ]}
+                onPress={() => {
+                  setSelectedInstitution(null);
+                  setSelectedAccountId(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.bankChipText,
+                    !selectedInstitution && styles.bankChipTextActive,
+                  ]}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+              {Object.keys(byInstitution).map((inst) => {
+                const isActive = selectedInstitution === inst;
+                const dotColor = hashInstitutionColor(inst);
+                return (
+                  <TouchableOpacity
+                    key={inst}
+                    style={[styles.bankChip, isActive && styles.bankChipActive]}
+                    onPress={() => {
+                      if (isActive) {
+                        setSelectedInstitution(null);
+                        setSelectedAccountId(null);
+                      } else {
+                        setSelectedInstitution(inst);
+                        setSelectedAccountId(null);
+                      }
+                    }}
+                    onLongPress={() => setShowAccountSheet(inst)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.bankChipDot, { backgroundColor: dotColor }]} />
+                    <Text
+                      style={[
+                        styles.bankChipText,
+                        isActive && styles.bankChipTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {inst}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {/* Account sub-chips when an institution is selected with 2+ accounts */}
+            {selectedInstitution &&
+              (byInstitution[selectedInstitution] || []).length >= 2 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.accountSubChipScroll}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.accountSubChip,
+                      !selectedAccountId && styles.accountSubChipActive,
+                    ]}
+                    onPress={() => setSelectedAccountId(null)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.accountSubChipText,
+                        !selectedAccountId && styles.accountSubChipTextActive,
+                      ]}
+                    >
+                      All
+                    </Text>
+                  </TouchableOpacity>
+                  {(byInstitution[selectedInstitution] || []).map((acct) => {
+                    const isActive = selectedAccountId === acct.id;
+                    const label = `${(acct.subtype || acct.type || "Account").replace(/_/g, " ")} ••${acct.mask || "****"}`;
+                    return (
+                      <TouchableOpacity
+                        key={acct.id}
+                        style={[
+                          styles.accountSubChip,
+                          isActive && styles.accountSubChipActive,
+                        ]}
+                        onPress={() =>
+                          setSelectedAccountId(isActive ? null : acct.id)
+                        }
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.accountSubChipText,
+                            isActive && styles.accountSubChipTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+          </View>
+        )}
+
         {/* Recent transactions */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
@@ -807,9 +983,12 @@ export default function HomeScreen() {
                 <View style={styles.txSectionHeader}>
                   <Text style={styles.txSectionTitle}>Pending</Text>
                 </View>
-                {pendingTxs.map((tx) => (
-                  <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} />
-                ))}
+                {pendingTxs.map((tx) => {
+                  const inst = getInstitutionForTx(tx);
+                  return (
+                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} />
+                  );
+                })}
               </View>
             )}
             {postedTxs.length > 0 && (
@@ -817,9 +996,12 @@ export default function HomeScreen() {
                 <View style={[styles.txSectionHeader, styles.txSectionHeaderPosted]}>
                   <Text style={styles.txSectionTitlePosted}>Posted</Text>
                 </View>
-                {postedTxs.map((tx) => (
-                  <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} />
-                ))}
+                {postedTxs.map((tx) => {
+                  const inst = getInstitutionForTx(tx);
+                  return (
+                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} />
+                  );
+                })}
               </View>
             )}
           </>
@@ -844,6 +1026,60 @@ export default function HomeScreen() {
           formatAmount={formatAmountDisplay}
         />
       )}
+
+      {/* Institution account sheet */}
+      <Modal
+        visible={!!showAccountSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountSheet(null)}
+      >
+        <Pressable style={styles.detailOverlay} onPress={() => setShowAccountSheet(null)}>
+          <Pressable style={styles.detailSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.detailHandle} />
+            {showAccountSheet && (
+              <>
+                <View style={styles.instSheetHeader}>
+                  <View style={[styles.bankChipDot, { backgroundColor: hashInstitutionColor(showAccountSheet), width: 8, height: 8, borderRadius: 4 }]} />
+                  <Text style={styles.instSheetTitle}>{showAccountSheet}</Text>
+                </View>
+                {(byInstitution[showAccountSheet] || []).map((acct) => (
+                  <View key={acct.id} style={styles.instSheetRow}>
+                    <View style={styles.instSheetAcctInfo}>
+                      <Text style={styles.instSheetAcctName}>{acct.name}</Text>
+                      <Text style={styles.instSheetAcctMeta}>
+                        {(acct.subtype || acct.type || "account").replace(/_/g, " ")} ••{acct.mask || "****"}
+                      </Text>
+                    </View>
+                    <Text style={styles.instSheetBalance}>
+                      ${(acct.balance_current ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Text>
+                  </View>
+                ))}
+                <View style={styles.instSheetTotalRow}>
+                  <Text style={styles.instSheetTotalLabel}>Total</Text>
+                  <Text style={styles.instSheetTotalValue}>
+                    ${(byInstitution[showAccountSheet] || [])
+                      .reduce((s, a) => s + (a.balance_current ?? 0), 0)
+                      .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.instSheetViewBtn}
+                  onPress={() => {
+                    const inst = showAccountSheet;
+                    setShowAccountSheet(null);
+                    setSelectedInstitution(inst);
+                    setSelectedAccountId(null);
+                  }}
+                >
+                  <Text style={styles.instSheetViewBtnText}>View all transactions</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={showFabMenu}
@@ -1235,4 +1471,140 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   detailCloseText: { fontSize: 16, fontWeight: "600", color: "#374151" },
+  // Institution bar on transaction rows
+  txInstitutionBar: {
+    width: 3,
+    borderRadius: 2,
+    alignSelf: "stretch",
+    marginRight: 10,
+  },
+  // Bank filter chip bar
+  bankChipSection: {
+    marginBottom: 16,
+  },
+  bankChipScroll: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  bankChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  bankChipActive: {
+    backgroundColor: "#3D8E62",
+    borderColor: "#3D8E62",
+  },
+  bankChipDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  bankChipText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#374151",
+  },
+  bankChipTextActive: {
+    color: "#fff",
+  },
+  // Account sub-chips
+  accountSubChipScroll: {
+    gap: 6,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  accountSubChip: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  accountSubChipActive: {
+    backgroundColor: "#D1EAE0",
+  },
+  accountSubChipText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#6B7280",
+  },
+  accountSubChipTextActive: {
+    color: "#2D5A44",
+    fontWeight: "600",
+  },
+  // Institution bottom sheet
+  instSheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  instSheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  instSheetRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  instSheetAcctInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  instSheetAcctName: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1F2937",
+  },
+  instSheetAcctMeta: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  instSheetBalance: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginLeft: 12,
+  },
+  instSheetTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  instSheetTotalLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  instSheetTotalValue: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  instSheetViewBtn: {
+    backgroundColor: "#3D8E62",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  instSheetViewBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+  },
 });
