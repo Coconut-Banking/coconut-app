@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,17 +11,22 @@ import {
   Alert,
   TextInput,
   Switch,
+  RefreshControl,
+  AppState,
+  DeviceEventEmitter,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch } from "../../../lib/api";
 import { useGroupsSummary, useRecentActivity } from "../../../hooks/useGroups";
 import type { GroupsSummary, FriendBalance, GroupSummary as GroupSummaryType, RecentActivityItem } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { SnapPress, SharedSkeletonScreen, haptic } from "../../../components/ui";
+import { colors, font, fontSize, shadow, radii, space, card, type as T } from "../../../lib/theme";
 
 const TABS = ["Friends", "Groups", "Activity"] as const;
 const C = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
@@ -84,9 +89,9 @@ function TabBar({ active, scrollX, width, onPress }: { active: number; scrollX: 
 
 // ── Friends Page ──
 
-function FriendsPage({ friends, w }: { friends: FriendBalance[]; w: number }) {
+function FriendsPage({ friends, w, refreshControl }: { friends: FriendBalance[]; w: number; refreshControl?: React.ReactElement }) {
   return (
-    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!friends.length ? (
         <View style={st.empty}>
           <Ionicons name="person-add-outline" size={32} color="#D1D5DB" />
@@ -116,9 +121,9 @@ function FriendsPage({ friends, w }: { friends: FriendBalance[]; w: number }) {
 
 // ── Groups Page ──
 
-function GroupsPage({ groups, w, onCreate }: { groups: GroupSummaryType[]; w: number; onCreate: () => void }) {
+function GroupsPage({ groups, w, onCreate, refreshControl }: { groups: GroupSummaryType[]; w: number; onCreate: () => void; refreshControl?: React.ReactElement }) {
   return (
-    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!groups.length ? (
         <View style={st.empty}>
           <Ionicons name="people-outline" size={32} color="#D1D5DB" />
@@ -158,9 +163,9 @@ function GroupsPage({ groups, w, onCreate }: { groups: GroupSummaryType[]; w: nu
 
 // ── Activity Page ──
 
-function ActivityPage({ items, w }: { items: RecentActivityItem[]; w: number }) {
+function ActivityPage({ items, w, refreshControl }: { items: RecentActivityItem[]; w: number; refreshControl?: React.ReactElement }) {
   return (
-    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!items.length ? (
         <View style={st.empty}>
           <Ionicons name="time-outline" size={32} color="#D1D5DB" />
@@ -213,12 +218,62 @@ export default function SharedIndex() {
   const demo = useDemoData();
 
   const { summary: realSummary, loading, refetch } = useGroupsSummary();
-  const { activity: realActivity } = useRecentActivity(!isDemoOn);
+  const { activity: realActivity, refetch: refetchActivity } = useRecentActivity(!isDemoOn);
+  const isFocused = useIsFocused();
 
   const summary = isDemoOn ? demo.summary : realSummary;
   const activity = isDemoOn ? demo.activity : realActivity;
 
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState(0);
+  const prevFocused = useRef(false);
+
+  const onRefresh = useCallback(async () => {
+    if (isDemoOn) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchActivity()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [isDemoOn, refetch, refetchActivity]);
+
+  useEffect(() => {
+    if (isFocused && !prevFocused.current && !isDemoOn) {
+      refetch();
+      refetchActivity();
+    }
+    prevFocused.current = isFocused;
+  }, [isFocused, isDemoOn, refetch, refetchActivity]);
+
+  useEffect(() => {
+    if (isDemoOn) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refetch();
+        refetchActivity();
+      }
+    });
+    return () => sub.remove();
+  }, [isDemoOn, refetch, refetchActivity]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("expense-added", () => {
+      refetch();
+      refetchActivity();
+    });
+    return () => sub.remove();
+  }, [refetch, refetchActivity]);
+
+  const prevDemoOn = useRef(isDemoOn);
+  useEffect(() => {
+    if (prevDemoOn.current && !isDemoOn) {
+      refetch();
+      refetchActivity();
+    }
+    prevDemoOn.current = isDemoOn;
+  }, [isDemoOn, refetch, refetchActivity]);
+
   const scrollX = useRef(new Animated.Value(0)).current;
   const pagerRef = useRef<FlatList>(null);
 
@@ -245,14 +300,18 @@ export default function SharedIndex() {
     } finally { setCreating(false); }
   };
 
+  const refreshControl = !isDemoOn ? (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
+  ) : undefined;
+
   const renderPage = useCallback(({ item }: { item: number }) => {
     switch (item) {
-      case 0: return <FriendsPage friends={summary?.friends ?? []} w={width} />;
-      case 1: return <GroupsPage groups={summary?.groups ?? []} w={width} onCreate={() => setShowCreate(true)} />;
-      case 2: return <ActivityPage items={activity} w={width} />;
+      case 0: return <FriendsPage friends={summary?.friends ?? []} w={width} refreshControl={refreshControl} />;
+      case 1: return <GroupsPage groups={summary?.groups ?? []} w={width} onCreate={() => setShowCreate(true)} refreshControl={refreshControl} />;
+      case 2: return <ActivityPage items={activity} w={width} refreshControl={refreshControl} />;
       default: return null;
     }
-  }, [summary, activity, width]);
+  }, [summary, activity, width, refreshControl]);
 
   if (loading && !summary) {
     return <SharedSkeletonScreen />;
@@ -337,78 +396,78 @@ export default function SharedIndex() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAF8" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F7FAF8" },
+  container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg },
   pad: { paddingHorizontal: 20, paddingTop: 4 },
   page: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 8 },
 
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: "900", color: "#1F2937", letterSpacing: -0.8 },
+  title: { fontSize: 28, fontFamily: font.black, color: colors.text, letterSpacing: -0.8 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   demoToggle: { flexDirection: "row", alignItems: "center", gap: 6 },
-  demoLabel: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
-  addExpBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#3D8E62", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  addExpText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  demoLabel: { fontSize: 12, fontFamily: font.semibold, color: colors.textTertiary },
+  addExpBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii["2xl"] },
+  addExpText: { color: "#fff", fontFamily: font.bold, fontSize: 13 },
 
   // Balance
-  balCard: { backgroundColor: "#fff", borderRadius: 16, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: "#F0F0F0" },
-  balCardGreen: { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" },
-  balCardRed: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  balCard: { backgroundColor: colors.surface, borderRadius: radii.xl, padding: 18, marginBottom: 14, ...shadow.md },
+  balCardGreen: { backgroundColor: colors.greenSurface, borderColor: colors.greenBorder },
+  balCardRed: { backgroundColor: colors.redSurface, borderColor: colors.redBorder },
   balTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  balLabel: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  balAmount: { fontSize: 26, fontWeight: "900", letterSpacing: -1 },
+  balLabel: { fontSize: 14, fontFamily: font.semibold, color: colors.textSecondary },
+  balAmount: { fontSize: 26, fontFamily: font.black, letterSpacing: -1 },
   balBottom: { flexDirection: "row", alignItems: "center" },
-  balSmLabel: { fontSize: 11, color: "#9CA3AF", marginBottom: 2 },
-  balSmVal: { fontSize: 16, fontWeight: "800" },
-  balDivider: { width: 1, height: 28, backgroundColor: "#E5E7EB", marginHorizontal: 16 },
+  balSmLabel: { fontSize: 11, fontFamily: font.regular, color: colors.textMuted, marginBottom: 2 },
+  balSmVal: { fontSize: 16, fontFamily: font.extrabold },
+  balDivider: { width: 1, height: 28, backgroundColor: colors.border, marginHorizontal: 16 },
 
   // Tabs
-  tabBar: { flexDirection: "row", backgroundColor: "#ECEEED", borderRadius: 12, padding: 3, marginBottom: 4, position: "relative" },
-  tabPill: { position: "absolute", top: 3, left: 3, bottom: 3, backgroundColor: "#fff", borderRadius: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
-  tabItem: { flex: 1, paddingVertical: 9, alignItems: "center", zIndex: 1 },
-  tabText: { fontSize: 14, fontWeight: "700", color: "#9CA3AF" },
-  tabTextActive: { color: "#1F2937" },
+  tabBar: { flexDirection: "row", backgroundColor: colors.border, borderRadius: radii.md, padding: 3, marginBottom: 4, position: "relative" as const },
+  tabPill: { position: "absolute" as const, top: 3, left: 3, bottom: 3, backgroundColor: colors.surface, borderRadius: radii.sm, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  tabItem: { flex: 1, paddingVertical: 9, alignItems: "center" as const, zIndex: 1 },
+  tabText: { fontSize: 14, fontFamily: font.bold, color: colors.textMuted },
+  tabTextActive: { color: colors.text },
 
   // Rows
-  row: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 14, borderRadius: 14, marginBottom: 6, borderWidth: 1, borderColor: "#F5F5F5" },
-  rowName: { fontSize: 16, fontWeight: "600", color: "#1F2937" },
-  rowSub: { fontSize: 12, color: "#9CA3AF", marginTop: 1 },
-  rowBal: { fontSize: 16, fontWeight: "800" },
-  groupIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#EEF7F2", alignItems: "center", justifyContent: "center" },
-  addRow: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
-  addIcon: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: "#E5E7EB", borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
-  addText: { fontSize: 14, color: "#9CA3AF", fontWeight: "600" },
+  row: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: colors.surface, padding: 14, borderRadius: radii.lg, marginBottom: 6, ...shadow.sm },
+  rowName: { fontSize: 16, fontFamily: font.semibold, color: colors.text },
+  rowSub: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 1 },
+  rowBal: { fontSize: 16, fontFamily: font.extrabold },
+  groupIcon: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: colors.primaryLight, alignItems: "center" as const, justifyContent: "center" as const },
+  addRow: { flexDirection: "row" as const, alignItems: "center" as const, padding: 14, gap: 12 },
+  addIcon: { width: 40, height: 40, borderRadius: radii["2xl"], borderWidth: 2, borderColor: colors.border, borderStyle: "dashed" as const, alignItems: "center" as const, justifyContent: "center" as const },
+  addText: { fontSize: 14, fontFamily: font.semibold, color: colors.textMuted },
 
   // Activity
-  actCard: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#F5F5F5", overflow: "hidden" },
-  actRow: { flexDirection: "row", alignItems: "center", padding: 14, gap: 10 },
-  actBorder: { borderBottomWidth: 1, borderBottomColor: "#F5F5F5" },
-  actDot: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  actWho: { fontSize: 14, color: "#374151", lineHeight: 18 },
-  actIn: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
-  actAmt: { fontSize: 14, fontWeight: "800" },
-  actTime: { fontSize: 11, color: "#C4C4C4", marginTop: 2 },
+  actCard: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden" as const, ...shadow.md },
+  actRow: { flexDirection: "row" as const, alignItems: "center" as const, padding: 14, gap: 10 },
+  actBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  actDot: { width: 32, height: 32, borderRadius: radii.xl, alignItems: "center" as const, justifyContent: "center" as const },
+  actWho: { fontSize: 14, fontFamily: font.regular, color: colors.textSecondary, lineHeight: 18 },
+  actIn: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 2 },
+  actAmt: { fontSize: 14, fontFamily: font.extrabold },
+  actTime: { fontSize: 11, fontFamily: font.regular, color: colors.textFaint, marginTop: 2 },
 
   // Empty
-  empty: { alignItems: "center", paddingVertical: 48 },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#9CA3AF", marginTop: 12 },
-  emptySub: { fontSize: 13, color: "#C4C4C4", marginTop: 4 },
-  emptyBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#3D8E62", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, marginTop: 16 },
-  emptyBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  empty: { alignItems: "center" as const, paddingVertical: 48 },
+  emptyTitle: { fontSize: 16, fontFamily: font.bold, color: colors.textMuted, marginTop: 12 },
+  emptySub: { fontSize: 13, fontFamily: font.regular, color: colors.textFaint, marginTop: 4 },
+  emptyBtn: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: radii["2xl"], marginTop: 16 },
+  emptyBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 14 },
 
   // Create
-  createCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: "#F0F0F0" },
-  createInput: { fontSize: 16, color: "#1F2937", borderBottomWidth: 1, borderBottomColor: "#F0F0F0", paddingBottom: 12, marginBottom: 12 },
-  createBtn: { backgroundColor: "#3D8E62", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
-  createBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  cancelText: { color: "#9CA3AF", fontWeight: "600", fontSize: 14, paddingVertical: 10 },
+  createCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, marginBottom: 12, ...shadow.md },
+  createInput: { fontSize: 16, fontFamily: font.regular, color: colors.text, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 12, marginBottom: 12 },
+  createBtn: { backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: radii["2xl"] },
+  createBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 14 },
+  cancelText: { color: colors.textMuted, fontFamily: font.semibold, fontSize: 14, paddingVertical: 10 },
 
   // Colors
-  green: { color: "#059669" },
-  red: { color: "#DC2626" },
-  amber: { color: "#B45309" },
-  muted: { color: "#C4C4C4" },
+  green: { color: colors.green },
+  red: { color: colors.red },
+  amber: { color: colors.amber },
+  muted: { color: colors.textFaint },
 
   // FAB
-  fab: { position: "absolute", bottom: 28, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: "#3D8E62", alignItems: "center", justifyContent: "center", shadowColor: "#3D8E62", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  fab: { position: "absolute" as const, bottom: 28, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary, alignItems: "center" as const, justifyContent: "center" as const, ...shadow.colored(colors.primary) },
 });

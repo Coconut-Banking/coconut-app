@@ -104,18 +104,29 @@ export function useTransactions() {
       });
   }, [apiFetch]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const runSyncThenFetch = useCallback(
+    async (silent = true) => {
+      try {
+        await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+      } catch {
+        // Sync may fail; still refetch from DB
+      }
+      fetchData(silent);
+    },
+    [apiFetch, fetchData]
+  );
 
-  // Refetch when app returns from background (e.g. after connect flow in browser)
-  // Use silent=true to avoid flickering — don't show loading spinner on refetch
+  useEffect(() => {
+    runSyncThenFetch(false);
+  }, [runSyncThenFetch]);
+
+  // Sync and refetch when app returns from background
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") fetchData(true);
+      if (state === "active") runSyncThenFetch(true);
     });
     return () => sub.remove();
-  }, [fetchData]);
+  }, [runSyncThenFetch]);
 
   return { transactions, linked, loading, status, refetch: fetchData };
 }

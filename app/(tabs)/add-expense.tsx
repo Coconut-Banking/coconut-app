@@ -9,13 +9,15 @@ import {
   ActivityIndicator,
   Platform,
   SafeAreaView,
+  DeviceEventEmitter,
 } from "react-native";
 import { useRouter, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
 import { useGroupsSummary } from "../../hooks/useGroups";
 import { useDemoMode } from "../../lib/demo-mode-context";
-import { DEMO_SUMMARY } from "../../lib/demo-data";
+import { useDemoData } from "../../lib/demo-context";
+import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -33,8 +35,9 @@ export default function AddExpenseScreen() {
   const nav = useRouter();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
+  const demo = useDemoData();
   const { summary: realSummary, loading } = useGroupsSummary();
-  const summary = isDemoOn ? DEMO_SUMMARY : realSummary;
+  const summary = isDemoOn ? demo.summary : realSummary;
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -111,22 +114,33 @@ export default function AddExpenseScreen() {
     if (!valid && splitMethod === "exact") { setError(`Must add up to $${total.toFixed(2)}`); return; }
     if (!valid && splitMethod === "percent") { setError("Must add up to 100%"); return; }
 
-    if (isDemoOn) { setStep(3); return; }
+    const t = targets[0];
+    const desc = description.trim() || "Expense";
+
+    if (isDemoOn) {
+      demo.addExpense(total, desc, t.key, t.type);
+      setStep(3);
+      return;
+    }
+
     setSaving(true);
     try {
-      const t = targets[0];
       const res = await apiFetch("/api/manual-expense", {
         method: "POST",
         body: {
           amount: total,
-          description: description.trim() || "Expense",
+          description: desc,
           groupId: t.type === "group" ? t.key : t.key.slice(0, 36),
           personKey: t.type === "friend" ? t.key : undefined,
           recurringFrequency: recurring !== "none" ? recurring : undefined,
         },
       });
-      if ((await res.json()) && res.ok) setStep(3);
-      else setError("Failed to save");
+      if ((await res.json()) && res.ok) {
+        DeviceEventEmitter.emit("expense-added");
+        setStep(3);
+      } else {
+        setError("Failed to save");
+      }
     } catch { setError("Failed"); }
     finally { setSaving(false); }
   };
@@ -328,83 +342,83 @@ export default function AddExpenseScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F7FAF8" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F7FAF8" },
+  root: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg },
 
   bar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12 },
-  barTitle: { fontSize: 17, fontWeight: "700", color: "#1F2937" },
-  pill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#3D8E62", paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
+  barTitle: { fontSize: 17, fontWeight: "700", fontFamily: font.bold, color: colors.text },
+  pill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 9, borderRadius: radii["2xl"] },
   pillOff: { opacity: 0.3 },
-  pillText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  pillText: { color: "#fff", fontWeight: "700", fontFamily: font.bold, fontSize: 14 },
 
   chips: { gap: 8, paddingHorizontal: 20, paddingBottom: 8 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 20, paddingBottom: 8 },
-  chip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
-  chipStatic: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#EEF7F2", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
+  chip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii["2xl"], paddingHorizontal: 10, paddingVertical: 6, ...shadow.sm },
+  chipStatic: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.primaryLight, borderRadius: radii["2xl"], paddingHorizontal: 10, paddingVertical: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  chipLabel: { fontSize: 13, fontWeight: "600", color: "#1F2937" },
-  chipBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 20, paddingVertical: 8, backgroundColor: "#EEF7F2" },
-  chipBarLabel: { fontSize: 13, color: "#6B7280" },
-  chipBarNames: { fontSize: 13, fontWeight: "700", color: "#3D8E62", flex: 1 },
+  chipLabel: { fontSize: 13, fontWeight: "600", fontFamily: font.semibold, color: colors.text },
+  chipBar: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 20, paddingVertical: 8, backgroundColor: colors.primaryLight },
+  chipBarLabel: { fontSize: 13, fontFamily: font.regular, color: colors.textTertiary },
+  chipBarNames: { fontSize: 13, fontWeight: "700", fontFamily: font.bold, color: colors.primary, flex: 1 },
 
-  search: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: "#F0F0F0" },
-  searchInput: { flex: 1, fontSize: 16, color: "#1F2937" },
+  search: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, backgroundColor: colors.surface, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.borderSubtle, ...shadow.sm },
+  searchInput: { flex: 1, fontSize: 16, fontFamily: font.regular, color: colors.text },
 
   list: { flex: 1, paddingHorizontal: 20, marginTop: 12 },
-  label: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 11, gap: 12 },
-  rowOn: { backgroundColor: "#F0F9F4", marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12 },
+  label: { fontSize: 11, fontWeight: "800", fontFamily: font.extrabold, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
+  row: { flexDirection: "row", alignItems: "center", paddingVertical: 11, gap: 12, ...shadow.sm },
+  rowOn: { backgroundColor: colors.greenSurface, marginHorizontal: -8, paddingHorizontal: 8, borderRadius: radii.md },
   av: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-  avT: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  gIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: "#EEF7F2", alignItems: "center", justifyContent: "center" },
-  rowName: { flex: 1, fontSize: 15, fontWeight: "600", color: "#1F2937" },
-  rowMeta: { fontSize: 12, color: "#9CA3AF" },
-  ck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
-  ckOn: { borderColor: "#3D8E62", backgroundColor: "#3D8E62" },
+  avT: { color: "#fff", fontWeight: "700", fontFamily: font.bold, fontSize: 13 },
+  gIcon: { width: 38, height: 38, borderRadius: radii.sm, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  rowName: { flex: 1, fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.text },
+  rowMeta: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted },
+  ck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  ckOn: { borderColor: colors.primary, backgroundColor: colors.primary },
 
   amtWrap: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", paddingVertical: 28 },
-  amtSign: { fontSize: 32, fontWeight: "300", color: "#9CA3AF", marginTop: 6 },
-  amtInput: { fontSize: 52, fontWeight: "800", color: "#1F2937", minWidth: 50, textAlign: "center", letterSpacing: -2 },
+  amtSign: { fontSize: 32, fontWeight: "300", fontFamily: font.regular, color: colors.textMuted, marginTop: 6 },
+  amtInput: { fontSize: 52, fontWeight: "800", fontFamily: font.extrabold, color: colors.text, minWidth: 50, textAlign: "center", letterSpacing: -2 },
 
   splitRow: { flexDirection: "row", gap: 6, marginBottom: 16 },
-  splitBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3, paddingVertical: 9, borderRadius: 10, backgroundColor: "#F3F4F6" },
-  splitBtnOn: { backgroundColor: "#3D8E62" },
-  splitLabel: { fontSize: 11, fontWeight: "700", color: "#6B7280" },
+  splitBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3, paddingVertical: 9, borderRadius: radii.sm, backgroundColor: colors.borderLight },
+  splitBtnOn: { backgroundColor: colors.primary },
+  splitLabel: { fontSize: 11, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary },
 
   eqBadge: { alignItems: "center", marginBottom: 20 },
-  eqText: { fontSize: 14, fontWeight: "700", color: "#3D8E62", backgroundColor: "#EEF7F2", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, overflow: "hidden" },
+  eqText: { fontSize: 14, fontWeight: "700", fontFamily: font.bold, color: colors.primary, backgroundColor: colors.primaryLight, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii["2xl"], overflow: "hidden" },
 
-  bkCard: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#F0F0F0", padding: 14, marginBottom: 16 },
+  bkCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14, marginBottom: 16, ...shadow.md },
   bkHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  bkTitle: { fontSize: 12, fontWeight: "700", color: "#6B7280" },
-  bkBadge: { fontSize: 12, fontWeight: "700", color: "#3D8E62" },
+  bkTitle: { fontSize: 12, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary },
+  bkBadge: { fontSize: 12, fontWeight: "700", fontFamily: font.bold, color: colors.primary },
   bkRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, gap: 8 },
   bkDot: { width: 8, height: 8, borderRadius: 4 },
-  bkName: { width: 55, fontSize: 14, fontWeight: "600", color: "#1F2937" },
-  bkInputWrap: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB", borderRadius: 8, paddingHorizontal: 8, borderWidth: 1, borderColor: "#F0F0F0" },
-  bkPre: { fontSize: 13, color: "#9CA3AF", fontWeight: "600" },
-  bkSuf: { fontSize: 12, color: "#9CA3AF", fontWeight: "600", marginLeft: 2 },
-  bkInput: { flex: 1, fontSize: 14, fontWeight: "600", color: "#1F2937", paddingVertical: 7 },
-  bkShare: { width: 55, fontSize: 13, fontWeight: "700", color: "#374151", textAlign: "right" },
+  bkName: { width: 55, fontSize: 14, fontWeight: "600", fontFamily: font.semibold, color: colors.text },
+  bkInputWrap: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radii.sm, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.borderSubtle },
+  bkPre: { fontSize: 13, color: colors.textMuted, fontWeight: "600", fontFamily: font.semibold },
+  bkSuf: { fontSize: 12, color: colors.textMuted, fontWeight: "600", fontFamily: font.semibold, marginLeft: 2 },
+  bkInput: { flex: 1, fontSize: 14, fontWeight: "600", fontFamily: font.semibold, color: colors.text, paddingVertical: 7 },
+  bkShare: { width: 55, fontSize: 13, fontWeight: "700", fontFamily: font.bold, color: colors.textSecondary, textAlign: "right" },
 
-  descWrap: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, borderWidth: 1, borderColor: "#F0F0F0", marginBottom: 12 },
-  descInput: { flex: 1, fontSize: 15, color: "#1F2937" },
+  descWrap: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 12, borderWidth: 1, borderColor: colors.borderSubtle, marginBottom: 12 },
+  descInput: { flex: 1, fontSize: 15, fontFamily: font.regular, color: colors.text },
   recurWrap: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 },
-  recurLabel: { fontSize: 14, fontWeight: "600", color: "#9CA3AF" },
+  recurLabel: { fontSize: 14, fontWeight: "600", fontFamily: font.semibold, color: colors.textMuted },
   recurOptions: { flexDirection: "row", gap: 6, flex: 1, justifyContent: "flex-end" },
-  recurChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: "#F3F4F6" },
-  recurChipOn: { backgroundColor: "#3D8E62" },
-  recurChipText: { fontSize: 12, fontWeight: "700", color: "#6B7280" },
+  recurChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii["2xl"], backgroundColor: colors.borderLight },
+  recurChipOn: { backgroundColor: colors.primary },
+  recurChipText: { fontSize: 12, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary },
   recurChipTextOn: { color: "#fff" },
 
-  err: { fontSize: 13, color: "#DC2626", textAlign: "center", marginTop: 8, paddingHorizontal: 20 },
+  err: { fontSize: 13, fontFamily: font.medium, color: colors.red, textAlign: "center", marginTop: 8, paddingHorizontal: 20 },
 
   confirmWrap: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
   confirmIcon: { marginBottom: 20 },
-  confirmTitle: { fontSize: 24, fontWeight: "900", color: "#1F2937", marginBottom: 8 },
-  confirmSub: { fontSize: 15, color: "#6B7280", textAlign: "center", lineHeight: 22, marginBottom: 28 },
-  confirmBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#3D8E62", paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14, width: "100%", marginBottom: 12 },
-  confirmBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  confirmBtnOutline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 2, borderColor: "#3D8E62", paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14, width: "100%", marginBottom: 8 },
-  confirmBtnOutlineText: { color: "#3D8E62", fontWeight: "700", fontSize: 16 },
+  confirmTitle: { fontSize: 24, fontWeight: "900", fontFamily: font.black, color: colors.text, marginBottom: 8 },
+  confirmSub: { fontSize: 15, fontFamily: font.regular, color: colors.textTertiary, textAlign: "center", lineHeight: 22, marginBottom: 28 },
+  confirmBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28, borderRadius: radii.lg, width: "100%", marginBottom: 12, ...shadow.md },
+  confirmBtnText: { color: "#fff", fontWeight: "700", fontFamily: font.bold, fontSize: 16 },
+  confirmBtnOutline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 2, borderColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28, borderRadius: radii.lg, width: "100%", marginBottom: 8 },
+  confirmBtnOutlineText: { color: colors.primary, fontWeight: "700", fontFamily: font.bold, fontSize: 16 },
 });

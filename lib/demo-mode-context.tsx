@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import * as SecureStore from "expo-secure-store";
 
-const DEMO_MODE_KEY = "@coconut/demo_mode";
+const DEMO_MODE_KEY = "coconut.demo_mode";
 
 interface DemoModeContextValue {
   isDemoOn: boolean;
