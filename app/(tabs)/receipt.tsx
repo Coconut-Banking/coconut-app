@@ -139,7 +139,7 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
       </View>
       {rs.imageUri && !rs.isPdf && <Image source={{ uri: rs.imageUri }} style={st.preview} resizeMode="contain" />}
       {rs.imageUri && rs.isPdf && (
-        <View style={st.pdfPreview}><Ionicons name="document-text" size={40} color="#3D8E62" /><Text style={st.pdfText}>PDF selected</Text></View>
+        <View style={[st.pdfPreview, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="document-text" size={40} color={theme.primary} /><Text style={[st.pdfText, { color: theme.textSecondary }]}>PDF selected</Text></View>
       )}
     </View>
   );
@@ -164,50 +164,50 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
     <View style={{ gap: 16 }}>
       {/* Merchant */}
       <View>
-        <Text style={st.label}>Merchant</Text>
-        <TextInput style={st.input} value={rs.editMerchant} onChangeText={rs.setEditMerchant} placeholder="Restaurant name" placeholderTextColor="#C4C4C4" />
+        <Text style={[st.label, { color: theme.textTertiary }]}>Merchant</Text>
+        <TextInput style={[st.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={rs.editMerchant} onChangeText={rs.setEditMerchant} placeholder="Restaurant name" placeholderTextColor={theme.inputPlaceholder} />
       </View>
 
       {/* Editable items */}
       <View>
-        <Text style={st.label}>Items</Text>
+        <Text style={[st.label, { color: theme.textTertiary }]}>Items</Text>
         {rs.editItems.map((item, idx) => (
-          <View key={item.id} style={st.itemCard}>
+          <View key={item.id} style={[st.itemCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             <View style={st.itemTop}>
               <TextInput
-                style={st.itemNameInput}
+                style={[st.itemNameInput, { color: theme.text, borderBottomColor: theme.borderLight }]}
                 value={item.name}
                 onChangeText={(v) => rs.updateItem(item.id, { name: v })}
                 placeholder="Item name"
-                placeholderTextColor="#C4C4C4"
+                placeholderTextColor={theme.inputPlaceholder}
               />
               <TouchableOpacity onPress={() => rs.removeItem(item.id)} hitSlop={8}>
-                <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                <Ionicons name="trash-outline" size={18} color={theme.error} />
               </TouchableOpacity>
             </View>
             <View style={st.itemBottom}>
               {/* Quantity stepper */}
-              <View style={st.stepper}>
+              <View style={[st.stepper, { backgroundColor: theme.surfaceTertiary }]}>
                 <TouchableOpacity
                   style={st.stepperBtn}
                   onPress={() => { if (item.quantity > 1) rs.updateItem(item.id, { quantity: item.quantity - 1 }); }}
                 >
-                  <Ionicons name="remove" size={16} color={item.quantity <= 1 ? "#D1D5DB" : "#374151"} />
+                  <Ionicons name="remove" size={16} color={item.quantity <= 1 ? theme.border : theme.textSecondary} />
                 </TouchableOpacity>
-                <Text style={st.stepperVal}>{item.quantity}</Text>
+                <Text style={[st.stepperVal, { color: theme.text }]}>{item.quantity}</Text>
                 <TouchableOpacity
                   style={st.stepperBtn}
                   onPress={() => rs.updateItem(item.id, { quantity: item.quantity + 1 })}
                 >
-                  <Ionicons name="add" size={16} color="#374151" />
+                  <Ionicons name="add" size={16} color={theme.textSecondary} />
                 </TouchableOpacity>
               </View>
-              <Text style={st.itemX}>×</Text>
+              <Text style={[st.itemX, { color: theme.textQuaternary }]}>×</Text>
               {/* Unit price */}
-              <View style={st.priceWrap}>
-                <Text style={st.pricePre}>$</Text>
+              <View style={[st.priceWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
+                <Text style={[st.pricePre, { color: theme.textQuaternary }]}>$</Text>
                 <TextInput
-                  style={st.priceInput}
+                  style={[st.priceInput, { color: theme.text }]}
                   value={String(item.unitPrice)}
                   onChangeText={(v) => {
                     const n = parseFloat(v) || 0;
@@ -217,36 +217,36 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                   selectTextOnFocus
                 />
               </View>
-              <Text style={st.itemEquals}>=</Text>
-              <Text style={st.itemTotal}>${item.totalPrice.toFixed(2)}</Text>
+              <Text style={[st.itemEquals, { color: theme.textQuaternary }]}>=</Text>
+              <Text style={[st.itemTotal, { color: theme.text }]}>${item.totalPrice.toFixed(2)}</Text>
             </View>
           </View>
         ))}
-        <TouchableOpacity style={st.addItemBtn} onPress={rs.addItem}>
-          <Ionicons name="add-circle-outline" size={20} color="#3D8E62" />
-          <Text style={st.addItemText}>Add item</Text>
+        <TouchableOpacity style={[st.addItemBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={rs.addItem}>
+          <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
+          <Text style={[st.addItemText, { color: theme.primary }]}>Add item</Text>
         </TouchableOpacity>
       </View>
 
       {/* Totals */}
-      <View style={st.totalsCard}>
+      <View style={[st.totalsCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
         <TotalRow label="Subtotal" value={rs.editSubtotal} editable={false} />
         <TotalRow label="Tax" value={rs.editTax} onChange={(v) => rs.setEditTax(v)} />
         <TotalRow label="Tip" value={rs.editTip} onChange={(v) => rs.setEditTip(v)} />
-        <View style={st.totalDivider} />
+        <View style={[st.totalDivider, { backgroundColor: theme.border }]} />
         <View style={st.totalFinalRow}>
-          <Text style={st.totalFinalLabel}>Total</Text>
-          <Text style={st.totalFinalValue}>${rs.editTotal.toFixed(2)}</Text>
+          <Text style={[st.totalFinalLabel, { color: theme.text }]}>Total</Text>
+          <Text style={[st.totalFinalValue, { color: theme.text }]}>${rs.editTotal.toFixed(2)}</Text>
         </View>
       </View>
 
       {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("upload")}>
-          <Ionicons name="chevron-back" size={18} color="#6B7280" /><Text style={st.navBackText}>Back</Text>
+          <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[st.btn, (rs.saving || rs.editItems.length === 0) && st.btnOff]}
+          style={[st.btn, { backgroundColor: theme.primary }, (rs.saving || rs.editItems.length === 0) && st.btnOff]}
           onPress={rs.confirmItems}
           disabled={rs.saving || rs.editItems.length === 0}
         >
@@ -260,14 +260,15 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 }
 
 function TotalRow({ label, value, editable = true, onChange }: { label: string; value: number; editable?: boolean; onChange?: (v: number) => void }) {
+  const { theme } = useTheme();
   return (
     <View style={st.totalRow}>
-      <Text style={st.totalLabel}>{label}</Text>
+      <Text style={[st.totalLabel, { color: theme.textTertiary }]}>{label}</Text>
       {editable && onChange ? (
-        <View style={st.totalInputWrap}>
-          <Text style={st.totalPre}>$</Text>
+        <View style={[st.totalInputWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
+          <Text style={[st.totalPre, { color: theme.textQuaternary }]}>$</Text>
           <TextInput
-            style={st.totalInput}
+            style={[st.totalInput, { color: theme.text }]}
             value={String(value)}
             onChangeText={(v) => onChange(parseFloat(v) || 0)}
             keyboardType="decimal-pad"
@@ -275,7 +276,7 @@ function TotalRow({ label, value, editable = true, onChange }: { label: string; 
           />
         </View>
       ) : (
-        <Text style={st.totalVal}>${value.toFixed(2)}</Text>
+        <Text style={[st.totalVal, { color: theme.textSecondary }]}>${value.toFixed(2)}</Text>
       )}
     </View>
   );
@@ -332,7 +333,7 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
     <View style={{ gap: 16 }}>
       {/* People section */}
       <View>
-        <Text style={st.label}>People at the table</Text>
+        <Text style={[st.label, { color: theme.textTertiary }]}>People at the table</Text>
         <View style={st.peopleRow}>
           {rs.people.map((p, i) => (
             <TouchableOpacity key={p.name} style={[st.personChip, { backgroundColor: pColor(i) }]} onPress={() => rs.removePerson(p.name)}>
@@ -342,23 +343,23 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
           ))}
         </View>
         <View style={st.addPersonRow}>
-          <TextInput style={st.searchInput} value={search} onChangeText={setSearch} placeholder="Search contacts or type a name" placeholderTextColor="#C4C4C4" onSubmitEditing={addNew} />
-          <TouchableOpacity style={[st.addBtn, !search.trim() && st.btnOff]} onPress={addNew} disabled={!search.trim()}>
+          <TextInput style={[st.searchInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={search} onChangeText={setSearch} placeholder="Search contacts or type a name" placeholderTextColor={theme.inputPlaceholder} onSubmitEditing={addNew} />
+          <TouchableOpacity style={[st.addBtn, { backgroundColor: theme.primary }, !search.trim() && st.btnOff]} onPress={addNew} disabled={!search.trim()}>
             <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
         {filtered.length > 0 && search.length > 0 && (
-          <View style={st.dropdown}>
+          <View style={[st.dropdown, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             {filtered.map(c => (
-              <TouchableOpacity key={`${c.groupId}-${c.memberId}`} style={st.dropdownRow} onPress={() => addFromContact(c)}>
-                <Text style={st.dropdownName}>{c.displayName}</Text>
-                {c.email && <Text style={st.dropdownEmail} numberOfLines={1}>{c.email}</Text>}
+              <TouchableOpacity key={`${c.groupId}-${c.memberId}`} style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => addFromContact(c)}>
+                <Text style={[st.dropdownName, { color: theme.text }]}>{c.displayName}</Text>
+                {c.email && <Text style={[st.dropdownEmail, { color: theme.textQuaternary }]} numberOfLines={1}>{c.email}</Text>}
               </TouchableOpacity>
             ))}
             {search.trim() && !contacts.some(c => c.displayName.toLowerCase() === search.trim().toLowerCase()) && (
-              <TouchableOpacity style={st.dropdownRow} onPress={() => { rs.addPerson(search.trim(), { hasAccount: false }); setSearch(""); }}>
-                <Ionicons name="person-add-outline" size={14} color="#3D8E62" />
-                <Text style={st.dropdownAdd}>Add "{search.trim()}"</Text>
+              <TouchableOpacity style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => { rs.addPerson(search.trim(), { hasAccount: false }); setSearch(""); }}>
+                <Ionicons name="person-add-outline" size={14} color={theme.primary} />
+                <Text style={[st.dropdownAdd, { color: theme.primary }]}>Add "{search.trim()}"</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -367,11 +368,11 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
 
       {/* Items with inline assignment */}
       <View>
-        <Text style={st.label}>Assign items</Text>
+        <Text style={[st.label, { color: theme.textTertiary }]}>Assign items</Text>
         {rs.people.length === 0 && (
           <View style={st.emptyAssign}>
-            <Ionicons name="person-add-outline" size={24} color="#D1D5DB" />
-            <Text style={st.emptyAssignText}>Add people above to start assigning items</Text>
+            <Ionicons name="person-add-outline" size={24} color={theme.border} />
+            <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>Add people above to start assigning items</Text>
           </View>
         )}
         {rs.itemsWithExtras.map((item) => {
@@ -379,21 +380,21 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
           const isAssigned = assigned.length > 0;
           const isUnassigned = !isAssigned && rs.people.length > 0;
           return (
-            <View key={item.id} style={[st.assignCard, isAssigned && st.assignCardDone, isUnassigned && st.assignCardWarn]}>
+            <View key={item.id} style={[st.assignCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }, isAssigned && { borderColor: theme.primaryLight }, isUnassigned && { borderColor: theme.warningLight, backgroundColor: theme.warningLight }]}>
               <View style={st.assignCardTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={st.assignItemName}>{item.name}</Text>
-                  <Text style={st.assignItemMeta}>
+                  <Text style={[st.assignItemName, { color: theme.text }]}>{item.name}</Text>
+                  <Text style={[st.assignItemMeta, { color: theme.textQuaternary }]}>
                     ${item.totalPrice.toFixed(2)}
                     {item.proportionalExtra > 0 ? ` + $${item.proportionalExtra.toFixed(2)} tax/tip` : ""}
                     {" = "}
-                    <Text style={{ fontWeight: "700", color: "#1F2937" }}>${item.finalPrice.toFixed(2)}</Text>
+                    <Text style={{ fontWeight: "700", color: theme.text }}>${item.finalPrice.toFixed(2)}</Text>
                   </Text>
                 </View>
                 {rs.people.length > 0 && (
-                  <TouchableOpacity style={st.everyoneBtn} onPress={() => rs.assignAll(item.id)}>
-                    <Ionicons name="people" size={14} color="#3D8E62" />
-                    <Text style={st.everyoneBtnText}>All</Text>
+                  <TouchableOpacity style={[st.everyoneBtn, { backgroundColor: theme.primaryLight }]} onPress={() => rs.assignAll(item.id)}>
+                    <Ionicons name="people" size={14} color={theme.primary} />
+                    <Text style={[st.everyoneBtnText, { color: theme.primary }]}>All</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -404,11 +405,11 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
                     return (
                       <TouchableOpacity
                         key={person.name}
-                        style={[st.assignChip, on ? { backgroundColor: pColor(pIdx) } : st.assignChipOff]}
+                        style={[st.assignChip, on ? { backgroundColor: pColor(pIdx) } : { backgroundColor: theme.surfaceTertiary }]}
                         onPress={() => rs.toggleAssignment(item.id, person)}
                         activeOpacity={0.7}
                       >
-                        <Text style={[st.assignChipText, on && { color: "#fff" }]}>
+                        <Text style={[st.assignChipText, { color: theme.textTertiary }, on && { color: "#fff" }]}>
                           {person.name}
                           {on && assigned.length > 1 ? ` $${(item.finalPrice / assigned.length).toFixed(2)}` : ""}
                         </Text>
@@ -424,15 +425,15 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
 
       {/* Per-person running totals */}
       {rs.people.length > 0 && personTotals.size > 0 && (
-        <View style={st.runningTotals}>
-          <Text style={st.label}>Running totals</Text>
+        <View style={[st.runningTotals, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          <Text style={[st.label, { color: theme.textTertiary }]}>Running totals</Text>
           {rs.people.map((p, i) => {
             const total = personTotals.get(p.name.toLowerCase()) ?? 0;
             return (
               <View key={p.name} style={st.runningRow}>
                 <View style={[st.runningDot, { backgroundColor: pColor(i) }]} />
-                <Text style={st.runningName}>{p.name}</Text>
-                <Text style={st.runningAmount}>${total.toFixed(2)}</Text>
+                <Text style={[st.runningName, { color: theme.text }]}>{p.name}</Text>
+                <Text style={[st.runningAmount, { color: theme.text }]}>${total.toFixed(2)}</Text>
               </View>
             );
           })}
@@ -442,16 +443,16 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
       {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("review")}>
-          <Ionicons name="chevron-back" size={18} color="#6B7280" /><Text style={st.navBackText}>Back</Text>
+          <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <View style={{ alignItems: "flex-end", gap: 4 }}>
           {!allAssigned && rs.people.length > 0 && unassignedCount > 0 && (
-            <Text style={{ fontSize: 12, color: "#DC2626" }}>
+            <Text style={{ fontSize: 12, color: theme.error }}>
               {unassignedCount} item{unassignedCount > 1 ? "s" : ""} unassigned
             </Text>
           )}
           <TouchableOpacity
-            style={[st.btn, (!allAssigned || rs.people.length === 0 || rs.saving) && st.btnOff]}
+            style={[st.btn, { backgroundColor: theme.primary }, (!allAssigned || rs.people.length === 0 || rs.saving) && st.btnOff]}
             onPress={async () => { await rs.saveAssignments(); rs.computeSummary(); }}
             disabled={!allAssigned || rs.people.length === 0 || rs.saving}
           >
@@ -541,26 +542,26 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
 
   return (
     <View style={{ gap: 20 }}>
-      <Text style={st.summaryTitle}>
-        {rs.editMerchant ? <Text style={{ fontWeight: "700", color: "#1F2937" }}>{rs.editMerchant}</Text> : null}
+      <Text style={[st.summaryTitle, { color: theme.textTertiary }]}>
+        {rs.editMerchant ? <Text style={{ fontWeight: "700", color: theme.text }}>{rs.editMerchant}</Text> : null}
         {rs.editMerchant ? " — " : ""}${grandTotal.toFixed(2)} total
       </Text>
 
       {/* Per-person shares */}
       {rs.personShares.map((person, idx) => (
-        <View key={person.name} style={st.shareCard}>
-          <View style={st.shareHeader}>
+        <View key={person.name} style={[st.shareCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          <View style={[st.shareHeader, { backgroundColor: theme.surfaceSecondary }]}>
             <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
               <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
             </View>
-            <Text style={st.shareName}>{person.name}</Text>
-            <Text style={st.shareTotal}>${person.totalOwed.toFixed(2)}</Text>
+            <Text style={[st.shareName, { color: theme.text }]}>{person.name}</Text>
+            <Text style={[st.shareTotal, { color: theme.text }]}>${person.totalOwed.toFixed(2)}</Text>
           </View>
           <View style={st.shareItems}>
             {person.items.map((item, i) => (
               <View key={i} style={st.shareItemRow}>
-                <Text style={st.shareItemName}>{item.itemName}</Text>
-                <Text style={st.shareItemAmt}>${item.shareAmount.toFixed(2)}</Text>
+                <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
+                <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
               </View>
             ))}
           </View>
@@ -570,28 +571,28 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
       {/* Actions */}
       {!finished && (
         <View style={{ gap: 12 }}>
-          <Text style={st.label}>What next?</Text>
-          <View style={st.actionCard}>
-            <Text style={st.actionTitle}>Settle now</Text>
-            <Text style={st.actionSub}>{groups.length > 0 ? "Save to a group and share payment links." : "Create a group and settle."}</Text>
+          <Text style={[st.label, { color: theme.textTertiary }]}>What next?</Text>
+          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <Text style={[st.actionTitle, { color: theme.text }]}>Settle now</Text>
+            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>{groups.length > 0 ? "Save to a group and share payment links." : "Create a group and settle."}</Text>
             {groups.length > 1 && (
               <View style={st.groupPicker}>
                 {groups.map(g => (
-                  <TouchableOpacity key={g.id} style={[st.groupChip, selectedGroupId === g.id && st.groupChipOn]} onPress={() => setSelectedGroupId(g.id)}>
-                    <Text style={[st.groupChipText, selectedGroupId === g.id && { color: "#3D8E62", fontWeight: "700" }]}>{g.name}</Text>
+                  <TouchableOpacity key={g.id} style={[st.groupChip, { backgroundColor: theme.surfaceTertiary }, selectedGroupId === g.id && { backgroundColor: theme.primaryLight }]} onPress={() => setSelectedGroupId(g.id)}>
+                    <Text style={[st.groupChipText, { color: theme.textTertiary }, selectedGroupId === g.id && { color: theme.primary, fontWeight: "700" }]}>{g.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
-            <TouchableOpacity style={[st.btn, finishing && st.btnOff]} onPress={() => groups.length > 0 ? handleFinish({ stayForSettle: true }) : handleSettleNoGroup()} disabled={finishing}>
+            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }, finishing && st.btnOff]} onPress={() => groups.length > 0 ? handleFinish({ stayForSettle: true }) : handleSettleNoGroup()} disabled={finishing}>
               {finishing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="checkmark-circle" size={18} color="#fff" /><Text style={st.btnText}>Save & settle</Text></>}
             </TouchableOpacity>
           </View>
-          <View style={st.actionCard}>
-            <Text style={st.actionTitle}>Track for later</Text>
-            <Text style={st.actionSub}>Add to shared expenses, settle whenever.</Text>
-            <TouchableOpacity style={[st.btnOutline, (!selectedGroupId || finishing) && st.btnOff]} onPress={() => handleFinish()} disabled={!selectedGroupId || finishing}>
-              <Ionicons name="people" size={18} color="#3D8E62" /><Text style={st.btnOutlineText}>Add to group</Text>
+          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <Text style={[st.actionTitle, { color: theme.text }]}>Track for later</Text>
+            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>Add to shared expenses, settle whenever.</Text>
+            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }, (!selectedGroupId || finishing) && st.btnOff]} onPress={() => handleFinish()} disabled={!selectedGroupId || finishing}>
+              <Ionicons name="people" size={18} color={theme.primary} /><Text style={[st.btnOutlineText, { color: theme.primary }]}>Add to group</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -600,14 +601,14 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
       {/* Post-save */}
       {finished && (
         <View style={{ gap: 16 }}>
-          <View style={st.successCard}><Ionicons name="checkmark-circle" size={22} color="#059669" /><Text style={st.successText}>Saved to group!</Text></View>
+          <View style={[st.successCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}><Ionicons name="checkmark-circle" size={22} color={theme.success} /><Text style={[st.successText, { color: theme.positive }]}>Saved to group!</Text></View>
           {suggestions.filter(s => !recordedSettlements.has(`${s.fromMemberId}-${s.toMemberId}`)).map((s, i) => (
-            <View key={i} style={st.suggRow}>
-              <Text style={st.suggText}><Text style={{ fontWeight: "700" }}>{s.fromName}</Text> → <Text style={{ fontWeight: "700" }}>{s.toName}</Text> <Text style={{ color: "#059669", fontWeight: "700" }}>${s.amount.toFixed(2)}</Text></Text>
+            <View key={i} style={[st.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+              <Text style={[st.suggText, { color: theme.textSecondary }]}><Text style={{ fontWeight: "700" }}>{s.fromName}</Text> → <Text style={{ fontWeight: "700" }}>{s.toName}</Text> <Text style={{ color: theme.positive, fontWeight: "700" }}>${s.amount.toFixed(2)}</Text></Text>
               <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                <TouchableOpacity style={st.suggBtn} onPress={() => handleCash(s)}><Text style={st.suggBtnText}>Paid</Text></TouchableOpacity>
-                <TouchableOpacity style={[st.suggBtn, st.suggBtnGreen]} onPress={() => handleRequest(s)} disabled={requestingPayment !== null}>
-                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color="#3D8E62" /> : <><Ionicons name="send" size={12} color="#3D8E62" /><Text style={st.suggBtnGreenText}>Share</Text></>}
+                <TouchableOpacity style={[st.suggBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => handleCash(s)}><Text style={[st.suggBtnText, { color: theme.textTertiary }]}>Paid</Text></TouchableOpacity>
+                <TouchableOpacity style={[st.suggBtn, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]} onPress={() => handleRequest(s)} disabled={requestingPayment !== null}>
+                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color={theme.primary} /> : <><Ionicons name="send" size={12} color={theme.primary} /><Text style={[st.suggBtnGreenText, { color: theme.primary }]}>Share</Text></>}
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[st.suggBtn, st.suggBtnTap]}
@@ -620,8 +621,8 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
             </View>
           ))}
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity style={st.btn} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
-            <TouchableOpacity style={st.btnOutline} onPress={rs.reset}><Text style={st.btnOutlineText}>New receipt</Text></TouchableOpacity>
+            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }]} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
+            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }]} onPress={rs.reset}><Text style={[st.btnOutlineText, { color: theme.primary }]}>New receipt</Text></TouchableOpacity>
           </View>
         </View>
       )}
@@ -629,10 +630,10 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
       {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("assign")} disabled={finishing || finished}>
-          <Ionicons name="chevron-back" size={18} color="#6B7280" /><Text style={st.navBackText}>Back</Text>
+          <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity style={st.navBack} onPress={rs.reset} disabled={finishing}>
-          <Ionicons name="refresh" size={16} color="#6B7280" /><Text style={st.navBackText}>New</Text>
+          <Ionicons name="refresh" size={16} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>New</Text>
         </TouchableOpacity>
       </View>
     </View>

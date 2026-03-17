@@ -5,6 +5,7 @@ import { View, Text, ActivityIndicator, Linking, TouchableOpacity } from "react-
 import { useAuth } from "@clerk/expo";
 import { useSignIn } from "@clerk/expo/legacy";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { useTheme } from "../lib/theme-context";
 
 const STUCK_TIMEOUT_MS = 5000;
 const WEB_APP_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "https://coconut-lemon.vercel.app";
@@ -15,6 +16,7 @@ const WEB_APP_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "http
  * We exchange the ticket for a session and redirect to the dashboard.
  */
 export default function AuthHandoffScreen() {
+  const { theme } = useTheme();
   const { signIn, setActive, isLoaded } = useSignIn();
   const { isSignedIn } = useAuth();
   const router = useRouter();
@@ -81,10 +83,10 @@ export default function AuthHandoffScreen() {
 
   if (error) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F7FAF8] p-6">
-        <Text className="text-gray-600 text-center mb-4">{error}</Text>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.background, padding: 24 }}>
+        <Text style={{ color: theme.textTertiary, textAlign: "center", marginBottom: 16 }}>{error}</Text>
         <Text
-          className="text-[#3D8E62] font-medium"
+          style={{ color: theme.primary, fontWeight: "500" }}
           onPress={() => {
             processedRef.current = false;
             setError(null);
@@ -98,25 +100,25 @@ export default function AuthHandoffScreen() {
   }
 
   return (
-    <View className="flex-1 items-center justify-center bg-[#F7FAF8] p-6">
-      <ActivityIndicator size="large" color="#3D8E62" />
-      <Text className="text-gray-600 mt-4">Opening your account...</Text>
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.background, padding: 24 }}>
+      <ActivityIndicator size="large" color={theme.primary} />
+      <Text style={{ color: theme.textTertiary, marginTop: 16 }}>Opening your account...</Text>
       {stuck && (
-        <View className="mt-6 items-center gap-3 max-w-xs">
-          <Text className="text-sm text-gray-500 text-center">
+        <View style={{ marginTop: 24, alignItems: "center", gap: 12, maxWidth: 280 }}>
+          <Text style={{ fontSize: 14, color: theme.textQuaternary, textAlign: "center" }}>
             Taking too long? Check your connection. View your transactions in the browser or go back.
           </Text>
           <TouchableOpacity
             onPress={() => Linking.openURL(`${WEB_APP_URL}/app/transactions`)}
-            className="w-full px-5 py-2.5 bg-[#3D8E62] rounded-xl items-center"
+            style={{ width: "100%", paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 12, alignItems: "center" }}
           >
-            <Text className="text-white font-medium">View transactions in browser</Text>
+            <Text style={{ color: "#fff", fontWeight: "500" }}>View transactions in browser</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.replace(isSignedIn === true ? "/(tabs)" : "/(auth)/sign-in")}
-            className="px-4 py-2"
+            style={{ paddingHorizontal: 16, paddingVertical: 8 }}
           >
-            <Text className="text-[#3D8E62] font-medium text-sm">Go back</Text>
+            <Text style={{ color: theme.primary, fontWeight: "500", fontSize: 14 }}>Go back</Text>
           </TouchableOpacity>
         </View>
       )}

@@ -24,6 +24,7 @@ import { getMerchantLogoUrl } from "../../lib/merchant-logos";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { useTheme } from "../../lib/theme-context";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
@@ -102,6 +103,7 @@ function LetterAvatar({ name, color, size = "sm" }: { name: string; color: strin
 
 /** Logo for allowlisted merchants (matches web); letter avatar for others. */
 function MerchantLogo({ name, color, size = "sm" }: { name: string; color: string; size?: "sm" | "lg" }) {
+  const { theme } = useTheme();
   const [imgError, setImgError] = useState(false);
   const logoUrl = getMerchantLogoUrl(name, size === "lg" ? 128 : 64);
 
@@ -109,7 +111,7 @@ function MerchantLogo({ name, color, size = "sm" }: { name: string; color: strin
 
   const dim = size === "lg" ? 48 : 40;
   return (
-    <View style={[styles.avatar, styles.avatarLogo, { width: dim, height: dim }]}>
+    <View style={[styles.avatar, styles.avatarLogo, { width: dim, height: dim, backgroundColor: theme.surfaceTertiary }]}>
       <Image
         source={{ uri: logoUrl }}
         style={size === "lg" ? styles.avatarImgLg : styles.avatarImg}
@@ -153,18 +155,19 @@ function TransactionDetailModal({
   onClose: () => void;
   formatAmount: (t: Transaction) => { text: string; isInflow: boolean };
 }) {
+  const { theme } = useTheme();
   const { text: amountText, isInflow } = formatAmount(tx);
   return (
     <Modal visible={!!tx} transparent animationType="slide">
-      <Pressable style={styles.detailOverlay} onPress={onClose}>
-        <Pressable style={styles.detailSheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.detailHandle} />
+      <Pressable style={[styles.detailOverlay, { backgroundColor: theme.overlay }]} onPress={onClose}>
+        <Pressable style={[styles.detailSheet, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
+          <View style={[styles.detailHandle, { backgroundColor: theme.border }]} />
           <View style={styles.detailHeader}>
             <View style={styles.detailHeaderRow}>
               <MerchantLogo name={tx.merchant} color={tx.merchantColor} size="lg" />
               <View style={styles.detailHeaderText}>
-                <Text style={styles.detailMerchant} numberOfLines={1}>{tx.merchant}</Text>
-            <Text style={[styles.detailAmount, isInflow ? styles.txAmountInflow : styles.txAmountOutflow]}>
+                <Text style={[styles.detailMerchant, { color: theme.text }]} numberOfLines={1}>{tx.merchant}</Text>
+            <Text style={[styles.detailAmount, isInflow ? { color: theme.positive } : { color: theme.negative }]}>
                 {amountText}
               </Text>
               </View>
@@ -172,34 +175,34 @@ function TransactionDetailModal({
           </View>
           <View style={styles.detailMeta}>
             <View style={styles.detailMetaRow}>
-              <Text style={styles.detailLabel}>Date</Text>
-              <Text style={styles.detailValue}>{tx.dateStr}</Text>
+              <Text style={[styles.detailLabel, { color: theme.textTertiary }]}>Date</Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>{tx.dateStr}</Text>
             </View>
             <View style={styles.detailMetaRow}>
-              <Text style={styles.detailLabel}>Status</Text>
-              <Text style={styles.detailValue}>{tx.isPending ? "Pending" : "Posted"}</Text>
+              <Text style={[styles.detailLabel, { color: theme.textTertiary }]}>Status</Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>{tx.isPending ? "Pending" : "Posted"}</Text>
             </View>
             <View style={styles.detailMetaRow}>
-              <Text style={styles.detailLabel}>Category</Text>
-              <Text style={styles.detailValue}>{tx.category}</Text>
+              <Text style={[styles.detailLabel, { color: theme.textTertiary }]}>Category</Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>{tx.category}</Text>
             </View>
             {(tx.accountName || tx.accountMask) ? (
               <View style={styles.detailMetaRow}>
-                <Text style={styles.detailLabel}>Account</Text>
-                <Text style={styles.detailValue}>{tx.accountName || (tx.accountMask ? `••••${tx.accountMask}` : "")}</Text>
+                <Text style={[styles.detailLabel, { color: theme.textTertiary }]}>Account</Text>
+                <Text style={[styles.detailValue, { color: theme.text }]}>{tx.accountName || (tx.accountMask ? `••••${tx.accountMask}` : "")}</Text>
               </View>
             ) : null}
             {tx.rawDescription ? (
               <View style={styles.detailMetaRow}>
-                <Text style={styles.detailLabel}>Description</Text>
-                <Text style={[styles.detailValue, styles.detailRaw]} selectable>
+                <Text style={[styles.detailLabel, { color: theme.textTertiary }]}>Description</Text>
+                <Text style={[styles.detailValue, styles.detailRaw, { color: theme.textSecondary }]} selectable>
                   {tx.rawDescription}
                 </Text>
               </View>
             ) : null}
           </View>
-          <TouchableOpacity style={styles.detailCloseBtn} onPress={onClose}>
-            <Text style={styles.detailCloseText}>Close</Text>
+          <TouchableOpacity style={[styles.detailCloseBtn, { backgroundColor: theme.surfaceTertiary }]} onPress={onClose}>
+            <Text style={[styles.detailCloseText, { color: theme.text }]}>Close</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>
@@ -209,33 +212,35 @@ function TransactionDetailModal({
 
 /** Bank tag for multi-account display, e.g. "••••1234" or "Chase Checking" */
 function BankTag({ tx }: { tx: Transaction }) {
+  const { theme } = useTheme();
   const tag = tx.accountName || (tx.accountMask ? `••••${tx.accountMask}` : null);
   if (!tag) return null;
   return (
-    <View style={styles.bankTag}>
-      <Text style={styles.bankTagText}>{tag}</Text>
+    <View style={[styles.bankTag, { backgroundColor: theme.primaryLight }]}>
+      <Text style={[styles.bankTagText, { color: theme.primary }]}>{tag}</Text>
     </View>
   );
 }
 
 
 const TransactionRow = React.memo(function TransactionRow({ tx, onPress }: { tx: Transaction; onPress?: () => void }) {
+  const { theme } = useTheme();
   const { text: amountText, isInflow } = formatAmountDisplay(tx);
   return (
-    <Pressable style={styles.txRow} onPress={onPress}>
+    <Pressable style={[styles.txRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]} onPress={onPress}>
       <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
       <View style={styles.txInfo}>
         <View style={styles.txMerchantRow}>
-          <Text style={styles.txMerchant} numberOfLines={1}>{tx.merchant}</Text>
+          <Text style={[styles.txMerchant, { color: theme.text }]} numberOfLines={1}>{tx.merchant}</Text>
           <BankTag tx={tx} />
         </View>
-        <Text style={styles.txCategory}>{tx.category}</Text>
+        <Text style={[styles.txCategory, { color: theme.textQuaternary }]}>{tx.category}</Text>
       </View>
       <View style={styles.txRight}>
-        <Text style={[styles.txAmount, isInflow ? styles.txAmountInflow : styles.txAmountOutflow]}>
+        <Text style={[styles.txAmount, isInflow ? { color: theme.positive } : { color: theme.text }]}>
           {amountText}
         </Text>
-        <Text style={styles.txDate}>{tx.dateStr}</Text>
+        <Text style={[styles.txDate, { color: theme.textQuaternary }]}>{tx.dateStr}</Text>
       </View>
     </Pressable>
   );
@@ -271,6 +276,7 @@ function LoadingScreen({
   onOpenBrowser: () => void;
   onRetry: () => void;
 }) {
+  const { theme } = useTheme();
   const pulse = useRef(new Animated.Value(1)).current;
   const [showEscapeHatches, setShowEscapeHatches] = useState(false);
 
@@ -299,26 +305,26 @@ function LoadingScreen({
   }, []);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.loadingCard}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+      <View style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
         <Animated.View style={{ transform: [{ scale: pulse }] }}>
           <Text style={styles.loadingCoconut}>🥥</Text>
         </Animated.View>
-        <Text style={styles.loadingTitle}>Loading your accounts…</Text>
-        <Text style={styles.loadingSubtitle}>
+        <Text style={[styles.loadingTitle, { color: theme.text }]}>Loading your accounts…</Text>
+        <Text style={[styles.loadingSubtitle, { color: theme.textTertiary }]}>
           Fetching transactions from your bank
         </Text>
         {showEscapeHatches && (
           <View style={styles.loadingEscape}>
             <TouchableOpacity style={styles.loadingEscapeBtn} onPress={onRetry}>
-              <Ionicons name="refresh" size={16} color="#3D8E62" />
-              <Text style={styles.loadingEscapeText}>Retry</Text>
+              <Ionicons name="refresh" size={16} color={theme.primary} />
+              <Text style={[styles.loadingEscapeText, { color: theme.primary }]}>Retry</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.loadingEscapeBtn} onPress={onOpenBrowser}>
-              <Text style={styles.loadingEscapeText}>Open in browser</Text>
+              <Text style={[styles.loadingEscapeText, { color: theme.primary }]}>Open in browser</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.loadingEscapeBtn} onPress={onSignOut}>
-              <Text style={[styles.loadingEscapeText, styles.loadingEscapeTextMuted]}>Sign out</Text>
+              <Text style={[styles.loadingEscapeText, { color: theme.textTertiary }]}>Sign out</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -328,6 +334,7 @@ function LoadingScreen({
 }
 
 export default function HomeScreen() {
+  const { theme } = useTheme();
   const { getToken, isLoaded: authLoaded, isSignedIn, sessionId } = useAuth();
   const { signOut } = useClerk();
   const { user } = useUser();
@@ -522,46 +529,46 @@ export default function HomeScreen() {
           : null;
 
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.connectCard}>
-          <Ionicons name="wallet-outline" size={48} color="#3D8E62" />
-          <Text style={styles.connectTitle}>Connect your bank</Text>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+        <View style={[styles.connectCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          <Ionicons name="wallet-outline" size={48} color={theme.primary} />
+          <Text style={[styles.connectTitle, { color: theme.text }]}>Connect your bank</Text>
           {user?.primaryEmailAddress?.emailAddress ? (
-            <Text style={styles.connectAccountEmail}>
+            <Text style={[styles.connectAccountEmail, { color: theme.textTertiary }]}>
               Signed in as {user.primaryEmailAddress.emailAddress}
             </Text>
           ) : null}
           {user?.id ? (
-            <Text style={styles.connectAccountId}>
+            <Text style={[styles.connectAccountId, { color: theme.textQuaternary }]}>
               Clerk user: {user.id}
             </Text>
           ) : null}
           {(!user?.id || !user?.primaryEmailAddress?.emailAddress) ? (
-            <Text style={styles.connectAccountId}>
+            <Text style={[styles.connectAccountId, { color: theme.textQuaternary }]}>
               Auth loaded: {String(authLoaded)} | Signed in: {String(isSignedIn)}
             </Text>
           ) : null}
-          <Text style={styles.connectSubtitle}>
+          <Text style={[styles.connectSubtitle, { color: theme.textTertiary }]}>
             Link your account to see spending, transactions, and split receipts with friends.
           </Text>
-          <Text style={styles.connectHint}>
+          <Text style={[styles.connectHint, { color: theme.textQuaternary }]}>
             1) Tap "Connect in web app" and sign in with this same account.
           </Text>
           {accountHint ? (
-            <Text style={styles.connectHintImportant}>{accountHint}</Text>
+            <Text style={[styles.connectHintImportant, { color: theme.warning }]}>{accountHint}</Text>
           ) : null}
           {connectError ? (
-            <Text style={styles.connectErrorText}>{connectError}</Text>
+            <Text style={[styles.connectErrorText, { color: theme.error }]}>{connectError}</Text>
           ) : null}
           {signOutError ? (
-            <Text style={styles.connectErrorText}>{signOutError}</Text>
+            <Text style={[styles.connectErrorText, { color: theme.error }]}>{signOutError}</Text>
           ) : null}
-          <Text style={styles.connectHint}>
+          <Text style={[styles.connectHint, { color: theme.textQuaternary }]}>
             2) Stay in the browser until you see "Bank connected!" and then tap "Return to app".
           </Text>
-          <Text style={styles.connectHint}>Do not close early on Plaid's "Continue to Coconut" screen.</Text>
+          <Text style={[styles.connectHint, { color: theme.textQuaternary }]}>Do not close early on Plaid's "Continue to Coconut" screen.</Text>
           <TouchableOpacity
-            style={styles.connectButton}
+            style={[styles.connectButton, { backgroundColor: theme.primary }]}
             onPress={openConnect}
           >
             <Text style={styles.connectButtonText}>{isSignedIn ? "Connect in web app" : "Sign in to continue"}</Text>
@@ -576,11 +583,11 @@ export default function HomeScreen() {
             disabled={refreshing}
           >
             {refreshing ? (
-              <ActivityIndicator size="small" color="#3D8E62" />
+              <ActivityIndicator size="small" color={theme.primary} />
             ) : (
-              <Ionicons name="refresh" size={16} color="#3D8E62" />
+              <Ionicons name="refresh" size={16} color={theme.primary} />
             )}
-            <Text style={styles.connectRefreshText}>
+            <Text style={[styles.connectRefreshText, { color: theme.primary }]}>
               {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
             </Text>
           </TouchableOpacity>
@@ -615,11 +622,11 @@ export default function HomeScreen() {
             >
               {signingOut ? (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <ActivityIndicator size="small" color="#6B7280" />
-                  <Text style={styles.connectSignOutText}>Signing out…</Text>
+                  <ActivityIndicator size="small" color={theme.textTertiary} />
+                  <Text style={[styles.connectSignOutText, { color: theme.textTertiary }]}>Signing out…</Text>
                 </View>
               ) : (
-                <Text style={styles.connectSignOutText}>
+                <Text style={[styles.connectSignOutText, { color: theme.textTertiary }]}>
                   {accountHint ? "Sign out & switch account" : "Sign out"}
                 </Text>
               )}
@@ -632,7 +639,7 @@ export default function HomeScreen() {
 
   // Linked — show dashboard
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -641,38 +648,39 @@ export default function HomeScreen() {
         {/* Greeting */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{greeting}</Text>
-            <Text style={styles.subGreeting}>{dateLabel}</Text>
+            <Text style={[styles.greeting, { color: theme.text }]}>{greeting}</Text>
+            <Text style={[styles.subGreeting, { color: theme.textTertiary }]}>{dateLabel}</Text>
           </View>
           <TouchableOpacity onPress={openSettings} style={styles.settingsBtn} hitSlop={12}>
-            <Ionicons name="settings-outline" size={22} color="#6B7280" />
+            <Ionicons name="settings-outline" size={22} color={theme.textTertiary} />
           </TouchableOpacity>
         </View>
 
         {/* 3 metric panels */}
         <View style={styles.panels}>
-          <View style={styles.panel}>
+          <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.primaryLight }]}>
             <View style={[styles.panelIcon, { backgroundColor: "#FEE2E2" }]}>
               <Ionicons name="trending-down" size={18} color="#DC2626" />
             </View>
-            <Text style={styles.panelValue}>${monthlySpend.toLocaleString()}</Text>
-            <Text style={styles.panelLabel}>This month</Text>
+            <Text style={[styles.panelValue, { color: theme.text }]}>${monthlySpend.toLocaleString()}</Text>
+            <Text style={[styles.panelLabel, { color: theme.textTertiary }]}>This month</Text>
           </View>
-          <View style={styles.panel}>
+          <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.primaryLight }]}>
             <View style={[styles.panelIcon, { backgroundColor: "#F3E8FF" }]}>
               <Ionicons name="refresh" size={18} color="#7C3AED" />
             </View>
-            <Text style={styles.panelValue}>${subsTotal.toFixed(0)}</Text>
-            <Text style={styles.panelLabel}>Subscriptions</Text>
+            <Text style={[styles.panelValue, { color: theme.text }]}>${subsTotal.toFixed(0)}</Text>
+            <Text style={[styles.panelLabel, { color: theme.textTertiary }]}>Subscriptions</Text>
           </View>
-          <View style={styles.panel}>
-            <View style={[styles.panelIcon, { backgroundColor: "#EEF7F2" }]}>
-              <Ionicons name="people" size={18} color="#3D8E62" />
+          <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.primaryLight }]}>
+            <View style={[styles.panelIcon, { backgroundColor: theme.primaryLight }]}>
+              <Ionicons name="people" size={18} color={theme.primary} />
             </View>
             <Text style={[
               styles.panelValue,
-              sharedNet > 0 && styles.panelValueGreen,
-              sharedNet < 0 && styles.panelValueAmber,
+              { color: theme.text },
+              sharedNet > 0 && { color: theme.positive },
+              sharedNet < 0 && { color: theme.warning },
             ]}>
               {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
             </Text>
@@ -682,16 +690,16 @@ export default function HomeScreen() {
 
         {/* Search */}
         <View style={styles.searchSection}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={18} color="#9CA3AF" />
+          <View style={[styles.searchBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="search" size={18} color={theme.textQuaternary} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: theme.text }]}
               placeholder={
                 searchMode === "exact"
                   ? "Starbucks, Uber, Food & Drink..."
                   : "dinner with Alex in January"
               }
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.inputPlaceholder}
               value={searchQuery}
               onChangeText={(t) => {
                 setSearchQuery(t);
@@ -710,7 +718,7 @@ export default function HomeScreen() {
                   setSemanticAnswer("");
                 }}
               >
-                <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                <Ionicons name="close-circle" size={18} color={theme.textQuaternary} />
               </TouchableOpacity>
             )}
             {searchMode === "semantic" && (
@@ -720,83 +728,83 @@ export default function HomeScreen() {
                 disabled={semanticSearching || !searchQuery.trim()}
               >
                 {semanticSearching ? (
-                  <ActivityIndicator size="small" color="#3D8E62" />
+                  <ActivityIndicator size="small" color={theme.primary} />
                 ) : (
-                  <Ionicons name="search" size={20} color="#3D8E62" />
+                  <Ionicons name="search" size={20} color={theme.primary} />
                 )}
               </TouchableOpacity>
             )}
           </View>
           <View style={styles.searchModeRow}>
             <TouchableOpacity
-              style={[styles.modeChip, searchMode === "exact" && styles.modeChipActive]}
+              style={[styles.modeChip, { backgroundColor: theme.surfaceTertiary }, searchMode === "exact" && { backgroundColor: theme.primary }]}
               onPress={() => { setSearchMode("exact"); setSemanticResults(null); setHasSearchedSemantic(false); setSemanticAnswer(""); }}
             >
-              <Text style={[styles.modeChipText, searchMode === "exact" && styles.modeChipTextActive]}>
+              <Text style={[styles.modeChipText, { color: theme.textTertiary }, searchMode === "exact" && styles.modeChipTextActive]}>
                 Exact
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeChip, searchMode === "semantic" && styles.modeChipActive]}
+              style={[styles.modeChip, { backgroundColor: theme.surfaceTertiary }, searchMode === "semantic" && { backgroundColor: theme.primary }]}
               onPress={() => setSearchMode("semantic")}
             >
-              <Text style={[styles.modeChipText, searchMode === "semantic" && styles.modeChipTextActive]}>
+              <Text style={[styles.modeChipText, { color: theme.textTertiary }, searchMode === "semantic" && styles.modeChipTextActive]}>
                 Natural language
               </Text>
             </TouchableOpacity>
           </View>
           {searchMode === "semantic" && !searchQuery.trim() && (
             <>
-              <Text style={styles.searchHint}>Try a question about your spending:</Text>
+              <Text style={[styles.searchHint, { color: theme.textQuaternary }]}>Try a question about your spending:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScrollContent}>
                 {SEARCH_CHIPS.map((chip) => (
                   <TouchableOpacity
                     key={chip.q}
-                    style={styles.searchChip}
+                    style={[styles.searchChip, { backgroundColor: theme.primaryLight }]}
                     onPress={() => { setSearchQuery(chip.q); setTimeout(runSemanticSearch, 100); }}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.searchChipText}>{chip.label}</Text>
+                    <Text style={[styles.searchChipText, { color: theme.primary }]}>{chip.label}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </>
           )}
           {searchMode === "semantic" && searchQuery.trim() && (
-            <Text style={styles.searchHint}>Tap the search icon or press return</Text>
+            <Text style={[styles.searchHint, { color: theme.textQuaternary }]}>Tap the search icon or press return</Text>
           )}
         </View>
 
         {/* Semantic search answer — shown above results when available */}
         {searchMode === "semantic" && hasSearchedSemantic && (semanticSearching || semanticAnswer) && (
-          <View style={styles.answerBanner}>
+          <View style={[styles.answerBanner, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}>
             {semanticSearching ? (
-              <Text style={styles.answerText}>Searching...</Text>
+              <Text style={[styles.answerText, { color: theme.text }]}>Searching...</Text>
             ) : (
-              <Text style={styles.answerText}>{semanticAnswer || "No answer for this query."}</Text>
+              <Text style={[styles.answerText, { color: theme.text }]}>{semanticAnswer || "No answer for this query."}</Text>
             )}
           </View>
         )}
 
         {/* Recent transactions */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
             {searchQuery.trim() ? "Results" : "Recent"}
           </Text>
-          <Text style={styles.sectionMeta}>
+          <Text style={[styles.sectionMeta, { color: theme.textQuaternary }]}>
             {displayTransactions.length} transaction{displayTransactions.length !== 1 ? "s" : ""}
           </Text>
         </View>
 
         {semanticSearching ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#3D8E62" />
-            <Text style={styles.loadingText}>Searching...</Text>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textTertiary }]}>Searching...</Text>
           </View>
         ) : displayTransactions.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={40} color="#9CA3AF" />
-            <Text style={styles.emptyText}>
+            <Ionicons name="receipt-outline" size={40} color={theme.textQuaternary} />
+            <Text style={[styles.emptyText, { color: theme.textTertiary }]}>
               {searchQuery ? "No matches" : "No transactions yet"}
             </Text>
           </View>
@@ -804,8 +812,8 @@ export default function HomeScreen() {
           <>
             {pendingTxs.length > 0 && (
               <View style={styles.txSection}>
-                <View style={styles.txSectionHeader}>
-                  <Text style={styles.txSectionTitle}>Pending</Text>
+                <View style={[styles.txSectionHeader, { backgroundColor: theme.warningLight, borderBottomColor: theme.warning }]}>
+                  <Text style={[styles.txSectionTitle, { color: theme.warning }]}>Pending</Text>
                 </View>
                 {pendingTxs.map((tx) => (
                   <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} />
@@ -814,8 +822,8 @@ export default function HomeScreen() {
             )}
             {postedTxs.length > 0 && (
               <View style={styles.txSection}>
-                <View style={[styles.txSectionHeader, styles.txSectionHeaderPosted]}>
-                  <Text style={styles.txSectionTitlePosted}>Posted</Text>
+                <View style={[styles.txSectionHeader, { backgroundColor: theme.surfaceSecondary, borderBottomColor: theme.borderLight }]}>
+                  <Text style={[styles.txSectionTitlePosted, { color: theme.textTertiary }]}>Posted</Text>
                 </View>
                 {postedTxs.map((tx) => (
                   <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} />
@@ -829,7 +837,7 @@ export default function HomeScreen() {
       {/* FAB — only on Home tab */}
       {isFocused && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { backgroundColor: theme.primary }]}
           onPress={() => setShowFabMenu(true)}
           activeOpacity={0.9}
         >
@@ -851,8 +859,8 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={() => setShowFabMenu(false)}
       >
-        <Pressable style={styles.fabOverlay} onPress={() => setShowFabMenu(false)}>
-          <View style={styles.fabMenu}>
+        <Pressable style={[styles.fabOverlay, { backgroundColor: theme.overlay }]} onPress={() => setShowFabMenu(false)}>
+          <View style={[styles.fabMenu, { backgroundColor: theme.surface }]}>
             <TouchableOpacity
               style={styles.fabMenuItem}
               onPress={() => {
@@ -860,8 +868,8 @@ export default function HomeScreen() {
                 router.push("/(tabs)/receipt");
               }}
             >
-              <Ionicons name="receipt" size={24} color="#3D8E62" />
-              <Text style={styles.fabMenuText}>Scan receipt</Text>
+              <Ionicons name="receipt" size={24} color={theme.primary} />
+              <Text style={[styles.fabMenuText, { color: theme.text }]}>Scan receipt</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.fabMenuItem}
@@ -870,8 +878,8 @@ export default function HomeScreen() {
                 router.push("/(tabs)/add-expense");
               }}
             >
-              <Ionicons name="add-circle" size={24} color="#3D8E62" />
-              <Text style={styles.fabMenuText}>Add expense</Text>
+              <Ionicons name="add-circle" size={24} color={theme.primary} />
+              <Text style={[styles.fabMenuText, { color: theme.text }]}>Add expense</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -881,7 +889,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAF8" },
+  container: { flex: 1 },
   center: { justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 100 },
@@ -891,8 +899,8 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 20,
   },
-  greeting: { fontSize: 22, fontWeight: "700", color: "#1F2937" },
-  subGreeting: { fontSize: 14, color: "#6B7280", marginTop: 2 },
+  greeting: { fontSize: 22, fontWeight: "700" },
+  subGreeting: { fontSize: 14, marginTop: 2 },
   settingsBtn: { padding: 4 },
   panels: {
     flexDirection: "row",
@@ -901,11 +909,9 @@ const styles = StyleSheet.create({
   },
   panel: {
     flex: 1,
-    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#EEF7F2",
   },
   panelIcon: {
     width: 36,
@@ -915,23 +921,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
-  panelValue: { fontSize: 17, fontWeight: "700", color: "#1F2937" },
-  panelValueGreen: { color: "#059669" },
-  panelValueAmber: { color: "#B45309" },
-  panelLabel: { fontSize: 11, color: "#6B7280", marginTop: 2 },
+  panelValue: { fontSize: 17, fontWeight: "700" },
+  panelValueGreen: {},
+  panelValueAmber: {},
+  panelLabel: { fontSize: 11, marginTop: 2 },
   searchSection: { marginBottom: 20 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#1F2937", padding: 0 },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
   searchIconBtn: {
     padding: 6,
   },
@@ -940,30 +944,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: "#E5E7EB",
   },
-  modeChipActive: { backgroundColor: "#3D8E62" },
-  modeChipText: { fontSize: 13, fontWeight: "500", color: "#6B7280" },
+  modeChipActive: {},
+  modeChipText: { fontSize: 13, fontWeight: "500" },
   modeChipTextActive: { color: "#fff" },
   chipScrollContent: { gap: 8, paddingVertical: 6 },
-  searchChip: { backgroundColor: "#EEF7F2", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  searchChipText: { fontSize: 13, fontWeight: "600", color: "#3D8E62" },
+  searchChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  searchChipText: { fontSize: 13, fontWeight: "600" },
   searchHint: {
     fontSize: 12,
-    color: "#9CA3AF",
     marginTop: 6,
   },
   answerBanner: {
-    backgroundColor: "#EEF7F2",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#D1EAE0",
     padding: 16,
     marginBottom: 16,
   },
   answerText: {
     fontSize: 15,
-    color: "#2D5A44",
     lineHeight: 22,
   },
   sectionHeader: {
@@ -972,32 +971,25 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  sectionMeta: { fontSize: 12, color: "#9CA3AF" },
+  sectionTitle: { fontSize: 14, fontWeight: "600" },
+  sectionMeta: { fontSize: 12 },
   txSection: { marginBottom: 16 },
   txSectionHeader: {
-    backgroundColor: "#FFFBEB",
     borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
     paddingVertical: 8,
     paddingHorizontal: 14,
     marginBottom: 4,
   },
-  txSectionHeaderPosted: {
-    backgroundColor: "#F9FAFB",
-    borderBottomColor: "#F3F4F6",
-  },
-  txSectionTitle: { fontSize: 12, fontWeight: "600", color: "#92400E" },
-  txSectionTitlePosted: { fontSize: 12, fontWeight: "600", color: "#4B5563" },
+  txSectionHeaderPosted: {},
+  txSectionTitle: { fontSize: 12, fontWeight: "600" },
+  txSectionTitlePosted: { fontSize: 12, fontWeight: "600" },
   txRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     padding: 14,
     borderRadius: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   avatar: {
     width: 40,
@@ -1007,7 +999,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarLogo: {
-    backgroundColor: "#F3F4F6",
     overflow: "hidden",
   },
   avatarImg: { width: 28, height: 28 },
@@ -1015,26 +1006,25 @@ const styles = StyleSheet.create({
   avatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   txInfo: { flex: 1, marginLeft: 12, minWidth: 0 },
   txMerchantRow: { flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 },
-  txMerchant: { fontSize: 15, fontWeight: "500", color: "#1F2937", flexShrink: 1 },
+  txMerchant: { fontSize: 15, fontWeight: "500", flexShrink: 1 },
   bankTag: {
-    backgroundColor: "#EEF7F2",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
     alignSelf: "flex-start",
   },
-  bankTagText: { fontSize: 10, fontWeight: "500", color: "#3D8E62" },
-  txCategory: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  bankTagText: { fontSize: 10, fontWeight: "500" },
+  txCategory: { fontSize: 12, marginTop: 2 },
   txRight: { alignItems: "flex-end" },
   txAmount: { fontSize: 15, fontWeight: "600" },
-  txAmountInflow: { color: "#059669" },
-  txAmountOutflow: { color: "#1F2937" },
-  txDate: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
+  txAmountInflow: {},
+  txAmountOutflow: {},
+  txDate: { fontSize: 11, marginTop: 2 },
   emptyState: {
     alignItems: "center",
     padding: 32,
   },
-  emptyText: { fontSize: 14, color: "#9CA3AF", marginTop: 12 },
+  emptyText: { fontSize: 14, marginTop: 12 },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1042,21 +1032,19 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 24,
   },
-  loadingText: { fontSize: 14, color: "#6B7280", marginTop: 12 },
+  loadingText: { fontSize: 14, marginTop: 12 },
   loadingCard: {
     flex: 1,
     margin: 20,
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 40,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#EEF7F2",
   },
   loadingCoconut: { fontSize: 72, marginBottom: 16 },
-  loadingTitle: { fontSize: 18, fontWeight: "600", color: "#1F2937", marginBottom: 6 },
-  loadingSubtitle: { fontSize: 14, color: "#6B7280" },
+  loadingTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
+  loadingSubtitle: { fontSize: 14 },
   loadingEscape: {
     marginTop: 28,
     alignItems: "center",
@@ -1068,34 +1056,29 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 8,
   },
-  loadingEscapeText: { fontSize: 14, fontWeight: "500", color: "#3D8E62" },
-  loadingEscapeTextMuted: { color: "#6B7280" },
+  loadingEscapeText: { fontSize: 14, fontWeight: "500" },
+  loadingEscapeTextMuted: {},
   connectCard: {
     flex: 1,
     margin: 20,
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 32,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#EEF7F2",
   },
-  connectTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginTop: 20 },
+  connectTitle: { fontSize: 20, fontWeight: "700", marginTop: 20 },
   connectAccountEmail: {
     fontSize: 13,
-    color: "#6B7280",
     marginTop: 6,
     textAlign: "center",
   },
   connectAccountId: {
     fontSize: 11,
-    color: "#9CA3AF",
     marginTop: 4,
     textAlign: "center",
   },
   connectSubtitle: {
     fontSize: 15,
-    color: "#6B7280",
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
@@ -1103,7 +1086,6 @@ const styles = StyleSheet.create({
   connectHintImportant: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#B45309",
     textAlign: "center",
     marginTop: 12,
     lineHeight: 20,
@@ -1111,7 +1093,6 @@ const styles = StyleSheet.create({
   },
   connectErrorText: {
     fontSize: 12,
-    color: "#DC2626",
     textAlign: "center",
     marginTop: 10,
     lineHeight: 18,
@@ -1119,7 +1100,6 @@ const styles = StyleSheet.create({
   },
   connectHint: {
     fontSize: 12,
-    color: "#9CA3AF",
     textAlign: "center",
     marginTop: 12,
     lineHeight: 18,
@@ -1129,7 +1109,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#3D8E62",
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 14,
@@ -1143,12 +1122,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 10,
   },
-  connectRefreshText: { color: "#3D8E62", fontSize: 14, fontWeight: "500" },
+  connectRefreshText: { fontSize: 14, fontWeight: "500" },
   connectSignOutButton: {
     marginTop: 16,
     paddingVertical: 10,
   },
-  connectSignOutText: { color: "#6B7280", fontSize: 14, textDecorationLine: "underline" },
+  connectSignOutText: { fontSize: 14, textDecorationLine: "underline" },
   fab: {
     position: "absolute",
     bottom: 100,
@@ -1156,7 +1135,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#3D8E62",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -1167,13 +1145,11 @@ const styles = StyleSheet.create({
   },
   fabOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end",
     paddingBottom: 120,
     paddingHorizontal: 20,
   },
   fabMenu: {
-    backgroundColor: "#fff",
     borderRadius: 16,
     paddingVertical: 8,
     shadowColor: "#000",
@@ -1189,14 +1165,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
   },
-  fabMenuText: { fontSize: 16, fontWeight: "600", color: "#1F2937" },
+  fabMenuText: { fontSize: 16, fontWeight: "600" },
   detailOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   detailSheet: {
-    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
@@ -1205,7 +1179,6 @@ const styles = StyleSheet.create({
   detailHandle: {
     width: 36,
     height: 4,
-    backgroundColor: "#D1D5DB",
     borderRadius: 2,
     alignSelf: "center",
     marginTop: 12,
@@ -1220,19 +1193,18 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   detailHeaderText: { flex: 1, minWidth: 0 },
-  detailMerchant: { fontSize: 20, fontWeight: "700", color: "#1F2937" },
+  detailMerchant: { fontSize: 20, fontWeight: "700" },
   detailAmount: { fontSize: 24, fontWeight: "700", marginTop: 8 },
   detailMeta: { gap: 12 },
   detailMetaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 16 },
-  detailLabel: { fontSize: 12, color: "#9CA3AF", minWidth: 80 },
-  detailValue: { fontSize: 14, color: "#374151", flex: 1, textAlign: "right" },
+  detailLabel: { fontSize: 12, minWidth: 80 },
+  detailValue: { fontSize: 14, flex: 1, textAlign: "right" },
   detailRaw: { textAlign: "left", fontFamily: "monospace", fontSize: 12 },
   detailCloseBtn: {
     marginTop: 24,
-    backgroundColor: "#F3F4F6",
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
   },
-  detailCloseText: { fontSize: 16, fontWeight: "600", color: "#374151" },
+  detailCloseText: { fontSize: 16, fontWeight: "600" },
 });

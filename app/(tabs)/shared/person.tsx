@@ -18,6 +18,7 @@ import { usePersonDetail } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
+import { useTheme } from "../../../lib/theme-context";
 
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
 
@@ -31,6 +32,7 @@ function MemberAvatar({ name, size = 40 }: { name: string; size?: number }) {
 }
 
 export default function PersonScreen() {
+  const { theme } = useTheme();
   const { key } = useLocalSearchParams<{ key: string }>();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
@@ -126,22 +128,22 @@ export default function PersonScreen() {
   };
 
   return (
-    <SafeAreaView style={s.container} edges={["top"]}>
+    <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         <View style={s.header}>
           <MemberAvatar name={detail.displayName} size={56} />
           <View style={s.headerInfo}>
-            <Text style={s.headerName}>{detail.displayName}</Text>
+            <Text style={[s.headerName, { color: theme.text }]}>{detail.displayName}</Text>
             <Text style={[
               s.headerBalance,
-              detail.balance > 0 && s.green,
-              detail.balance < 0 && s.amber,
-              detail.balance === 0 && s.muted,
+              detail.balance > 0 && { color: theme.positive },
+              detail.balance < 0 && { color: "#B45309" },
+              detail.balance === 0 && { color: theme.textQuaternary },
             ]}>
               {detail.balance > 0
                 ? `Owes you $${detail.balance.toFixed(2)}`
@@ -156,7 +158,7 @@ export default function PersonScreen() {
           <View style={s.actions}>
             {detail.balance > 0 && (
               <>
-                <TouchableOpacity style={[s.btn, s.btnPrimary]} onPress={handleRequest} disabled={requestingPayment} activeOpacity={0.7}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: theme.primary }]} onPress={handleRequest} disabled={requestingPayment} activeOpacity={0.7}>
                   {requestingPayment ? <ActivityIndicator size="small" color="#fff" /> : (
                     <><Ionicons name="send" size={16} color="#fff" /><Text style={s.btnText}>Request</Text></>
                   )}
@@ -167,37 +169,37 @@ export default function PersonScreen() {
                 </TouchableOpacity>
               </>
             )}
-            <TouchableOpacity style={[s.btn, s.btnSecondary]} onPress={handleMarkPaid} disabled={recordingSettlement} activeOpacity={0.7}>
-              {recordingSettlement ? <ActivityIndicator size="small" color="#374151" /> : (
-                <Text style={s.btnSecondaryText}>Mark paid</Text>
+            <TouchableOpacity style={[s.btn, { borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface }]} onPress={handleMarkPaid} disabled={recordingSettlement} activeOpacity={0.7}>
+              {recordingSettlement ? <ActivityIndicator size="small" color={theme.textSecondary} /> : (
+                <Text style={[s.btnSecondaryText, { color: theme.textSecondary }]}>Mark paid</Text>
               )}
             </TouchableOpacity>
           </View>
         )}
 
         {detail.balance === 0 && detail.activity.length > 0 && (
-          <View style={s.settledBadge}>
-            <Ionicons name="checkmark-circle" size={20} color="#2D7A52" />
-            <Text style={s.settledText}>All settled up with {detail.displayName}</Text>
+          <View style={[s.settledBadge, { backgroundColor: theme.primaryLight }]}>
+            <Ionicons name="checkmark-circle" size={20} color={theme.primaryDark} />
+            <Text style={[s.settledText, { color: theme.primaryDark }]}>All settled up with {detail.displayName}</Text>
           </View>
         )}
 
-        <Text style={s.section}>Transactions</Text>
+        <Text style={[s.section, { color: theme.textTertiary }]}>Transactions</Text>
         {detail.activity.length === 0 ? (
-          <Text style={s.emptyText}>No shared transactions yet.</Text>
+          <Text style={[s.emptyText, { color: theme.textQuaternary }]}>No shared transactions yet.</Text>
         ) : (
-          <View style={s.card}>
+          <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             {detail.activity.map((a, i) => (
-              <View key={a.id} style={[s.txRow, i < detail.activity.length - 1 && s.txBorder]}>
+              <View key={a.id} style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}>
                 <View style={s.txInfo}>
-                  <Text style={s.txMerchant}>{a.merchant}</Text>
-                  <Text style={s.txGroup}>{a.groupName}</Text>
+                  <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
+                  <Text style={[s.txGroup, { color: theme.textQuaternary }]}>{a.groupName}</Text>
                 </View>
                 <View style={s.txRight}>
-                  <Text style={[s.txAmt, a.effectOnBalance > 0 ? s.green : a.effectOnBalance < 0 ? s.amber : s.muted]}>
+                  <Text style={[s.txAmt, a.effectOnBalance > 0 ? { color: theme.positive } : a.effectOnBalance < 0 ? { color: "#B45309" } : { color: theme.textQuaternary }]}>
                     {a.effectOnBalance > 0 ? "+" : a.effectOnBalance < 0 ? "-" : ""}${Math.abs(a.effectOnBalance).toFixed(2)}
                   </Text>
-                  <Text style={s.txTotal}>${a.amount.toFixed(2)} total</Text>
+                  <Text style={[s.txTotal, { color: theme.textQuaternary }]}>${a.amount.toFixed(2)} total</Text>
                 </View>
               </View>
             ))}
@@ -209,37 +211,32 @@ export default function PersonScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAF8" },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   content: { padding: 20, paddingBottom: 100 },
   header: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
   headerInfo: { flex: 1 },
-  headerName: { fontSize: 22, fontWeight: "700", color: "#1F2937" },
+  headerName: { fontSize: 22, fontWeight: "700" },
   headerBalance: { fontSize: 15, fontWeight: "600", marginTop: 4 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
   btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12 },
-  btnPrimary: { backgroundColor: "#3D8E62" },
   btnTap: { backgroundColor: "#4A6CF7" },
-  btnSecondary: { borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#fff" },
   btnText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  btnSecondaryText: { color: "#374151", fontWeight: "500", fontSize: 14 },
-  settledBadge: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EEF7F2", padding: 14, borderRadius: 12, marginBottom: 24 },
-  settledText: { fontSize: 14, color: "#2D7A52", fontWeight: "600" },
-  section: { fontSize: 13, fontWeight: "700", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
-  emptyText: { fontSize: 14, color: "#9CA3AF" },
-  card: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#F3F4F6", overflow: "hidden" },
+  btnSecondaryText: { fontWeight: "500", fontSize: 14 },
+  settledBadge: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: 12, marginBottom: 24 },
+  settledText: { fontSize: 14, fontWeight: "600" },
+  section: { fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
+  emptyText: { fontSize: 14 },
+  card: { borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   txRow: { flexDirection: "row", alignItems: "center", padding: 14 },
-  txBorder: { borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  txBorder: { borderBottomWidth: 1 },
   txInfo: { flex: 1 },
-  txMerchant: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
-  txGroup: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  txMerchant: { fontSize: 15, fontWeight: "600" },
+  txGroup: { fontSize: 12, marginTop: 2 },
   txRight: { alignItems: "flex-end" },
   txAmt: { fontSize: 15, fontWeight: "700" },
-  txTotal: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  txTotal: { fontSize: 12, marginTop: 2 },
   avatar: { justifyContent: "center", alignItems: "center" },
   avatarText: { color: "#fff", fontWeight: "700" },
-  green: { color: "#059669" },
-  amber: { color: "#B45309" },
-  muted: { color: "#9CA3AF" },
 });
