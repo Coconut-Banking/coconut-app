@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  View,
   Text,
   StyleSheet,
   TextInput,
@@ -14,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useSignUp } from "@clerk/expo/legacy";
 import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
+import { useTheme } from "../../lib/theme-context";
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -22,6 +24,7 @@ function getClerkErrorMessage(e: unknown, fallback: string): string {
 }
 
 export default function SignUpScreen() {
+  const { theme } = useTheme();
   // Clerk v3 types changed but runtime still provides these properties
   const { isLoaded, signUp, setActive } = useSignUp() as unknown as {
     isLoaded: boolean;
@@ -103,7 +106,7 @@ export default function SignUpScreen() {
   const formDisabled = !isLoaded;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.surface }]} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -117,14 +120,14 @@ export default function SignUpScreen() {
           {/* Brand */}
           <View style={styles.brand}>
             <Text style={styles.logo}>🥥</Text>
-            <Text style={styles.title}>Coconut</Text>
-            <Text style={styles.subtitle}>Create your account</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Coconut</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Create your account</Text>
           </View>
 
           {/* Primary: Google */}
           {(Platform.OS === "ios" || Platform.OS === "android") && (
             <TouchableOpacity
-              style={[styles.googleBtn, (googleLoading || formDisabled) && styles.btnDisabled]}
+              style={[styles.googleBtn, { backgroundColor: theme.surface, borderColor: theme.border }, (googleLoading || formDisabled) && styles.btnDisabled]}
               onPress={handleGoogleSignUp}
               disabled={googleLoading || formDisabled}
             >
@@ -133,24 +136,24 @@ export default function SignUpScreen() {
               ) : (
                 <>
                   <Text style={styles.googleIcon}>G</Text>
-                  <Text style={styles.googleText}>Continue with Google</Text>
+                  <Text style={[styles.googleText, { color: theme.textSecondary }]}>Continue with Google</Text>
                 </>
               )}
             </TouchableOpacity>
           )}
 
           <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <Text style={[styles.dividerText, { color: theme.textQuaternary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
           </View>
 
           {/* Form */}
           <View style={styles.form}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
               placeholder="Email"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.inputPlaceholder}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -160,11 +163,11 @@ export default function SignUpScreen() {
             />
             {pendingVerification ? (
               <>
-                <Text style={styles.verifyHint}>We sent a code to your email.</Text>
+                <Text style={[styles.verifyHint, { color: theme.textTertiary }]}>We sent a code to your email.</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
                   placeholder="Verification code"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inputPlaceholder}
                   value={code}
                   onChangeText={setCode}
                   autoCapitalize="none"
@@ -175,9 +178,9 @@ export default function SignUpScreen() {
               </>
             ) : (
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
                 placeholder="Password (8+ characters)"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.inputPlaceholder}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -185,9 +188,9 @@ export default function SignUpScreen() {
                 editable={!formDisabled}
               />
             )}
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={[styles.error, { color: theme.error }]}>{error}</Text> : null}
             <TouchableOpacity
-              style={[styles.primaryBtn, (loading || formDisabled) && styles.btnDisabled]}
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }, (loading || formDisabled) && styles.btnDisabled]}
               onPress={pendingVerification ? handleVerify : handleSignUp}
               disabled={loading || formDisabled || (pendingVerification ? !code : false)}
             >
@@ -206,8 +209,8 @@ export default function SignUpScreen() {
             style={styles.swapBtn}
             onPress={() => router.replace("/(auth)/sign-in")}
           >
-            <Text style={styles.swapText}>Already have an account? </Text>
-            <Text style={styles.swapLink}>Sign in</Text>
+            <Text style={[styles.swapText, { color: theme.textTertiary }]}>Already have an account? </Text>
+            <Text style={[styles.swapLink, { color: theme.primary }]}>Sign in</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -216,7 +219,7 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#fff" },
+  safe: { flex: 1 },
   container: { flex: 1 },
   scroll: {
     flexGrow: 1,
@@ -233,12 +236,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: "700",
-    color: "#111827",
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 15,
-    color: "#6B7280",
     marginTop: 6,
   },
   googleBtn: {
@@ -246,9 +247,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    backgroundColor: "#fff",
     borderWidth: 1.5,
-    borderColor: "#E5E7EB",
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 24,
@@ -261,7 +260,6 @@ const styles = StyleSheet.create({
   googleText: {
     fontSize: 16,
     fontWeight: "500",
-    color: "#374151",
   },
   divider: {
     flexDirection: "row",
@@ -271,37 +269,29 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#E5E7EB",
   },
   dividerText: {
     marginHorizontal: 16,
     fontSize: 13,
-    color: "#9CA3AF",
     fontWeight: "500",
   },
   form: { gap: 12 },
   input: {
-    backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: "#111827",
   },
   verifyHint: {
     fontSize: 14,
-    color: "#6B7280",
     marginBottom: 4,
   },
   error: {
     fontSize: 14,
-    color: "#DC2626",
     marginTop: 4,
   },
   primaryBtn: {
-    backgroundColor: "#3D8E62",
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
@@ -318,6 +308,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 28,
   },
-  swapText: { fontSize: 15, color: "#6B7280" },
-  swapLink: { fontSize: 15, fontWeight: "600", color: "#3D8E62" },
+  swapText: { fontSize: 15 },
+  swapLink: { fontSize: 15, fontWeight: "600" },
 });

@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useApiFetch } from "../../lib/api";
 import { useReceiptSplit, type Step } from "../../hooks/useReceiptSplit";
+import { useTheme } from "../../lib/theme-context";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -42,19 +43,20 @@ type Contact = {
 };
 
 export default function ReceiptScreen() {
+  const { theme } = useTheme();
   const apiFetch = useApiFetch();
   const rs = useReceiptSplit(apiFetch);
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
 
   return (
     <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView style={st.scroll} contentContainerStyle={st.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView style={[st.scroll, { backgroundColor: theme.background }]} contentContainerStyle={st.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={st.header}>
-          <View style={st.headerIcon}><Ionicons name="receipt-outline" size={22} color="#3D8E62" /></View>
+          <View style={[st.headerIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="receipt-outline" size={22} color={theme.primary} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={st.headerTitle}>Split Receipt</Text>
-            <Text style={st.headerSub}>Scan a receipt and split items with friends</Text>
+            <Text style={[st.headerTitle, { color: theme.text }]}>Split Receipt</Text>
+            <Text style={[st.headerSub, { color: theme.textQuaternary }]}>Scan a receipt and split items with friends</Text>
           </View>
         </View>
 
@@ -62,11 +64,11 @@ export default function ReceiptScreen() {
         <View style={st.steps}>
           {STEPS.map((s, i) => (
             <View key={s.key} style={st.stepWrap}>
-              <View style={[st.stepDot, i < stepIdx && st.stepDone, i === stepIdx && st.stepActive, i > stepIdx && st.stepPending]}>
+              <View style={[st.stepDot, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }, i === stepIdx && { backgroundColor: theme.primary }, i > stepIdx && { backgroundColor: theme.surfaceTertiary }]}>
                 {i < stepIdx ? <Ionicons name="checkmark" size={11} color="#fff" /> : <Text style={[st.stepNum, i === stepIdx && { color: "#fff" }]}>{i + 1}</Text>}
               </View>
-              <Text style={[st.stepLabel, i === stepIdx && st.stepLabelActive, i > stepIdx && { color: "#C4C4C4" }]}>{s.label}</Text>
-              {i < STEPS.length - 1 && <View style={[st.stepLine, i < stepIdx && { backgroundColor: "#3D8E62" }]} />}
+              <Text style={[st.stepLabel, { color: theme.primary }, i === stepIdx && { color: theme.text, fontWeight: "700" }, i > stepIdx && { color: theme.textQuaternary }]}>{s.label}</Text>
+              {i < STEPS.length - 1 && <View style={[st.stepLine, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }]} />}
             </View>
           ))}
         </View>
@@ -83,6 +85,7 @@ export default function ReceiptScreen() {
 /* ═══════════════════ Step 1: Upload ═══════════════════ */
 
 function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
+  const { theme } = useTheme();
   const pick = async (camera: boolean) => {
     const { status: lib } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     const { status: cam } = await ImagePicker.requestCameraPermissionsAsync();
@@ -107,31 +110,31 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
   if (rs.uploading) {
     const msg = rs.uploadStage === "uploading" ? "Uploading image…" : rs.uploadStage === "reading" ? "Reading receipt…" : rs.uploadStage === "extracting" ? "Extracting items…" : "Cleaning up…";
-    return <View style={st.center}><ActivityIndicator size="large" color="#3D8E62" /><Text style={st.centerText}>{msg}</Text></View>;
+    return <View style={st.center}><ActivityIndicator size="large" color={theme.primary} /><Text style={[st.centerText, { color: theme.textTertiary }]}>{msg}</Text></View>;
   }
 
   if (rs.uploadError) {
     return (
       <View style={st.center}>
-        <Text style={st.errorText}>{rs.uploadError}</Text>
-        <TouchableOpacity style={st.btn} onPress={() => pick(false)}><Text style={st.btnText}>Try again</Text></TouchableOpacity>
+        <Text style={[st.errorText, { color: theme.error }]}>{rs.uploadError}</Text>
+        <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }]} onPress={() => pick(false)}><Text style={st.btnText}>Try again</Text></TouchableOpacity>
       </View>
     );
   }
 
   return (
     <View style={{ gap: 16 }}>
-      <TouchableOpacity style={st.uploadArea} onPress={() => pick(false)} activeOpacity={0.8}>
-        <View style={st.uploadIcon}><Ionicons name="camera" size={28} color="#3D8E62" /></View>
-        <Text style={st.uploadTitle}>Take or pick a photo</Text>
-        <Text style={st.uploadSub}>PNG, JPG, or PDF</Text>
+      <TouchableOpacity style={[st.uploadArea, { borderColor: theme.inputBorder, backgroundColor: theme.surface }]} onPress={() => pick(false)} activeOpacity={0.8}>
+        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="camera" size={28} color={theme.primary} /></View>
+        <Text style={[st.uploadTitle, { color: theme.text }]}>Take or pick a photo</Text>
+        <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>PNG, JPG, or PDF</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: "row", gap: 10 }}>
-        <TouchableOpacity style={st.uploadBtn} onPress={() => pick(true)}>
-          <Ionicons name="camera" size={18} color="#3D8E62" /><Text style={st.uploadBtnText}>Camera</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => pick(true)}>
+          <Ionicons name="camera" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>Camera</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={st.uploadBtn} onPress={pickPdf}>
-          <Ionicons name="document-text" size={18} color="#3D8E62" /><Text style={st.uploadBtnText}>PDF</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf}>
+          <Ionicons name="document-text" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>PDF</Text>
         </TouchableOpacity>
       </View>
       {rs.imageUri && !rs.isPdf && <Image source={{ uri: rs.imageUri }} style={st.preview} resizeMode="contain" />}
@@ -145,6 +148,7 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 /* ═══════════════════ Step 2: Review (REDESIGNED) ═══════════════════ */
 
 function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
+  const { theme } = useTheme();
   const recalcSubtotal = useCallback(() => {
     const sub = rs.editItems.reduce((s, i) => s + i.totalPrice, 0);
     rs.setEditSubtotal(Math.round(sub * 100) / 100);
@@ -280,6 +284,7 @@ function TotalRow({ label, value, editable = true, onChange }: { label: string; 
 /* ═══════════════════ Step 3: Assign (REDESIGNED) ═══════════════════ */
 
 function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; apiFetch: (path: string, opts?: any) => Promise<Response> }) {
+  const { theme } = useTheme();
   const [search, setSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
 
@@ -463,6 +468,7 @@ function AssignStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; 
 /* ═══════════════════ Step 4: Summary ═══════════════════ */
 
 function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>; apiFetch: (path: string, opts?: any) => Promise<Response> }) {
+  const { theme } = useTheme();
   const grandTotal = rs.personShares.reduce((s, p) => s + p.totalOwed, 0);
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -637,35 +643,35 @@ function SummaryStep({ rs, apiFetch }: { rs: ReturnType<typeof useReceiptSplit>;
 
 const st = StyleSheet.create({
   kv: { flex: 1 },
-  scroll: { flex: 1, backgroundColor: "#F7FAF8" },
+  scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 60 },
 
   header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
-  headerIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: "#EEF7F2", alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#1F2937" },
-  headerSub: { fontSize: 13, color: "#9CA3AF", marginTop: 2 },
+  headerIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: 20, fontWeight: "800" },
+  headerSub: { fontSize: 13, marginTop: 2 },
 
   steps: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
   stepWrap: { flex: 1, flexDirection: "row", alignItems: "center" },
-  stepDot: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#E5E7EB" },
-  stepDone: { backgroundColor: "#3D8E62" },
-  stepActive: { backgroundColor: "#3D8E62" },
-  stepPending: { backgroundColor: "#F3F4F6" },
+  stepDot: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  stepDone: {},
+  stepActive: {},
+  stepPending: {},
   stepNum: { fontSize: 11, fontWeight: "700", color: "#9CA3AF" },
-  stepLabel: { fontSize: 11, fontWeight: "600", color: "#3D8E62", marginLeft: 4 },
-  stepLabelActive: { color: "#1F2937", fontWeight: "700" },
-  stepLine: { flex: 1, height: 2, backgroundColor: "#E5E7EB", marginHorizontal: 4 },
+  stepLabel: { fontSize: 11, fontWeight: "600", marginLeft: 4 },
+  stepLabelActive: { fontWeight: "700" },
+  stepLine: { flex: 1, height: 2, marginHorizontal: 4 },
 
   center: { alignItems: "center", paddingVertical: 48 },
-  centerText: { fontSize: 14, color: "#6B7280", marginTop: 12 },
-  errorText: { fontSize: 14, color: "#DC2626", marginBottom: 16 },
+  centerText: { fontSize: 14, marginTop: 12 },
+  errorText: { fontSize: 14, marginBottom: 16 },
 
-  uploadArea: { borderWidth: 2, borderStyle: "dashed", borderColor: "#D1D5DB", borderRadius: 16, padding: 28, alignItems: "center", backgroundColor: "#fff" },
-  uploadIcon: { width: 56, height: 56, borderRadius: 14, backgroundColor: "#EEF7F2", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  uploadTitle: { fontSize: 16, fontWeight: "700", color: "#1F2937" },
-  uploadSub: { fontSize: 13, color: "#9CA3AF", marginTop: 4 },
-  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB" },
-  uploadBtnText: { fontSize: 14, fontWeight: "600", color: "#3D8E62" },
+  uploadArea: { borderWidth: 2, borderStyle: "dashed", borderRadius: 16, padding: 28, alignItems: "center" },
+  uploadIcon: { width: 56, height: 56, borderRadius: 14, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  uploadTitle: { fontSize: 16, fontWeight: "700" },
+  uploadSub: { fontSize: 13, marginTop: 4 },
+  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
+  uploadBtnText: { fontSize: 14, fontWeight: "600" },
   preview: { width: "100%", height: 180, borderRadius: 12, backgroundColor: "#F3F4F6" },
   pdfPreview: { height: 120, borderRadius: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB", alignItems: "center", justifyContent: "center", gap: 8 },
   pdfText: { fontSize: 14, fontWeight: "600", color: "#374151" },

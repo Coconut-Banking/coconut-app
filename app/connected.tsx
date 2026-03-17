@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "rea
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApiFetch } from "../lib/api";
+import { useTheme } from "../lib/theme-context";
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_WAIT_MS = 45000; // Give auth/token + first sync enough time
@@ -13,6 +14,7 @@ const SHOW_SKIP_AFTER_MS = 8000; // Show manual continue after 8s
  * Polls /api/plaid/status until linked, then navigates to Home.
  */
 export default function ConnectedScreen() {
+  const { theme } = useTheme();
   const apiFetch = useApiFetch();
   const [status, setStatus] = useState<"polling" | "linked" | "timeout">("polling");
   const [showSkip, setShowSkip] = useState(false);
@@ -72,14 +74,14 @@ export default function ConnectedScreen() {
       : "Importing your transactions…";
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.primaryLight }]}>
       <View style={styles.content}>
-        <ActivityIndicator size="large" color="#3D8E62" />
-        <Text style={styles.text}>Bank connected!</Text>
-        <Text style={styles.subtext}>{subtext}</Text>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.text, { color: theme.text }]}>Bank connected!</Text>
+        <Text style={[styles.subtext, { color: theme.textTertiary }]}>{subtext}</Text>
         {showSkip && status === "polling" && (
-          <TouchableOpacity style={styles.skipBtn} onPress={goHome}>
-            <Text style={styles.skipBtnText}>Continue to app</Text>
+          <TouchableOpacity style={[styles.skipBtn, { backgroundColor: theme.border }]} onPress={goHome}>
+            <Text style={[styles.skipBtnText, { color: theme.textSecondary }]}>Continue to app</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -90,7 +92,6 @@ export default function ConnectedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#EEF7F2",
   },
   content: {
     flex: 1,
@@ -101,22 +102,18 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1F2937",
   },
   subtext: {
     fontSize: 14,
-    color: "#6B7280",
   },
   skipBtn: {
     marginTop: 24,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
-    backgroundColor: "#E5E7EB",
   },
   skipBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#374151",
   },
 });

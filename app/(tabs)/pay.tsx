@@ -15,10 +15,12 @@ import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
+import { useTheme } from "../../lib/theme-context";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
 
 function PayScreenInner() {
+  const { theme } = useTheme();
   const params = useLocalSearchParams<{
     amount?: string;
     groupId?: string;
@@ -195,21 +197,21 @@ function PayScreenInner() {
   const isConnected = !!connectedReader;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Tap to Pay</Text>
-      <Text style={styles.subtitle}>
+    <View style={[styles.container, { backgroundColor: theme.surface }]}>
+      <Text style={[styles.title, { color: theme.text }]}>Tap to Pay</Text>
+      <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
         Accept contactless payments with your phone. No reader required.
       </Text>
 
       {!API_URL && (
-        <Text style={styles.warning}>
+        <Text style={[styles.warning, { color: theme.error }]}>
           Set EXPO_PUBLIC_API_URL to your deployed web app URL.
         </Text>
       )}
 
       {/* Connect / Disconnect */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           Reader: {isConnected ? "Connected" : "Not connected"}
         </Text>
         {isConnected ? (
@@ -222,7 +224,7 @@ function PayScreenInner() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.button, connecting && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: theme.primary }, connecting && styles.buttonDisabled]}
             onPress={connectTapToPay}
             disabled={connecting || !isInitialized || discoveredReaders.length === 0}
           >
@@ -244,19 +246,20 @@ function PayScreenInner() {
       {/* Amount & Collect */}
       {isConnected && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Amount ($)</Text>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Amount ($)</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: theme.border, color: theme.text }]}
             value={amount}
             onChangeText={setAmount}
             placeholder="0.00"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={theme.inputPlaceholder}
             keyboardType="decimal-pad"
             editable={!collecting}
           />
           <TouchableOpacity
             style={[
               styles.button,
+              { backgroundColor: theme.primary },
               (!amount || parseFloat(amount) <= 0 || collecting) && styles.buttonDisabled,
             ]}
             onPress={collectPayment}
@@ -272,16 +275,16 @@ function PayScreenInner() {
       )}
 
       {lastPayment && (
-        <View style={styles.result}>
-          <Text style={styles.resultLabel}>Last result</Text>
-          <Text style={styles.resultText}>{lastPayment}</Text>
+        <View style={[styles.result, { backgroundColor: theme.primaryLight }]}>
+          <Text style={[styles.resultLabel, { color: theme.textTertiary }]}>Last result</Text>
+          <Text style={[styles.resultText, { color: theme.text }]}>{lastPayment}</Text>
         </View>
       )}
 
-      <Text style={styles.hint}>
+      <Text style={[styles.hint, { color: theme.textQuaternary }]}>
         Tap to Pay does not work in Expo Go. Run{" "}
-        <Text style={styles.hintCode}>expo run:ios</Text> or{" "}
-        <Text style={styles.hintCode}>expo run:android</Text> to build with native Stripe support.
+        <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:ios</Text> or{" "}
+        <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:android</Text> to build with native Stripe support.
         {"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
       </Text>
     </View>
@@ -292,22 +295,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    backgroundColor: "#fff",
   },
   title: {
     fontSize: 22,
     fontWeight: "600",
-    color: "#1F2937",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: "#6B7280",
     marginBottom: 24,
   },
   warning: {
     fontSize: 13,
-    color: "#DC2626",
     marginBottom: 16,
   },
   section: {
@@ -316,16 +315,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#374151",
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderRadius: 12,
     padding: 14,
     fontSize: 18,
-    color: "#1F2937",
     marginBottom: 12,
   },
   button: {
@@ -349,28 +345,23 @@ const styles = StyleSheet.create({
   result: {
     marginTop: 24,
     padding: 16,
-    backgroundColor: "#EEF7F2",
     borderRadius: 12,
   },
   resultLabel: {
     fontSize: 12,
-    color: "#6B7280",
     marginBottom: 4,
   },
   resultText: {
     fontSize: 14,
-    color: "#1F2937",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   hint: {
     marginTop: 24,
     fontSize: 12,
-    color: "#9CA3AF",
     lineHeight: 18,
   },
   hintCode: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    backgroundColor: "#F3F4F6",
     paddingHorizontal: 4,
     paddingVertical: 2,
     borderRadius: 4,
