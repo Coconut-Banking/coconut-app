@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Redirect } from "expo-router";
 import {
   View,
   Text,
@@ -204,11 +203,6 @@ export default function HomeScreen() {
       setSemanticSearching(false);
     }
   };
-
-  // Auto-redirect to sign-up when auth is loaded but user is not signed in (skip when SKIP_AUTH)
-  if (!SKIP_AUTH && authLoaded && !isSignedIn) {
-    return <Redirect href="/(auth)/sign-up" />;
-  }
 
   const openConnect = async () => {
     setConnectError(null);
