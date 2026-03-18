@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { useTransactions } from "../../hooks/useTransactions";
 import { useSubscriptions } from "../../hooks/useSubscriptions";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
 
@@ -57,13 +58,12 @@ export default function InsightsScreen() {
     ? groupsSummary.totalOwedToMe - groupsSummary.totalIOwe
     : 0;
 
-  const openSettings = () =>
-    Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
+  const openSettings = () => router.push("/(tabs)/settings");
 
   if (!linked) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Ionicons name="analytics-outline" size={48} color="#9CA3AF" />
+        <Ionicons name="analytics-outline" size={48} color={colors.textMuted} />
         <Text style={styles.emptyTitle}>Connect your bank</Text>
         <Text style={styles.emptySubtitle}>
           Link your account to see spending insights and subscriptions.
@@ -81,7 +81,7 @@ export default function InsightsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#3D8E62" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading insights...</Text>
       </View>
     );
@@ -97,31 +97,31 @@ export default function InsightsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Insights</Text>
         <TouchableOpacity onPress={openSettings} style={styles.settingsBtn} hitSlop={12}>
-          <Ionicons name="settings-outline" size={22} color="#6B7280" />
+          <Ionicons name="settings-outline" size={22} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
       {/* Summary cards */}
       <View style={styles.cardsRow}>
-        <View style={[styles.card, { backgroundColor: "#FEE2E2" }]}>
-          <Ionicons name="trending-down" size={20} color="#DC2626" />
+        <View style={[styles.card, { backgroundColor: colors.redBg }]}>
+          <Ionicons name="trending-down" size={20} color={colors.red} />
           <Text style={styles.cardValue}>${monthlySpend.toLocaleString()}</Text>
           <Text style={styles.cardLabel}>This month</Text>
         </View>
-        <View style={[styles.card, { backgroundColor: "#F3E8FF" }]}>
-          <Ionicons name="refresh" size={20} color="#7C3AED" />
+        <View style={[styles.card, { backgroundColor: colors.purpleBg }]}>
+          <Ionicons name="refresh" size={20} color={colors.purple} />
           <Text style={styles.cardValue}>${subsTotal.toFixed(0)}</Text>
           <Text style={styles.cardLabel}>Subscriptions</Text>
         </View>
       </View>
 
-      <View style={[styles.card, { backgroundColor: "#EEF7F2", marginBottom: 24 }]}>
-        <Ionicons name="people" size={20} color="#3D8E62" />
+      <View style={[styles.card, { backgroundColor: colors.primaryLight, marginBottom: 24 }]}>
+        <Ionicons name="people" size={20} color={colors.primary} />
         <Text
           style={[
             styles.cardValue,
-            sharedNet > 0 && { color: "#059669" },
-            sharedNet < 0 && { color: "#B45309" },
+            sharedNet > 0 && { color: colors.green },
+            sharedNet < 0 && { color: colors.amber },
           ]}
         >
           {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
@@ -151,7 +151,7 @@ export default function InsightsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subscriptions</Text>
         {subsLoading ? (
-          <ActivityIndicator size="small" color="#3D8E62" />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : subscriptions.length === 0 ? (
           <Text style={styles.emptyText}>No subscriptions detected yet</Text>
         ) : (
@@ -159,7 +159,7 @@ export default function InsightsScreen() {
             {subscriptions.map((sub) => (
               <View key={sub.id} style={styles.subRow}>
                 <View style={styles.subIcon}>
-                  <Ionicons name="refresh" size={16} color="#7C3AED" />
+                  <Ionicons name="refresh" size={16} color={colors.purple} />
                 </View>
                 <View style={styles.subInfo}>
                   <Text style={styles.subMerchant} numberOfLines={1}>
@@ -180,7 +180,7 @@ export default function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAF8" },
+  container: { flex: 1, backgroundColor: colors.bg },
   center: { justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
@@ -190,71 +190,72 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 24,
   },
-  title: { fontSize: 24, fontWeight: "700", color: "#1F2937" },
+  title: { fontSize: 24, fontWeight: "700", fontFamily: font.bold, color: colors.text },
   settingsBtn: { padding: 4 },
   cardsRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
   card: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: radii.xl,
     padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.05)",
+    ...shadow.md,
   },
-  cardValue: { fontSize: 18, fontWeight: "700", color: "#1F2937", marginTop: 8 },
-  cardLabel: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  cardValue: { fontSize: 18, fontWeight: "700", fontFamily: font.bold, color: colors.text, marginTop: 8 },
+  cardLabel: { fontSize: 12, fontFamily: font.regular, color: colors.textTertiary, marginTop: 2 },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: "600", color: "#374151", marginBottom: 12 },
-  categoryList: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB" },
+  sectionTitle: { fontSize: 16, fontWeight: "600", fontFamily: font.semibold, color: colors.textSecondary, marginBottom: 12 },
+  categoryList: { backgroundColor: colors.surface, borderRadius: radii.md, ...shadow.md },
   categoryRow: {
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.borderLight,
   },
   categoryIndex: {
     width: 24,
     fontSize: 14,
     fontWeight: "600",
-    color: "#9CA3AF",
+    fontFamily: font.semibold,
+    color: colors.textMuted,
   },
-  categoryName: { flex: 1, fontSize: 15, color: "#1F2937" },
-  categoryAmount: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
-  subList: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB" },
+  categoryName: { flex: 1, fontSize: 15, fontFamily: font.regular, color: colors.text },
+  categoryAmount: { fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.text },
+  subList: { backgroundColor: colors.surface, borderRadius: radii.md, ...shadow.md },
   subRow: {
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.borderLight,
   },
   subIcon: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "#F3E8FF",
+    borderRadius: radii.sm,
+    backgroundColor: colors.purpleBg,
     alignItems: "center",
     justifyContent: "center",
   },
   subInfo: { flex: 1, marginLeft: 12 },
-  subMerchant: { fontSize: 15, fontWeight: "500", color: "#1F2937" },
-  subMeta: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  emptyText: { fontSize: 14, color: "#9CA3AF" },
-  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#374151", marginTop: 16 },
+  subMerchant: { fontSize: 15, fontWeight: "500", fontFamily: font.medium, color: colors.text },
+  subMeta: { fontSize: 12, fontFamily: font.regular, color: colors.textTertiary, marginTop: 2 },
+  emptyText: { fontSize: 14, fontFamily: font.regular, color: colors.textMuted },
+  emptyTitle: { fontSize: 18, fontWeight: "600", fontFamily: font.semibold, color: colors.textSecondary, marginTop: 16 },
   emptySubtitle: {
     fontSize: 14,
-    color: "#6B7280",
+    fontFamily: font.regular,
+    color: colors.textTertiary,
     textAlign: "center",
     marginTop: 8,
     paddingHorizontal: 32,
   },
   connectButton: {
-    backgroundColor: "#3D8E62",
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: radii.lg,
     marginTop: 24,
   },
-  connectButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  loadingText: { fontSize: 14, color: "#6B7280", marginTop: 12 },
+  connectButtonText: { color: "#fff", fontWeight: "600", fontFamily: font.semibold, fontSize: 16 },
+  loadingText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
 });

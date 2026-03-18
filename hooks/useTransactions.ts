@@ -14,6 +14,11 @@ export interface Transaction {
   isRecurring?: boolean;
   hasSplitSuggestion?: boolean;
   merchantColor: string;
+  isPending?: boolean;
+  /** Last 4 of account for bank tag, e.g. "1234" */
+  accountMask?: string | null;
+  /** Account name for bank tag, e.g. "Chase Checking" */
+  accountName?: string | null;
 }
 
 export type PlaidStatus = "ok" | "unauthorized" | "not_linked";
@@ -41,12 +46,12 @@ export function useTransactions() {
         if (cancelled) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
-          if (transientRetryCount.current < 8) {
+          if (transientRetryCount.current < 14) {
             transientRetryCount.current += 1;
-            console.log(`[useTransactions] 425 retry ${transientRetryCount.current}/8`);
+            console.log(`[useTransactions] 425 retry ${transientRetryCount.current}/14`);
             setTimeout(() => {
               if (!cancelled) fetchData(true);
-            }, 800);
+            }, 600);
             return null;
           }
           console.log("[useTransactions] 425 max retries, setting loading=false");
@@ -99,18 +104,29 @@ export function useTransactions() {
       });
   }, [apiFetch]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const runSyncThenFetch = useCallback(
+    async (silent = true) => {
+      try {
+        await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+      } catch {
+        // Sync may fail; still refetch from DB
+      }
+      fetchData(silent);
+    },
+    [apiFetch, fetchData]
+  );
 
-  // Refetch when app returns from background (e.g. after connect flow in browser)
-  // Use silent=true to avoid flickering — don't show loading spinner on refetch
+  useEffect(() => {
+    runSyncThenFetch(false);
+  }, [runSyncThenFetch]);
+
+  // Sync and refetch when app returns from background
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") fetchData(true);
+      if (state === "active") runSyncThenFetch(true);
     });
     return () => sub.remove();
-  }, [fetchData]);
+  }, [runSyncThenFetch]);
 
   return { transactions, linked, loading, status, refetch: fetchData };
 }

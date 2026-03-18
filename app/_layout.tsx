@@ -1,50 +1,26 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { StripeTerminalProvider } from "@stripe/stripe-terminal-react-native";
+import { AuthHandoffHandler } from "../components/AuthHandoffHandler";
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+  Inter_900Black,
+} from "@expo-google-fonts/inter";
+import * as SplashScreen from "expo-splash-screen";
+
+SplashScreen.preventAutoHideAsync();
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-lemon.vercel.app";
 
 if (!publishableKey) {
   console.warn("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY not set — auth will fail");
-}
-
-function TerminalTokenProvider({ children }: { children: React.ReactElement | React.ReactElement[] }) {
-  const { getToken } = useAuth();
-
-  const fetchConnectionToken = async () => {
-    let token: string | null = null;
-    for (let i = 0; i < 4; i++) {
-      token = await getToken({ skipCache: i > 0 });
-      if (token) break;
-      if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
-    }
-    if (!token) {
-      throw new Error("Authentication required for Tap to Pay");
-    }
-    const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/stripe/terminal/connection-token`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
-    return data.secret;
-  };
-
-  return (
-    <StripeTerminalProvider
-      logLevel="error"
-      tokenProvider={fetchConnectionToken}
-    >
-      {children}
-    </StripeTerminalProvider>
-  );
 }
 
 const FORCE_SIGN_OUT_ON_LAUNCH = process.env.EXPO_PUBLIC_FORCE_SIGN_OUT === "true";
@@ -67,7 +43,6 @@ function AuthSwitch() {
     console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : "TABS"}`);
   }, [isLoaded, isSignedIn, instance]);
 
-  // Clear stale cached session that causes sign-in → tabs → forever-spinner loop
   useEffect(() => {
     if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || !isSignedIn || hasClearedSession.current) return;
     console.log("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
@@ -77,44 +52,60 @@ function AuthSwitch() {
       .catch((e: unknown) => console.warn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
   }, [isLoaded, isSignedIn, signOut]);
 
-  // SKIP_AUTH: always show tabs so you can see the UI without signing in
   if (SKIP_AUTH) {
     return (
-      <TerminalTokenProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="connected" options={{ headerShown: false }} />
-        </Stack>
-      </TerminalTokenProvider>
-    );
-  }
-
-  // Block tabs when: not loaded, not signed in, OR FORCE_SIGN_OUT + cached session (until signOut completes)
-  if (!isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn)) {
-    return (
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="connected" options={{ headerShown: false }} />
-      </Stack>
-    );
-  }
-  return (
-    <TerminalTokenProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
       </Stack>
-    </TerminalTokenProvider>
+    );
+  }
+
+  if (!isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn)) {
+    return (
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
+      </Stack>
+    );
+  }
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="connected" options={{ headerShown: false }} />
+    </Stack>
   );
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+    Inter_900Black,
+  });
+
+  const onLayoutReady = useCallback(async () => {
+    if (fontsLoaded) {
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    onLayoutReady();
+  }, [onLayoutReady]);
+
+  if (!fontsLoaded) return null;
+
   return (
     <ClerkProvider
       publishableKey={publishableKey ?? ""}
-      tokenCache={SKIP_AUTH ? undefined : tokenCache}
+      tokenCache={tokenCache}
     >
       <StatusBar style="auto" />
+      <AuthHandoffHandler />
       <AuthSwitch />
     </ClerkProvider>
   );

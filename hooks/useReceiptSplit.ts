@@ -207,6 +207,33 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     ]
   );
 
+  const addItem = useCallback(() => {
+    const id = `new-${Date.now()}`;
+    setEditItems((prev) => [...prev, { id, name: "New item", quantity: 1, unitPrice: 0, totalPrice: 0 }]);
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setEditItems((prev) => prev.filter((i) => i.id !== id));
+    setAssignments((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const updateItem = useCallback((id: string, updates: Partial<Omit<ReceiptItem, "id">>) => {
+    setEditItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, ...updates };
+        if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+          updated.totalPrice = Math.round(updated.quantity * updated.unitPrice * 100) / 100;
+        }
+        return updated;
+      })
+    );
+  }, []);
+
   const addPerson = useCallback(
     (
       name: string,
@@ -363,6 +390,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     uploadReceipt,
     editItems,
     setEditItems,
+    addItem,
+    removeItem,
+    updateItem,
     editSubtotal,
     setEditSubtotal,
     editTax,
