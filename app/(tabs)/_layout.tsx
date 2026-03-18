@@ -53,7 +53,7 @@ export default function TabLayout() {
           options={{
             title: "Pay",
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="phone-portrait-outline" color={color} size={size} />
+              <Ionicons name="hardware-chip-outline" color={color} size={size} />
             ),
           }}
         />

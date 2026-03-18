@@ -265,6 +265,23 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Tap to Pay — checklist 3.6 */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Tap to Pay</Text>
+          <View style={styles.infoBox}>
+            <Ionicons name="hardware-chip-outline" size={16} color="#3D8E62" />
+            <Text style={styles.infoText}>
+              Accept contactless payments with your iPhone. No reader required. Connect and accept terms in the Pay tab.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => router.push("/(tabs)/pay")}
+          >
+            <Text style={styles.link}>Open Pay tab →</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Data & Security */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Data & security</Text>

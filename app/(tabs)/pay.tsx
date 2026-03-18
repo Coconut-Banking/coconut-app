@@ -8,14 +8,30 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  AppState,
+  Share,
 } from "react-native";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 import type { Reader } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "@clerk/expo";
+import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
+
+/** Error codes that indicate unsupported device/OS — show "Please update iOS" per checklist 1.4 */
+const UNSUPPORTED_DEVICE_CODES = [
+  ErrorCode.TAP_TO_PAY_UNSUPPORTED_DEVICE,
+  ErrorCode.TAP_TO_PAY_UNSUPPORTED_ANDROID_VERSION,
+  ErrorCode.TAP_TO_PAY_UNSUPPORTED_PROCESSOR,
+  ErrorCode.TAP_TO_PAY_DEVICE_TAMPERED,
+  ErrorCode.TAP_TO_PAY_INSECURE_ENVIRONMENT,
+  ErrorCode.TAP_TO_PAY_DEBUG_NOT_SUPPORTED,
+  ErrorCode.TAP_TO_PAY_LIBRARY_NOT_INCLUDED,
+] as const;
+
+type PaymentOutcome = "approved" | "declined" | "timeout" | null;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
 
@@ -32,6 +48,10 @@ function PayScreenInner() {
   const [collecting, setCollecting] = useState(false);
   const [lastPayment, setLastPayment] = useState<string | null>(null);
   const [discoveredReaders, setDiscoveredReaders] = useState<Reader.Type[]>([]);
+  const [paymentOutcome, setPaymentOutcome] = useState<PaymentOutcome>(null);
+  const [lastOutcomeAmount, setLastOutcomeAmount] = useState<number | null>(null);
+  type Phase = "idle" | "initializing" | "collecting" | "processing";
+  const [paymentPhase, setPaymentPhase] = useState<Phase>("idle");
 
   const {
     initialize,
@@ -59,9 +79,19 @@ function PayScreenInner() {
     if (params.amount) setAmount(params.amount);
   }, [params.amount]);
 
+  // Reader warm-up: discover at launch and when app returns to foreground (checklist 1.5)
   useEffect(() => {
     if (!isInitialized) return;
     discoverReaders({ discoveryMethod: "tapToPay" });
+  }, [isInitialized, discoverReaders]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && isInitialized) {
+        discoverReaders({ discoveryMethod: "tapToPay" });
+      }
+    });
+    return () => sub.remove();
   }, [isInitialized, discoverReaders]);
 
   const connectTapToPay = useCallback(async () => {
@@ -96,7 +126,15 @@ function PayScreenInner() {
       });
 
       if (connectResult.error) {
-        Alert.alert("Connection failed", connectResult.error.message ?? "Could not connect");
+        const code = connectResult.error.code;
+        if (UNSUPPORTED_DEVICE_CODES.includes(code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
+          Alert.alert(
+            "Update required",
+            "Tap to Pay requires a compatible device and the latest iOS. Please update your iPhone to the latest version."
+          );
+        } else {
+          Alert.alert("Connection failed", connectResult.error.message ?? "Could not connect");
+        }
       }
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Connection failed");
@@ -108,6 +146,20 @@ function PayScreenInner() {
   const disconnect = useCallback(async () => {
     await disconnectReader();
   }, [disconnectReader]);
+
+  const shareReceipt = useCallback(
+    async (outcome: "approved" | "declined" | "timeout", amt: number) => {
+      const status =
+        outcome === "approved" ? "Approved" : outcome === "declined" ? "Declined" : "Timed out";
+      const message = `Tap to Pay receipt: $${amt.toFixed(2)} — ${status}`;
+      try {
+        await Share.share({ message, title: "Payment receipt" });
+      } catch {
+        // User cancelled share
+      }
+    },
+    []
+  );
 
   const collectPayment = useCallback(async () => {
     const amt = parseFloat(amount);
@@ -122,7 +174,10 @@ function PayScreenInner() {
     }
 
     setCollecting(true);
+    setPaymentOutcome(null);
+    setPaymentPhase("initializing");
     try {
+      // 5.7 Initializing
       const body: Record<string, unknown> = { amount: amt };
       if (params.groupId && params.payerMemberId && params.receiverMemberId) {
         body.groupId = params.groupId;
@@ -149,6 +204,7 @@ function PayScreenInner() {
         return;
       }
 
+      setPaymentPhase("collecting");
       const collectResult = await collectPaymentMethod({
         paymentIntent: retrieveResult.paymentIntent,
       });
@@ -157,22 +213,57 @@ function PayScreenInner() {
           setCollecting(false);
           return;
         }
-        Alert.alert("Collection failed", collectResult.error.message ?? "Could not collect payment");
+        if (collectResult.error.code === ErrorCode.CARD_READ_TIMED_OUT) {
+          setPaymentOutcome("timeout");
+          setLastOutcomeAmount(amt);
+          setLastPayment(`Timed out — $${amt.toFixed(2)}`);
+          setCollecting(false);
+          return;
+        }
+        if (
+          collectResult.error.code === ErrorCode.DECLINED_BY_STRIPE_API ||
+          collectResult.error.code === ErrorCode.DECLINED_BY_READER
+        ) {
+          setPaymentOutcome("declined");
+          setLastOutcomeAmount(amt);
+          setLastPayment(`Declined — $${amt.toFixed(2)}`);
+          setCollecting(false);
+          return;
+        }
+        if (UNSUPPORTED_DEVICE_CODES.includes(collectResult.error.code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
+          Alert.alert(
+            "Update required",
+            "Please update your iPhone to the latest iOS version to use Tap to Pay."
+          );
+        } else {
+          Alert.alert("Collection failed", collectResult.error.message ?? "Could not collect payment");
+        }
         setCollecting(false);
         return;
       }
 
       if (!collectResult.paymentIntent) {
         setCollecting(false);
+        setPaymentPhase("idle");
         return;
       }
 
+      setPaymentPhase("processing");
       const processResult = await processPaymentIntent({
         paymentIntent: collectResult.paymentIntent,
       });
       if (processResult.error) {
-        Alert.alert("Payment failed", processResult.error.message ?? "Could not process payment");
+        const code = processResult.error.code;
+        if (code === ErrorCode.DECLINED_BY_STRIPE_API || code === ErrorCode.DECLINED_BY_READER) {
+          setPaymentOutcome("declined");
+          setLastOutcomeAmount(amt);
+          setLastPayment(`Declined — $${amt.toFixed(2)}`);
+        } else {
+          Alert.alert("Payment failed", processResult.error.message ?? "Could not process payment");
+        }
       } else {
+        setPaymentOutcome("approved");
+        setLastOutcomeAmount(amt);
         setLastPayment(`Paid $${amt.toFixed(2)} successfully`);
         setAmount("");
       }
@@ -180,6 +271,7 @@ function PayScreenInner() {
       Alert.alert("Error", e instanceof Error ? e.message : "Payment failed");
     } finally {
       setCollecting(false);
+      setPaymentPhase("idle");
     }
   }, [
     amount,
@@ -266,16 +358,66 @@ function PayScreenInner() {
             {collecting ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Collect payment</Text>
+              <View style={styles.buttonContent}>
+                <Ionicons name="hardware-chip-outline" size={20} color="#fff" />
+                <Text style={styles.buttonText}>Collect payment</Text>
+              </View>
             )}
           </TouchableOpacity>
         </View>
       )}
 
+      {/* 5.7 Initializing / 5.8 Processing overlay */}
+      {collecting && paymentPhase !== "idle" && (
+        <View style={styles.overlay}>
+          <View style={styles.overlayCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.overlayTitle}>
+              {paymentPhase === "initializing"
+                ? "Initializing…"
+                : paymentPhase === "collecting"
+                ? "Hold phone near card"
+                : "Processing…"}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* 5.9 Outcome + 5.10 Share receipt */}
       {lastPayment && (
         <View style={styles.result}>
-          <Text style={styles.resultLabel}>Last result</Text>
+          <View style={styles.resultRow}>
+            <Ionicons
+              name={
+                paymentOutcome === "approved"
+                  ? "checkmark-circle"
+                  : paymentOutcome === "declined"
+                  ? "close-circle"
+                  : "time-outline"
+              }
+              size={24}
+              color={
+                paymentOutcome === "approved"
+                  ? colors.green
+                  : paymentOutcome === "declined"
+                  ? colors.red
+                  : colors.amber
+              }
+            />
+            <Text style={styles.resultLabel}>Last result</Text>
+          </View>
           <Text style={styles.resultText}>{lastPayment}</Text>
+          {lastOutcomeAmount != null && (
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() =>
+                paymentOutcome && shareReceipt(paymentOutcome, lastOutcomeAmount)
+              }
+            >
+              <Ionicons name="share-outline" size={18} color={colors.primary} />
+              <Text style={styles.shareButtonText}>Share receipt</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -341,6 +483,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     alignItems: "center",
   },
+  buttonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   disconnectButton: {
     backgroundColor: colors.textTertiary,
   },
@@ -353,11 +500,49 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontFamily: font.semibold,
   },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+  },
+  overlayCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: 32,
+    alignItems: "center",
+    gap: 16,
+    minWidth: 200,
+  },
+  overlayTitle: {
+    fontSize: 16,
+    fontFamily: font.semibold,
+    color: colors.text,
+  },
   result: {
     marginTop: 24,
     padding: 16,
     backgroundColor: colors.primaryLight,
     borderRadius: radii.md,
+  },
+  resultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4,
+  },
+  shareButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontFamily: font.medium,
+    color: colors.primary,
   },
   resultLabel: {
     fontSize: 12,

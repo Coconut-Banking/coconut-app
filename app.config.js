@@ -23,9 +23,6 @@ export default {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
-      entitlements: {
-        "com.apple.developer.proximity-reader.payment.acceptance": true,
-      },
     },
     android: {
       adaptiveIcon: {

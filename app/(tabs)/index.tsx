@@ -28,6 +28,7 @@ import { useGroupsSummary } from "../../hooks/useGroups";
 import { useInsights } from "../../hooks/useInsights";
 import { InsightsBanner } from "../../components/InsightsBanner";
 import { InsightsSwipeModal } from "../../components/InsightsSwipeModal";
+import { TapToPayBanner } from "../../components/TapToPayBanner";
 import { colors, font, fontSize as FS, shadow, radii, space, card, cardFlat, type as T } from "../../lib/theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
@@ -697,6 +698,8 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Tap to Pay banner — shown once to eligible users (checklist 3.2, 6.2) */}
+        <TapToPayBanner />
         {/* Insights banner — between panels and search */}
         <InsightsBanner
           insights={insights}
