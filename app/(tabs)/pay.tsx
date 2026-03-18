@@ -18,6 +18,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 
 /** Error codes that indicate unsupported device/OS — show "Please update iOS" per checklist 1.4 */
@@ -72,7 +73,11 @@ function PayScreenInner() {
   });
 
   useEffect(() => {
-    initialize();
+    let cancelled = false;
+    Promise.resolve(initialize()).catch((e) => {
+      if (!cancelled && __DEV__) console.warn("[Pay] Stripe init failed", e);
+    });
+    return () => { cancelled = true; };
   }, [initialize]);
 
   useEffect(() => {
@@ -573,29 +578,62 @@ const styles = StyleSheet.create({
 
 export default function PayScreen() {
   const { getToken } = useAuth();
+  const [deferReady, setDeferReady] = useState(false);
+
+  // Defer Stripe init to avoid "invocation function for block" crash on cold start
+  // when app restores to Pay tab before auth/bridge is ready
+  useEffect(() => {
+    const t = setTimeout(() => setDeferReady(true), 600);
+    return () => clearTimeout(t);
+  }, []);
 
   const fetchConnectionToken = useCallback(async () => {
-    let token: string | null = null;
-    for (let i = 0; i < 4; i++) {
-      token = await getToken({ skipCache: i > 0 });
-      if (token) break;
-      if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+    try {
+      const gt = getToken;
+      if (!gt || typeof gt !== "function") {
+        throw new Error("Auth not ready");
+      }
+      let token: string | null = null;
+      for (let i = 0; i < 5; i++) {
+        try {
+          token = await gt({ skipCache: i > 0 });
+          if (token) break;
+        } catch {
+          // Retry
+        }
+        if (i < 4) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      }
+      const url = API_URL.replace(/\/$/, "");
+      const res = await fetch(`${url}/api/stripe/terminal/connection-token`, {
+        method: "POST",
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
+      if (!data.secret) throw new Error("No connection token");
+      return data.secret;
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : "Connection token failed");
     }
-    const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/stripe/terminal/connection-token`, {
-      method: "POST",
-      headers: {
-        Authorization: token ? `Bearer ${token}` : "",
-        "Content-Type": "application/json",
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
-    return data.secret;
   }, [getToken]);
 
+  if (!deferReady) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.subtitle, { marginTop: 16 }]}>Loading Tap to Pay…</Text>
+      </View>
+    );
+  }
+
   return (
-    <StripeTerminalProvider logLevel="error" tokenProvider={fetchConnectionToken}>
-      <PayScreenInner />
-    </StripeTerminalProvider>
+    <ErrorBoundary>
+      <StripeTerminalProvider logLevel="error" tokenProvider={fetchConnectionToken}>
+        <PayScreenInner />
+      </StripeTerminalProvider>
+    </ErrorBoundary>
   );
 }

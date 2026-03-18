@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { AuthHandoffHandler } from "../components/AuthHandoffHandler";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import {
   useFonts,
   Inter_400Regular,
@@ -104,9 +105,11 @@ export default function RootLayout() {
       publishableKey={publishableKey ?? ""}
       tokenCache={tokenCache}
     >
-      <StatusBar style="auto" />
-      <AuthHandoffHandler />
-      <AuthSwitch />
+      <ErrorBoundary>
+        <StatusBar style="auto" />
+        <AuthHandoffHandler />
+        <AuthSwitch />
+      </ErrorBoundary>
     </ClerkProvider>
   );
 }

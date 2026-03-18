@@ -1,6 +1,16 @@
+// Dev variant: development EAS profile OR APP_VARIANT=dev (local)
+const isDev =
+  process.env.EAS_BUILD_PROFILE === "development" ||
+  process.env.EAS_BUILD_PROFILE === "development-simulator" ||
+  process.env.APP_VARIANT === "dev";
+
+const name = isDev ? "Coconut Dev" : "Coconut";
+const bundleId = isDev ? "com.coconut.app.dev" : "com.coconut.app";
+const scheme = isDev ? "coconut-dev" : "coconut";
+
 export default {
   expo: {
-    name: "Coconut",
+    name,
     extra: {
       eas: {
         projectId: "d1b6394a-093c-413c-bf89-ac740a528dbb",
@@ -15,11 +25,11 @@ export default {
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
-    scheme: "coconut",
+    scheme,
     userInterfaceStyle: "automatic",
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.coconut.app",
+      bundleIdentifier: bundleId,
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -30,7 +40,7 @@ export default {
         foregroundImage: "./assets/android-icon-foreground.png",
         backgroundImage: "./assets/android-icon-background.png",
       },
-      package: "com.coconut.app",
+      package: bundleId,
       minSdkVersion: 24,
       permissions: ["INTERNET"],
     },

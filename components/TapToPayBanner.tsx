@@ -12,9 +12,9 @@ export function TapToPayBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    SecureStore.getItemAsync(TTP_BANNER_SEEN_KEY).then((v) => {
-      setVisible(v !== "true");
-    });
+    SecureStore.getItemAsync(TTP_BANNER_SEEN_KEY)
+      .then((v) => setVisible(v !== "true"))
+      .catch(() => setVisible(false));
   }, []);
 
   const onPress = async () => {
