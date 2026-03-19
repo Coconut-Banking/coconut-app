@@ -356,7 +356,7 @@ export default function HomeScreen() {
   const { signOut } = useClerk();
   const { user } = useUser();
   const apiFetch = useApiFetch();
-  const { transactions, linked, loading, status, refetch } = useTransactions();
+  const { transactions, linked, loading, status, refetch, runFullSync } = useTransactions();
   const { subscriptions } = useSubscriptions();
   const { summary: groupsSummary } = useGroupsSummary();
   const { accounts: bankAccounts, byInstitution } = useAccounts();
@@ -443,9 +443,10 @@ export default function HomeScreen() {
 
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
-    await Promise.all([refetch(true), refetchInsights()]);
+    // Full sync with Plaid (can take 15–30s). Use refetch for quick refresh from DB only.
+    await Promise.all([runFullSync(true), refetchInsights()]);
     setPullRefreshing(false);
-  }, [refetch, refetchInsights]);
+  }, [runFullSync, refetchInsights]);
 
   const displayTransactions = useMemo(() => {
     let list: Transaction[];
@@ -499,6 +500,7 @@ export default function HomeScreen() {
       setSemanticAnswer("");
       return;
     }
+    if (__DEV__) console.log("[pipeline:nl] 1. input", { query: q });
     setSemanticSearching(true);
     setHasSearchedSemantic(true);
     setSemanticAnswer("");
@@ -506,13 +508,36 @@ export default function HomeScreen() {
       const res = await apiFetch("/api/nl-search", {
         method: "POST",
         body: { q },
+        ...(__DEV__ && { headers: { "X-NL-Search-Debug": "true" } }),
       });
       const data = await res.json();
+      if (__DEV__ && data._debug) {
+        console.log("[pipeline:nl] 1b. debug", {
+          intent: data._debug.intent,
+          routing: data._debug.routing,
+          stage3Path: data._debug.stage3Path,
+          stage3CandidateCount: data._debug.stage3CandidateCount,
+          stage4FilterBefore: data._debug.stage4FilterBefore,
+          stage4FilterAfter: data._debug.stage4FilterAfter,
+          stage5TransactionCount: data._debug.stage5TransactionCount,
+          stage5Total: data._debug.stage5Total,
+          dateRelaxed: data._debug.dateRelaxed,
+        });
+      }
       const raw = data.transactions ?? [];
       const txs = Array.isArray(raw) ? raw.map(mapApiTx) : [];
       setSemanticResults(txs);
       setSemanticAnswer(data.answer ?? "");
-    } catch {
+      if (__DEV__) {
+        console.log("[pipeline:nl] 2. output", {
+          count: txs.length,
+          metric: data.metric,
+          total: data.total ?? null,
+          answer: (data.answer ?? "").slice(0, 80) + ((data.answer?.length ?? 0) > 80 ? "…" : ""),
+        });
+      }
+    } catch (e) {
+      if (__DEV__) console.warn("[pipeline:nl] 2. error", e instanceof Error ? e.message : e);
       setSemanticResults([]);
       setSemanticAnswer("Search failed.");
     } finally {

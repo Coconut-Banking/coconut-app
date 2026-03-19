@@ -579,15 +579,14 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   hint: {
-    marginTop: 24,
     fontSize: 12,
     fontFamily: font.regular,
-    color: colors.textMuted,
     lineHeight: 18,
+    marginTop: 16,
   },
   hintCode: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    backgroundColor: colors.borderLight,
+    fontSize: 11,
     paddingHorizontal: 4,
     paddingVertical: 2,
     borderRadius: 4,

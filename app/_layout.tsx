@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback } from "react";
+import { View, Text, StyleSheet } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
@@ -106,6 +107,17 @@ export default function RootLayout() {
 
   if (!fontsLoaded) return null;
 
+  if (!publishableKey) {
+    return (
+      <View style={styles.configErrorContainer}>
+        <Text style={styles.configErrorTitle}>Configuration error</Text>
+        <Text style={styles.configErrorText}>
+          Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in this build.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <ThemeProvider>
       <ClerkProvider
@@ -121,3 +133,25 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  configErrorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    backgroundColor: "#fff",
+  },
+  configErrorTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 12,
+    color: "#111827",
+  },
+  configErrorText: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+    color: "#4B5563",
+  },
+});

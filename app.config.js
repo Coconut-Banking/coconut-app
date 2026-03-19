@@ -8,6 +8,19 @@ const name = isDev ? "Coconut Dev" : "Coconut";
 const bundleId = isDev ? "com.coconut.app.dev" : "com.coconut.app";
 const scheme = isDev ? "coconut-dev" : "coconut";
 
+/**
+ * Tap to Pay on iPhone requires Apple to attach
+ * `com.apple.developer.proximity-reader.payment.acceptance` to your **provisioning profile**.
+ * EAS / App Store profiles often do NOT include it until Tap to Pay is fully enabled for your App ID,
+ * which makes the build fail with "Entitlement ... not found and could not be included in profile".
+ *
+ * Set ENABLE_TAP_TO_PAY_IOS=true in EAS env (or local .env) only when your profile includes that entitlement.
+ * @see docs/TAP_TO_PAY_BUILD.md
+ */
+const ENABLE_TAP_TO_PAY_IOS =
+  process.env.ENABLE_TAP_TO_PAY_IOS === "true" ||
+  process.env.EXPO_PUBLIC_ENABLE_TAP_TO_PAY_IOS === "true";
+
 export default {
   expo: {
     name,
@@ -34,6 +47,13 @@ export default {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
+      ...(ENABLE_TAP_TO_PAY_IOS
+        ? {
+            entitlements: {
+              "com.apple.developer.proximity-reader.payment.acceptance": true,
+            },
+          }
+        : {}),
     },
     android: {
       adaptiveIcon: {
@@ -52,7 +72,7 @@ export default {
         "@stripe/stripe-terminal-react-native/app.plugin",
         {
           bluetoothBackgroundMode: true,
-          tapToPayCheck: true,
+          tapToPayCheck: ENABLE_TAP_TO_PAY_IOS,
           locationWhenInUsePermission:
             "Location access is required to accept payments.",
         },
