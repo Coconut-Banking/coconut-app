@@ -20,8 +20,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useGroupsSummary } from "../../hooks/useGroups";
 import { useApiFetch } from "../../lib/api";
-import { useDemoMode } from "../../lib/demo-mode-context";
-import { useDemoData } from "../../lib/demo-context";
 import { colors, font, fontSize, shadow, radii, space, type as T } from "../../lib/theme";
 import * as SecureStore from "expo-secure-store";
 
@@ -46,10 +44,7 @@ type Target = { type: "group" | "friend" | "self"; key: string; name: string };
 
 export default function ReviewScreen() {
   const { transactions, loading: txLoading } = useTransactions();
-  const { isDemoOn } = useDemoMode();
-  const demo = useDemoData();
-  const { summary: realSummary, loading: groupsLoading, refetch: refetchGroups } = useGroupsSummary();
-  const summary = isDemoOn ? demo.summary : realSummary;
+  const { summary, loading: groupsLoading, refetch: refetchGroups } = useGroupsSummary();
   const apiFetch = useApiFetch();
 
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
@@ -185,13 +180,6 @@ export default function ReviewScreen() {
     }
 
     if (!target) return;
-
-    if (isDemoOn) {
-      demo.addExpense(total, desc, target.key, target.type as "friend" | "group");
-      markReviewed(currentTx.id);
-      resetSplit();
-      return;
-    }
 
     setSaving(true);
     setError(null);
