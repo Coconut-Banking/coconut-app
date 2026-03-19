@@ -106,12 +106,14 @@ export function useTransactions() {
 
   const runSyncThenFetch = useCallback(
     async (silent = true) => {
+      // Fetch cached transactions first (fast), then sync in background
+      await fetchData(silent);
       try {
         await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+        fetchData(true);
       } catch {
-        // Sync may fail; still refetch from DB
+        // Sync may fail; cached data is already displayed
       }
-      fetchData(silent);
     },
     [apiFetch, fetchData]
   );

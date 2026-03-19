@@ -12,6 +12,12 @@ function unauthResponse() {
 }
 
 let _tokenPromise: Promise<string | null> | null = null;
+let _lastGoodToken: string | null = null;
+
+function isOfflineError(e: unknown): boolean {
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return msg.includes("offline") || msg.includes("network request failed") || msg.includes("clerk_offline");
+}
 
 async function getTokenWithRetry(
   getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
@@ -20,18 +26,44 @@ async function getTokenWithRetry(
   if (_tokenPromise) return _tokenPromise;
 
   _tokenPromise = (async () => {
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const token = await getToken({ skipCache: i > 0 });
-        if (token) return token;
-      } catch (e) {
-        if (__DEV__) console.warn("[api] getToken attempt", i, (e as Error)?.message);
+    // First: try the cache (no network) — works offline
+    try {
+      const cached = await getToken({ skipCache: false });
+      if (cached) {
+        _lastGoodToken = cached;
+        return cached;
       }
-      if (i < maxAttempts - 1) {
-        await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+    } catch (e) {
+      if (isOfflineError(e)) {
+        // Offline: return last known good token if available
+        if (_lastGoodToken) {
+          if (__DEV__) console.warn("[api] offline — using cached token");
+          return _lastGoodToken;
+        }
       }
     }
-    return null;
+
+    // Then: retry with network refresh
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const token = await getToken({ skipCache: true });
+        if (token) {
+          _lastGoodToken = token;
+          return token;
+        }
+      } catch (e) {
+        const msg = (e instanceof Error ? e.message : String(e));
+        if (__DEV__ && !isOfflineError(e)) console.warn("[api] getToken attempt", i, msg);
+        if (isOfflineError(e) && _lastGoodToken) {
+          if (__DEV__) console.warn("[api] offline — using cached token after retry");
+          return _lastGoodToken;
+        }
+      }
+      if (i < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      }
+    }
+    return _lastGoodToken ?? null;
   })();
 
   try {
@@ -83,15 +115,22 @@ export function useApiFetch() {
 
       if (__DEV__) console.log(`[api] → ${(opts.method ?? "GET").toUpperCase()} ${path}`);
 
+      const controller = new AbortController();
+      const timeoutMs = path.includes("plaid/transactions") ? 45_000 : 20_000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
-        const response = await fetch(url, { ...opts, headers, body });
+        const response = await fetch(url, { ...opts, headers, body, signal: controller.signal });
+        clearTimeout(timer);
         if (__DEV__) console.log(`[api] ← ${path} ${response.status}`);
         return response;
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Network request failed";
+        clearTimeout(timer);
+        const isAbort = e instanceof DOMException && e.name === "AbortError";
+        const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
         if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
         return new Response(
-          JSON.stringify({ error: "Network request failed. Check your connection and retry." }),
+          JSON.stringify({ error: isAbort ? "Request timed out. Please try again." : "Network request failed. Check your connection and retry." }),
           { status: 503, statusText: msg, headers: { "Content-Type": "application/json" } }
         );
       }

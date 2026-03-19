@@ -85,13 +85,15 @@ export default function SignInScreen() {
         setError("Google sign-in returned no session. Please try again.");
       }
     } catch (e: unknown) {
-      const err = e as { code?: string; message?: string };
+      const err = e as { code?: string; message?: string; errors?: Array<{ code?: string; message?: string; longMessage?: string; meta?: unknown }> };
       if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
+      const isSessionExists = err.errors?.some((x) => x.code === "session_exists");
       const msg = getClerkErrorMessage(e, "Google sign-in failed");
-      if (msg.toLowerCase().includes("already signed in")) {
+      if (isSessionExists || msg.toLowerCase().includes("already signed in")) {
         router.replace("/(tabs)");
         return;
       }
+      if (__DEV__) console.warn("[GoogleSignIn]", msg, err.errors);
       setError(msg);
     } finally {
       setGoogleLoading(false);

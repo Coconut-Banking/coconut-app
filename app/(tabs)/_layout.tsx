@@ -2,12 +2,14 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { DemoModeProvider } from "../../lib/demo-mode-context";
 import { useTheme } from "../../lib/theme-context";
+import { DemoProvider } from "../../lib/demo-context";
 import { colors, font, fontSize } from "../../lib/theme";
 
 export default function TabLayout() {
   const { theme } = useTheme();
   return (
     <DemoModeProvider>
+    <DemoProvider>
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: theme.tabActive,
@@ -42,6 +44,14 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="review"
+          options={{
+            title: "Review",
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => <Ionicons name="albums-outline" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
           name="shared"
           options={{
             title: "Shared",
@@ -71,6 +81,7 @@ export default function TabLayout() {
         />
         <Tabs.Screen name="add-expense" options={{ href: null }} />
       </Tabs>
+    </DemoProvider>
     </DemoModeProvider>
   );
 }
