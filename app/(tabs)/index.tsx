@@ -456,11 +456,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Auto-redirect to sign-up when auth is loaded but user is not signed in (skip when SKIP_AUTH)
-  if (!SKIP_AUTH && authLoaded && !isSignedIn) {
-    return <Redirect href="/(auth)/sign-up" />;
-  }
-
   const openConnect = async () => {
     setConnectError(null);
     if (!isSignedIn) {

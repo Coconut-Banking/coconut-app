@@ -12,6 +12,7 @@ import {
   TextInput,
   Switch,
   RefreshControl,
+  RefreshControlProps,
   AppState,
   DeviceEventEmitter,
   useWindowDimensions,
@@ -89,7 +90,7 @@ function TabBar({ active, scrollX, width, onPress }: { active: number; scrollX: 
 
 // ── Friends Page ──
 
-function FriendsPage({ friends, w, refreshControl }: { friends: FriendBalance[]; w: number; refreshControl?: React.ReactElement }) {
+function FriendsPage({ friends, w, refreshControl }: { friends: FriendBalance[]; w: number; refreshControl?: React.ReactElement<RefreshControlProps> }) {
   return (
     <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!friends.length ? (
@@ -121,7 +122,7 @@ function FriendsPage({ friends, w, refreshControl }: { friends: FriendBalance[];
 
 // ── Groups Page ──
 
-function GroupsPage({ groups, w, onCreate, refreshControl }: { groups: GroupSummaryType[]; w: number; onCreate: () => void; refreshControl?: React.ReactElement }) {
+function GroupsPage({ groups, w, onCreate, refreshControl }: { groups: GroupSummaryType[]; w: number; onCreate: () => void; refreshControl?: React.ReactElement<RefreshControlProps> }) {
   return (
     <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!groups.length ? (
@@ -163,7 +164,7 @@ function GroupsPage({ groups, w, onCreate, refreshControl }: { groups: GroupSumm
 
 // ── Activity Page ──
 
-function ActivityPage({ items, w, refreshControl }: { items: RecentActivityItem[]; w: number; refreshControl?: React.ReactElement }) {
+function ActivityPage({ items, w, refreshControl }: { items: RecentActivityItem[]; w: number; refreshControl?: React.ReactElement<RefreshControlProps> }) {
   return (
     <ScrollView style={{ width: w }} contentContainerStyle={st.page} showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
       {!items.length ? (

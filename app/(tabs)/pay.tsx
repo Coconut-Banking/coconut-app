@@ -11,6 +11,7 @@ import {
   AppState,
   Share,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 import type { Reader } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
@@ -114,6 +115,12 @@ function PayScreenInner() {
     setConnecting(true);
     try {
       const locRes = await apiFetch("/api/stripe/terminal/location");
+      if (!locRes.ok) {
+        const errData = await locRes.json().catch(() => ({}));
+        Alert.alert("Error", errData.error ?? "Could not get Terminal location");
+        setConnecting(false);
+        return;
+      }
       const locData = await locRes.json();
       const locationId = locData.locationId;
 
@@ -193,6 +200,12 @@ function PayScreenInner() {
         method: "POST",
         body,
       });
+      if (!piRes.ok) {
+        const errData = await piRes.json().catch(() => ({}));
+        Alert.alert("Error", errData.error ?? "Failed to create payment intent");
+        setCollecting(false);
+        return;
+      }
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
 
@@ -293,7 +306,8 @@ function PayScreenInner() {
   const isConnected = !!connectedReader;
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top"]}>
+      <View style={styles.container}>
       <Text style={styles.title}>Tap to Pay</Text>
       <Text style={styles.subtitle}>
         Accept contactless payments with your phone. No reader required.
@@ -432,7 +446,8 @@ function PayScreenInner() {
         <Text style={styles.hintCode}>expo run:android</Text> to build with native Stripe support.
         {"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
       </Text>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
