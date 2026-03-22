@@ -224,20 +224,29 @@ function TransactionDetailModal({
   );
 }
 
-/** Bank tag for multi-account display, e.g. "••••1234" or "Chase Checking" */
-function BankTag({ tx }: { tx: Transaction }) {
+/** Bank tag for multi-account display — shows short institution name or abbreviated account name */
+function BankTag({ tx, institutionName }: { tx: Transaction; institutionName?: string | null }) {
   const { theme } = useTheme();
-  const tag = tx.accountName || (tx.accountMask ? `••••${tx.accountMask}` : null);
+  // Prefer institution name (e.g. "RBC", "CIBC") over full account name
+  let tag = institutionName || tx.accountName || (tx.accountMask ? `••••${tx.accountMask}` : null);
   if (!tag) return null;
+  // Abbreviate long account names: keep first meaningful word(s), max ~20 chars
+  if (!institutionName && tag.length > 20) {
+    const words = tag.split(/\s+/);
+    tag = words[0];
+    // If first word is very short (e.g. "e" from "e-Transfer"), include second word
+    if (tag.length < 4 && words.length > 1) tag = `${words[0]} ${words[1]}`;
+    if (tag.length > 20) tag = tag.slice(0, 18) + "…";
+  }
   return (
     <View style={[styles.bankTag, { backgroundColor: theme.primaryLight }]}>
-      <Text style={[styles.bankTagText, { color: theme.primary }]}>{tag}</Text>
+      <Text style={[styles.bankTagText, { color: theme.primary }]} numberOfLines={1}>{tag}</Text>
     </View>
   );
 }
 
 
-const TransactionRow = React.memo(function TransactionRow({ tx, onPress, institutionColor }: { tx: Transaction; onPress?: () => void; institutionColor?: string }) {
+const TransactionRow = React.memo(function TransactionRow({ tx, onPress, institutionColor, institutionName }: { tx: Transaction; onPress?: () => void; institutionColor?: string; institutionName?: string | null }) {
   const { theme } = useTheme();
   const { text: amountText, isInflow } = formatAmountDisplay(tx);
   return (
@@ -249,7 +258,7 @@ const TransactionRow = React.memo(function TransactionRow({ tx, onPress, institu
       <View style={styles.txInfo}>
         <View style={styles.txMerchantRow}>
           <Text style={[styles.txMerchant, { color: theme.text }]} numberOfLines={1}>{tx.merchant}</Text>
-          <BankTag tx={tx} />
+          <BankTag tx={tx} institutionName={institutionName} />
         </View>
         <Text style={[styles.txCategory, { color: theme.textQuaternary }]}>{tx.category}</Text>
       </View>
@@ -1049,7 +1058,7 @@ export default function HomeScreen() {
                 {pendingTxs.map((tx) => {
                   const inst = getInstitutionForTx(tx);
                   return (
-                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} />
+                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} institutionName={inst} />
                   );
                 })}
               </View>
@@ -1062,7 +1071,7 @@ export default function HomeScreen() {
                 {postedTxs.map((tx) => {
                   const inst = getInstitutionForTx(tx);
                   return (
-                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} />
+                    <TransactionRow key={tx.id} tx={tx} onPress={() => onPressTx(tx)} institutionColor={inst ? hashInstitutionColor(inst) : undefined} institutionName={inst} />
                   );
                 })}
               </View>
@@ -1327,6 +1336,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
     alignSelf: "flex-start",
+    maxWidth: 120,
+    flexShrink: 0,
   },
   bankTagText: { fontSize: 10, fontFamily: font.medium, color: colors.primary },
   txCategory: { fontSize: 12, fontFamily: font.regular, color: colors.textTertiary, marginTop: 2 },

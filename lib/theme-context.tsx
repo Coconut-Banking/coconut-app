@@ -36,7 +36,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, m);
   };
 
-  const isDark = mode === "dark" || (mode === "auto" && systemScheme === "dark");
+  // Auto mode follows device setting; defaults to dark when device preference is unset
+  const isDark = mode === "dark" || (mode === "auto" && systemScheme !== "light");
   const theme = isDark ? colors.dark : colors.light;
 
   const value = useMemo(() => ({ mode, setMode, theme, isDark }), [mode, theme, isDark]);
