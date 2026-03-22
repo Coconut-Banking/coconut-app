@@ -71,14 +71,14 @@ function AuthSwitch() {
 
   if (!isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn)) {
     return (
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
       </Stack>
     );
   }
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="connected" options={{ headerShown: false }} />
     </Stack>

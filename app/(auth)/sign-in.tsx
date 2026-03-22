@@ -215,6 +215,9 @@ export default function SignInScreen() {
                 Auth is loading slowly. Try the browser option below.
               </Text>
             )}
+            <Pressable onPress={() => router.push("/(auth)/forgot-password")}>
+              <Text style={[styles.forgotText, { color: theme.primary }]}>Forgot password?</Text>
+            </Pressable>
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: theme.primary }, (loading || (formDisabled && !canAttemptSignIn)) && styles.btnDisabled]}
               onPress={handleSignIn}
@@ -363,6 +366,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 28,
+  },
+  forgotText: {
+    fontSize: 14,
+    fontFamily: font.medium,
+    textAlign: "right",
+    marginTop: 2,
   },
   swapText: { fontSize: 15, fontFamily: font.regular, color: colors.textTertiary },
   swapLink: { fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.primary },

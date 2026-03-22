@@ -33,6 +33,12 @@ export default {
         "pk_test_YWJzb2x1dGUtbGVtdXItNjguY2xlcmsuYWNjb3VudHMuZGV2JA",
       EXPO_PUBLIC_API_URL:
         process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app",
+      EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID:
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
+      EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID:
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
+      EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME:
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
     },
     slug: "coconut-app",
     version: "1.0.0",
