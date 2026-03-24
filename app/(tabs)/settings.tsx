@@ -18,7 +18,6 @@ import { useApiFetch } from "../../lib/api";
 import { useTransactions } from "../../hooks/useTransactions";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
-import type { ThemeMode } from "../../lib/colors";
 import { colors, font, fontSize, shadow, radii, space, type as T } from "../../lib/theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
@@ -31,14 +30,8 @@ type PlaidAccount = {
   mask?: string | null;
 };
 
-const THEME_OPTIONS: { key: ThemeMode; label: string }[] = [
-  { key: "auto", label: "Auto" },
-  { key: "light", label: "Light" },
-  { key: "dark", label: "Dark" },
-];
-
 export default function SettingsScreen() {
-  const { theme, mode, setMode } = useTheme();
+  const { theme } = useTheme();
   const { user } = useUser();
   const { sessionId } = useAuth();
   const { signOut } = useClerk();
@@ -202,35 +195,6 @@ export default function SettingsScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
         <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Manage your account and preferences</Text>
-
-        {/* Appearance */}
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Appearance</Text>
-          <View style={styles.themeRow}>
-            {THEME_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[
-                  styles.themeBtn,
-                  { backgroundColor: theme.surfaceTertiary },
-                  mode === opt.key && { backgroundColor: theme.primary },
-                ]}
-                onPress={() => setMode(opt.key)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.themeBtnText,
-                    { color: theme.textTertiary },
-                    mode === opt.key && { color: "#fff", fontWeight: "700" },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
         {/* Profile */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>

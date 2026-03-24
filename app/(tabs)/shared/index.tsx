@@ -11,20 +11,21 @@ import {
   RefreshControl,
   AppState,
   DeviceEventEmitter,
-  Switch,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
+import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../../lib/api";
 import { useGroupsSummary } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { SharedSkeletonScreen } from "../../../components/ui";
 import { useDemoData } from "../../../lib/demo-context";
-import { colors, font, radii, darkUI, prototype } from "../../../lib/theme";
+import { colors, font, radii, prototype } from "../../../lib/theme";
 
-const AVATAR_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"] as const;
+const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
 function SLabel({ children }: { children: ReactNode }) {
   return <Text style={st.sLabel}>{children}</Text>;
@@ -58,6 +59,7 @@ function timeAgo(iso: string) {
 }
 
 export default function SharedIndex() {
+  const { userId } = useAuth();
   const apiFetch = useApiFetch();
   const isFocused = useIsFocused();
   const { isDemoOn, setIsDemoOn } = useDemoMode();
@@ -73,18 +75,58 @@ export default function SharedIndex() {
   const [friendName, setFriendName] = useState("");
   const [friendEmail, setFriendEmail] = useState("");
   const [addingFriend, setAddingFriend] = useState(false);
+  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [optimisticFriends, setOptimisticFriends] = useState<Array<{ key: string; displayName: string; balance: number }>>([]);
   const prevFocused = useRef(false);
   const prevDemoOn = useRef(isDemoOn);
+  const optimisticStoreKey = `coconut.optimistic.friends.${userId ?? "anon"}`;
+
+  const persistOptimistic = useCallback(
+    async (
+      groups: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>,
+      friends: Array<{ key: string; displayName: string; balance: number }>
+    ) => {
+      try {
+        await AsyncStorage.setItem(
+          optimisticStoreKey,
+          JSON.stringify({ groups, friends })
+        );
+      } catch {
+        // best effort cache
+      }
+    },
+    [optimisticStoreKey]
+  );
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
       await refetch(true);
+      const res = await apiFetch("/api/groups");
+      if (res.ok) {
+        const data = await res.json().catch(() => []);
+        if (Array.isArray(data)) {
+          setFallbackGroups(
+            data.map((g) => ({
+              id: String(g.id),
+              name: String(g.name ?? "Group"),
+              memberCount: Number(g.memberCount ?? 0),
+              groupType: typeof g.groupType === "string" ? g.groupType : null,
+            }))
+          );
+        }
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [isDemoOn, refetch]);
+  }, [isDemoOn, refetch, apiFetch]);
+
+  useEffect(() => {
+    // Friends tab should always use real data.
+    if (isDemoOn) setIsDemoOn(false);
+  }, [isDemoOn, setIsDemoOn]);
 
   useEffect(() => {
     if (isFocused && !prevFocused.current && !isDemoOn) refetch(true);
@@ -111,6 +153,31 @@ export default function SharedIndex() {
     prevDemoOn.current = isDemoOn;
   }, [isDemoOn, refetch]);
 
+  useEffect(() => {
+    if (!isDemoOn) void onRefresh();
+  }, [isDemoOn, onRefresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(optimisticStoreKey);
+        if (!raw || cancelled) return;
+        const parsed = JSON.parse(raw) as {
+          groups?: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>;
+          friends?: Array<{ key: string; displayName: string; balance: number }>;
+        };
+        if (Array.isArray(parsed.groups)) setOptimisticGroups(parsed.groups);
+        if (Array.isArray(parsed.friends)) setOptimisticFriends(parsed.friends);
+      } catch {
+        // ignore cache parse errors
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [optimisticStoreKey]);
+
   const createGroup = async () => {
     const name = groupName.trim();
     if (!name) return;
@@ -134,6 +201,10 @@ export default function SharedIndex() {
       setShowCreate(false);
       setGroupName("");
       await refetch(true);
+      await onRefresh();
+      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== data.id)];
+      setOptimisticGroups(nextGroups);
+      await persistOptimistic(nextGroups, optimisticFriends);
       router.push({ pathname: "/(tabs)/shared/group", params: { id: data.id } });
     } finally {
       setCreating(false);
@@ -180,6 +251,13 @@ export default function SharedIndex() {
       setFriendName("");
       setFriendEmail("");
       await refetch(true);
+      await onRefresh();
+      const nextGroups = [{ id: group.id, name, memberCount: 2, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== group.id)];
+      const nextFriends = [{ key: `opt-${group.id}`, displayName: name, balance: 0 }, ...optimisticFriends.filter((f) => f.displayName !== name)];
+      setOptimisticGroups(nextGroups);
+      setOptimisticFriends(nextFriends);
+      await persistOptimistic(nextGroups, nextFriends);
+      router.push({ pathname: "/(tabs)/shared/group", params: { id: group.id } });
     } catch {
       Alert.alert("Error", "Network error. Try again.");
     } finally {
@@ -189,8 +267,36 @@ export default function SharedIndex() {
 
   if (loading && !summary) return <SharedSkeletonScreen />;
 
-  const friends = summary?.friends ?? [];
-  const groups = summary?.groups ?? [];
+  const summaryFriends = summary?.friends ?? [];
+  const summaryGroups = summary?.groups ?? [];
+  const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
+  const fallbackFriendRows = fallbackGroups
+    .filter((g) => (g.groupType ?? "other") !== "home")
+    .map((g) => ({ key: `fb-${g.id}`, displayName: g.name, balance: 0 }));
+  const mergedFallbackFriends = [
+    ...optimisticFriends,
+    ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
+  ];
+  const friends = summaryFriends.length > 0
+    ? [...summaryFriends, ...optimisticFriends.filter((o) => !summaryFriends.some((s) => s.displayName === o.displayName))]
+    : mergedFallbackFriends;
+  const groups = summaryGroups.length > 0
+    ? summaryGroups
+    : mergedFallbackGroups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        memberCount: g.memberCount,
+        myBalance: 0,
+        lastActivityAt: new Date().toISOString(),
+      }));
+  const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
+  const visibleGroups = groups.filter((g) => {
+    const groupName = g.name.trim().toLowerCase();
+    // "Add friend" currently creates a 2-member group under the hood.
+    // Keep the data model, but don't show duplicate rows in Groups UI.
+    if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
+    return true;
+  });
 
   return (
     <SafeAreaView style={st.container} edges={["top"]}>
@@ -205,17 +311,6 @@ export default function SharedIndex() {
             <Text style={st.title}>People & groups</Text>
             <Text style={st.titleSub}>Manage everyone you split with</Text>
           </View>
-          {__DEV__ ? (
-            <View style={st.demoToggle}>
-              <Text style={st.demoLabel}>Demo</Text>
-              <Switch
-                value={isDemoOn}
-                onValueChange={setIsDemoOn}
-                trackColor={{ false: "#E5E7EB", true: "#C3E0D3" }}
-                thumbColor={isDemoOn ? "#3D8E62" : "#F9FAFB"}
-              />
-            </View>
-          ) : null}
         </View>
 
         <View style={st.actionsRow}>
@@ -250,7 +345,7 @@ export default function SharedIndex() {
               value={friendName}
               onChangeText={setFriendName}
               placeholder="Friend name"
-              placeholderTextColor={darkUI.labelMuted}
+              placeholderTextColor="#8A9098"
               autoFocus
             />
             <TextInput
@@ -258,7 +353,7 @@ export default function SharedIndex() {
               value={friendEmail}
               onChangeText={setFriendEmail}
               placeholder="Email (optional)"
-              placeholderTextColor={darkUI.labelMuted}
+              placeholderTextColor="#8A9098"
               keyboardType="email-address"
               autoCapitalize="none"
             />
@@ -280,7 +375,7 @@ export default function SharedIndex() {
               value={groupName}
               onChangeText={setGroupName}
               placeholder="Group name"
-              placeholderTextColor={darkUI.labelMuted}
+              placeholderTextColor="#8A9098"
               autoFocus
             />
             <View style={st.formActions}>
@@ -297,7 +392,7 @@ export default function SharedIndex() {
         <SLabel>Friends</SLabel>
         {!friends.length ? (
           <View style={[st.groupedCard, st.emptyInner]}>
-            <Ionicons name="person-add-outline" size={30} color={darkUI.labelMuted} />
+            <Ionicons name="person-add-outline" size={30} color="#8A9098" />
             <Text style={st.emptyTitle}>No friends yet</Text>
             <Text style={st.emptySub}>Add a friend to start splitting expenses.</Text>
           </View>
@@ -307,7 +402,18 @@ export default function SharedIndex() {
               <View key={f.key}>
                 <TouchableOpacity
                   style={st.groupedRow}
-                  onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
+                  onPress={() => {
+                    // Synthetic fallback/optimistic friend keys map to group IDs.
+                    if (f.key.startsWith("opt-")) {
+                      router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(4) } });
+                      return;
+                    }
+                    if (f.key.startsWith("fb-")) {
+                      router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(3) } });
+                      return;
+                    }
+                    router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } });
+                  }}
                   activeOpacity={0.75}
                 >
                   <Avatar name={f.displayName} size={42} />
@@ -320,7 +426,7 @@ export default function SharedIndex() {
                   <Text style={[st.rowBal, f.balance > 0 ? st.balIn : f.balance < 0 ? st.balOut : st.muted]}>
                     {f.balance === 0 ? "—" : `${f.balance > 0 ? "+" : "−"}$${Math.abs(f.balance).toFixed(2)}`}
                   </Text>
-                  <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                  <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
                 </TouchableOpacity>
                 {i < friends.length - 1 ? <View style={st.rowSep} /> : null}
               </View>
@@ -329,15 +435,15 @@ export default function SharedIndex() {
         )}
 
         <SLabel>Groups</SLabel>
-        {!groups.length ? (
+        {!visibleGroups.length ? (
           <View style={[st.groupedCard, st.emptyInner]}>
-            <Ionicons name="people-outline" size={30} color={darkUI.labelMuted} />
+            <Ionicons name="people-outline" size={30} color="#8A9098" />
             <Text style={st.emptyTitle}>No groups yet</Text>
             <Text style={st.emptySub}>Create a group for trips, roommates, or dinners.</Text>
           </View>
         ) : (
           <View style={st.groupedCard}>
-            {groups.map((g, i) => (
+            {visibleGroups.map((g, i) => (
               <View key={g.id}>
                 <TouchableOpacity
                   style={st.groupedRow}
@@ -345,7 +451,7 @@ export default function SharedIndex() {
                   activeOpacity={0.75}
                 >
                   <View style={st.groupIcon}>
-                    <Ionicons name="people" size={18} color={colors.primary} />
+                  <Ionicons name="people" size={18} color="#1F2328" />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={st.rowName}>{g.name}</Text>
@@ -354,9 +460,9 @@ export default function SharedIndex() {
                   <Text style={[st.rowBal, g.myBalance > 0 ? st.balIn : g.myBalance < 0 ? st.balOut : st.muted]}>
                     {g.myBalance === 0 ? "—" : `${g.myBalance > 0 ? "+" : "−"}$${Math.abs(g.myBalance).toFixed(2)}`}
                   </Text>
-                  <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                  <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
                 </TouchableOpacity>
-                {i < groups.length - 1 ? <View style={st.rowSep} /> : null}
+                {i < visibleGroups.length - 1 ? <View style={st.rowSep} /> : null}
               </View>
             ))}
           </View>
@@ -367,20 +473,17 @@ export default function SharedIndex() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: darkUI.bg },
+  container: { flex: 1, backgroundColor: "#F5F3F2" },
   page: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 120 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  title: { fontSize: 26, fontFamily: font.black, color: darkUI.label, letterSpacing: -0.6 },
-  titleSub: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelMuted, marginTop: 2 },
-  demoToggle: { flexDirection: "row", alignItems: "center", gap: 6 },
-  demoLabel: { fontSize: 12, fontFamily: font.semibold, color: darkUI.labelSecondary },
-
+  title: { fontSize: 32, fontFamily: font.black, color: "#1F2328", letterSpacing: -0.9 },
+  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#7A8088", marginTop: 2 },
   actionsRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
   actionBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: "#1F2328",
     borderRadius: radii.xl,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -390,29 +493,29 @@ const st = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: `${colors.primary}20`,
+    backgroundColor: "#F3EEEA",
     borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: `${colors.primary}55`,
+    borderColor: "#E3DBD8",
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  actionBtnAltText: { color: colors.primary, fontFamily: font.bold, fontSize: 13 },
+  actionBtnAltText: { color: "#1F2328", fontFamily: font.bold, fontSize: 13 },
 
   formCard: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     padding: 14,
     marginBottom: 12,
   },
   formInput: {
     borderWidth: 1,
-    borderColor: darkUI.stroke,
-    backgroundColor: darkUI.bg,
+    borderColor: "#E3DBD8",
+    backgroundColor: "#F7F3F0",
     borderRadius: 10,
-    color: darkUI.label,
+    color: "#1F2328",
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontFamily: font.regular,
@@ -426,12 +529,12 @@ const st = StyleSheet.create({
     paddingVertical: 9,
   },
   formPrimaryBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 14 },
-  formCancelText: { color: darkUI.labelSecondary, fontFamily: font.semibold, fontSize: 14 },
+  formCancelText: { color: "#4B5563", fontFamily: font.semibold, fontSize: 14 },
 
   sLabel: {
     fontSize: 11,
     fontFamily: font.extrabold,
-    color: darkUI.labelMuted,
+    color: "#9AA0A6",
     textTransform: "uppercase",
     letterSpacing: 1.2,
     marginTop: 6,
@@ -439,10 +542,10 @@ const st = StyleSheet.create({
     paddingHorizontal: 2,
   },
   groupedCard: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     overflow: "hidden",
     marginBottom: 8,
   },
@@ -452,23 +555,23 @@ const st = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  rowName: { fontSize: 16, fontFamily: font.semibold, color: darkUI.label },
-  rowSub: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
+  rowName: { fontSize: 16, fontFamily: font.semibold, color: "#1F2328" },
+  rowSub: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 1 },
   rowBal: { fontSize: 16, fontFamily: font.extrabold, letterSpacing: -0.3 },
   balIn: { color: prototype.green },
   balOut: { color: prototype.red },
-  muted: { color: darkUI.labelMuted },
-  rowSep: { height: 1, backgroundColor: prototype.sep, marginLeft: 70 },
+  muted: { color: "#8A9098" },
+  rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 70 },
   groupIcon: {
     width: 40,
     height: 40,
     borderRadius: radii.md,
-    backgroundColor: "rgba(61,142,98,0.2)",
+    backgroundColor: "rgba(0,0,0,0.05)",
     alignItems: "center",
     justifyContent: "center",
   },
   emptyInner: { alignItems: "center", paddingVertical: 36, paddingHorizontal: 20 },
-  emptyTitle: { fontSize: 16, fontFamily: font.bold, color: darkUI.labelSecondary, marginTop: 10 },
-  emptySub: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4, textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 10 },
+  emptySub: { fontSize: 13, fontFamily: font.regular, color: "#7A8088", marginTop: 4, textAlign: "center" },
 });
 

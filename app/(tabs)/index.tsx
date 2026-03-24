@@ -13,19 +13,17 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  Linking,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAuth, useUser } from "@clerk/expo";
 import { useGroupsSummary } from "../../hooks/useGroups";
-import { useTransactions } from "../../hooks/useTransactions";
+import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
-import { useTheme } from "../../lib/theme-context";
-import { THEME_VARIANTS } from "../../lib/colors";
 import { BalanceHero } from "../../components/split/BalanceHero";
 import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
@@ -37,9 +35,7 @@ import {
   type HomeBankStripRow,
 } from "../../lib/home-bank-strip";
 
-const WEB_APP_URL = (process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev").replace(/\/$/, "");
-
-const FRIEND_HUES = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"] as const;
+const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
 function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
   const hue = FRIEND_HUES[name.charCodeAt(0) % FRIEND_HUES.length];
@@ -64,8 +60,7 @@ function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
 }
 
 function SLabel({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme();
-  return <Text style={[styles.sLabel, { color: theme.textQuaternary }]}>{children}</Text>;
+  return <Text style={styles.sLabel}>{children}</Text>;
 }
 
 function timeAgo(iso: string) {
@@ -73,22 +68,84 @@ function timeAgo(iso: string) {
   return d === 0 ? "Today" : d === 1 ? "Yesterday" : d < 7 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function normalizeMerchant(tx: Transaction) {
+  return (tx.merchant || tx.rawDescription || "purchase").trim().toLowerCase();
+}
+
+function txTimeMs(tx: Transaction) {
+  const d = new Date(tx.dateStr || tx.date || "").getTime();
+  return Number.isNaN(d) ? 0 : d;
+}
+
+/**
+ * Hide refund/void reversals from split UI:
+ * if a debit has a nearby matching credit (same merchant + absolute amount),
+ * omit both so users don't try splitting charges that net to zero.
+ */
+function filterOffsettingBankPairs(transactions: Transaction[]): Transaction[] {
+  const sorted = [...transactions].sort((a, b) => txTimeMs(b) - txTimeMs(a));
+  const creditByKey = new Map<string, number[]>();
+
+  for (let i = 0; i < sorted.length; i++) {
+    const tx = sorted[i];
+    const amt = Number(tx.amount);
+    if (!(amt > 0)) continue;
+    const key = `${normalizeMerchant(tx)}|${Math.abs(amt).toFixed(2)}`;
+    const list = creditByKey.get(key) ?? [];
+    list.push(i);
+    creditByKey.set(key, list);
+  }
+
+  const omitted = new Set<number>();
+  const maxMs = 7 * 24 * 60 * 60 * 1000;
+  for (let i = 0; i < sorted.length; i++) {
+    if (omitted.has(i)) continue;
+    const tx = sorted[i];
+    const amt = Number(tx.amount);
+    if (!(amt < 0)) continue;
+    const key = `${normalizeMerchant(tx)}|${Math.abs(amt).toFixed(2)}`;
+    const credits = creditByKey.get(key);
+    if (!credits || credits.length === 0) continue;
+
+    const debitTime = txTimeMs(tx);
+    const matchPos = credits.findIndex((idx) => {
+      if (omitted.has(idx)) return false;
+      const creditTime = txTimeMs(sorted[idx]);
+      return Math.abs(debitTime - creditTime) <= maxMs;
+    });
+    if (matchPos === -1) continue;
+    const creditIdx = credits.splice(matchPos, 1)[0];
+    omitted.add(i);
+    omitted.add(creditIdx);
+  }
+
+  return sorted.filter((_, idx) => !omitted.has(idx));
+}
+
 export default function BalancesPrototypeScreen() {
-  const { variant, setVariant, setMode, theme } = useTheme();
   const { isSignedIn } = useAuth();
   const { user, isLoaded: userLoaded } = useUser();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: apiSummary, refetch } = useGroupsSummary();
+  const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
 
   const summary = isDemoOn ? demo.summary : apiSummary;
   const [dismissedBank, setDismissedBank] = useState<string[]>([]);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const [showAllBank, setShowAllBank] = useState(false);
+  const [bankSearch, setBankSearch] = useState("");
+  const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
   const [refreshing, setRefreshing] = useState(false);
 
   const useDemoBankUi = isDemoOn || !isSignedIn;
   const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx } = useTransactions();
+  const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
+  const initialHomeLoading =
+    !isDemoOn &&
+    isSignedIn &&
+    !summary &&
+    summaryLoading &&
+    txLoading;
 
   const demoStripRows = useMemo(() => {
     if (!useDemoBankUi) return [];
@@ -99,18 +156,14 @@ export default function BalancesPrototypeScreen() {
 
   const liveStripRows = useMemo(() => {
     if (useDemoBankUi) return [];
-    const built = buildLiveMatchedStrip(transactions);
+    const built = buildLiveMatchedStrip(bankVisibleTransactions);
     return built.filter((r) => !dismissedBank.includes(r.stripId));
-  }, [useDemoBankUi, transactions, dismissedBank]);
+  }, [useDemoBankUi, bankVisibleTransactions, dismissedBank]);
 
   const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
-  const previewStripRows = useMemo(
-    () => PROTOTYPE_DEMO_BANK_CHARGES.slice(0, 3).map(demoChargeToStripRow),
-    []
-  );
   const allLinkedBankRows = useMemo(() => {
     if (!linked) return [];
-    return transactions
+    return bankVisibleTransactions
       .filter((tx) => Number(tx.amount) < 0)
       .sort((a, b) => {
         const da = new Date(a.dateStr || a.date || "").getTime();
@@ -118,11 +171,17 @@ export default function BalancesPrototypeScreen() {
         return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
       })
       .slice(0, 120);
-  }, [transactions, linked]);
+  }, [bankVisibleTransactions, linked]);
 
-  const openBankOnWeb = useCallback(() => {
-    void Linking.openURL(`${WEB_APP_URL}/app/transactions`);
-  }, []);
+  const filteredAllBankRows = useMemo(() => {
+    const q = bankSearch.trim().toLowerCase();
+    return allLinkedBankRows.filter((tx) => {
+      if (bankFilter === "unsplit" && tx.alreadySplit) return false;
+      if (!q) return true;
+      const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
+      return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
+    });
+  }, [allLinkedBankRows, bankFilter, bankSearch]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -137,10 +196,6 @@ export default function BalancesPrototypeScreen() {
   const friends = summary?.friends ?? [];
   const groups = summary?.groups ?? [];
   const hasFriendsOrGroups = friends.length > 0 || groups.length > 0;
-  const showPreviewForEmptyRealState = !isDemoOn && isSignedIn && !hasFriendsOrGroups;
-  const previewFriends = (demo.summary?.friends ?? []).slice(0, 2);
-  const previewGroups = (demo.summary?.groups ?? []).slice(0, 2);
-
   const friendExpenseCount = (key: string) =>
     isDemoOn ? (demo.personDetails[key]?.activity.length ?? 0) : undefined;
 
@@ -150,18 +205,21 @@ export default function BalancesPrototypeScreen() {
       ? (user?.firstName?.trim() || user?.username?.trim() || "")
       : "";
   const greetingTitle = formatHomeGreetingLine(greetingName);
-  const activeVariantLabel = THEME_VARIANTS.find((v) => v.key === variant)?.label ?? "Theme";
-  const cycleThemeVariant = useCallback(() => {
-    const idx = THEME_VARIANTS.findIndex((v) => v.key === variant);
-    const next = THEME_VARIANTS[(idx + 1) % THEME_VARIANTS.length];
-    setMode("dark");
-    setVariant(next.key);
-  }, [variant, setVariant, setMode]);
+  if (initialHomeLoading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <View style={styles.homeLoadingWrap}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.homeLoadingText}>Loading your home…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
-        style={[styles.scroll, { backgroundColor: theme.background }]}
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -172,15 +230,11 @@ export default function BalancesPrototypeScreen() {
       >
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
+            <Text style={styles.title} numberOfLines={2}>
               {greetingTitle}
             </Text>
-            <Text style={[styles.titleSub, { color: theme.textQuaternary }]}>Here&apos;s where you stand with friends and groups.</Text>
+            <Text style={styles.titleSub}>Here&apos;s where you stand with friends and groups.</Text>
           </View>
-          <TouchableOpacity style={[styles.themeFlag, { backgroundColor: theme.primary }]} onPress={cycleThemeVariant} activeOpacity={0.82}>
-            <Ionicons name="color-palette-outline" size={14} color="#fff" />
-            <Text style={styles.themeFlagText}>{activeVariantLabel}</Text>
-          </TouchableOpacity>
         </View>
 
         <BalanceHero summary={summary} />
@@ -190,7 +244,7 @@ export default function BalancesPrototypeScreen() {
             <View style={styles.sectionRow}>
               <SLabel>From your bank</SLabel>
               <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
-                <Text style={styles.seeAll}>See all →</Text>
+                <Text style={styles.seeAll}>See all</Text>
               </TouchableOpacity>
             </View>
             <FlatList
@@ -252,7 +306,7 @@ export default function BalancesPrototypeScreen() {
               <SLabel>From your bank</SLabel>
               {linked ? (
                 <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
-                  <Text style={styles.seeAll}>See all →</Text>
+                  <Text style={styles.seeAll}>See all</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -326,49 +380,58 @@ export default function BalancesPrototypeScreen() {
                 <Text style={[styles.emptyBankText, { marginTop: 10 }]}>Loading bank charges…</Text>
               </View>
             ) : (
-              <View>
-                <View style={styles.previewPill}>
-                  <Ionicons name="sparkles-outline" size={12} color={colors.primary} />
-                  <Text style={styles.previewPillText}>Preview</Text>
-                </View>
+              allLinkedBankRows.length > 0 ? (
                 <FlatList
                   horizontal
-                  data={previewStripRows}
-                  keyExtractor={(t) => `preview-${t.stripId}`}
+                  data={allLinkedBankRows.slice(0, 12)}
+                  keyExtractor={(tx) => `live-${tx.id}`}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-                  renderItem={({ item }) => (
-                    <View style={[styles.bankCard, styles.previewCardDim]}>
+                  renderItem={({ item: tx }) => (
+                    <Pressable
+                      style={styles.bankCard}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(tabs)/add-expense",
+                          params: {
+                            prefillDesc: tx.merchant || tx.rawDescription || "Purchase",
+                            prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
+                            prefillNonce: String(Date.now()),
+                          },
+                        })
+                      }
+                    >
                       <View style={styles.bankTop}>
                         <View style={styles.bankEmojiWrap}>
                           <MerchantLogo
-                            merchantName={item.merchant}
+                            merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                             size={22}
-                            fallbackText={item.emoji}
+                            fallbackText="💳"
                             backgroundColor="transparent"
                             borderColor="transparent"
                           />
                         </View>
                       </View>
                       <Text style={styles.bankMerchant} numberOfLines={1}>
-                        {item.merchant}
+                        {tx.merchant || tx.rawDescription || "Purchase"}
                       </Text>
-                      <Text style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint} numberOfLines={1}>
-                        {item.cardDetailLine}
+                      <Text style={styles.bankHint} numberOfLines={1}>
+                        {tx.dateStr || tx.date || "—"}
                       </Text>
-                      <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
+                      <Text style={styles.bankAmt}>${Math.abs(Number(tx.amount)).toFixed(2)}</Text>
                       <View style={styles.bankCta}>
-                        <Text style={styles.bankCtaText}>
-                          {item.cardDetailIsReceipt ? "Tap for details" : "Split this"}
-                        </Text>
+                        <Text style={styles.bankCtaText}>Split this</Text>
                       </View>
-                    </View>
+                    </Pressable>
                   )}
                 />
-                <Text style={[styles.emptyBankText, { marginTop: 10 }]}>
-                  No matched charges yet. This is how linked charges will appear once receipt matches start coming in.
-                </Text>
-              </View>
+              ) : (
+                <View style={styles.emptyBank}>
+                  <Text style={styles.emptyBankText}>
+                    No bank charges yet. Pull to refresh after linking your bank.
+                  </Text>
+                </View>
+              )
             )}
           </View>
         ) : null}
@@ -377,67 +440,15 @@ export default function BalancesPrototypeScreen() {
           <View style={styles.sectionRow}>
             <SLabel>Friends & groups</SLabel>
             <TouchableOpacity onPress={() => router.push("/(tabs)/shared")} hitSlop={8}>
-              <Text style={styles.seeAll}>View all →</Text>
+              <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>
           {!hasFriendsOrGroups ? (
-            showPreviewForEmptyRealState ? (
-              <View>
-                <View style={styles.previewPill}>
-                  <Ionicons name="sparkles-outline" size={12} color={colors.primary} />
-                  <Text style={styles.previewPillText}>Preview</Text>
-                </View>
-                <View style={[styles.groupedCard, styles.previewCardDim]}>
-                  {previewFriends.map((f, i) => (
-                    <View key={`pf-${f.key}`}>
-                      <View style={styles.friendRow}>
-                        <FriendAvatar name={f.displayName} />
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.friendName}>{f.displayName}</Text>
-                          <Text style={styles.friendMeta}>
-                            {f.balance >= 0 ? "owes you" : "you owe"} · preview
-                          </Text>
-                        </View>
-                        <Text style={[styles.friendAmt, f.balance >= 0 ? styles.balAmtIn : styles.balAmtOut]}>
-                          {f.balance >= 0 ? "+" : "−"}${Math.abs(f.balance).toFixed(2)}
-                        </Text>
-                      </View>
-                      {i < previewFriends.length - 1 ? <View style={styles.rowSep} /> : null}
-                    </View>
-                  ))}
-                  <View style={styles.sectionDivider} />
-                  <View style={styles.inlineSectionLabel}>
-                    <Text style={styles.inlineSectionLabelText}>Groups</Text>
-                  </View>
-                  {previewGroups.map((g, i) => (
-                    <View key={`pg-${g.id}`}>
-                      <View style={styles.groupRow}>
-                        <View style={styles.groupIcon}>
-                          <Ionicons name="people" size={18} color={colors.primary} />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.groupRowName}>{g.name}</Text>
-                          <Text style={styles.groupRowSub}>{g.memberCount} members · preview</Text>
-                        </View>
-                        <Text style={[styles.groupRowBal, g.myBalance >= 0 ? styles.balAmtIn : styles.balAmtOut]}>
-                          {g.myBalance >= 0 ? "+" : "−"}${Math.abs(g.myBalance).toFixed(2)}
-                        </Text>
-                      </View>
-                      {i < previewGroups.length - 1 ? <View style={styles.rowSep} /> : null}
-                    </View>
-                  ))}
-                </View>
-                <Text style={[styles.emptyFriendSub, { marginTop: 10 }]}>
-                  Add your first friend/group in View all and this section will fill with your real balances.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.emptyFriend}>
-                <Ionicons name="people-outline" size={28} color={darkUI.labelMuted} />
-                <Text style={styles.emptyFriendTitle}>No friends or groups yet</Text>
-                <Text style={styles.emptyFriendSub}>Open View all to add people and groups.</Text>
-              </View>
-            )
+            <View style={styles.emptyFriend}>
+              <Ionicons name="people-outline" size={28} color={darkUI.labelMuted} />
+              <Text style={styles.emptyFriendTitle}>No friends or groups yet</Text>
+              <Text style={styles.emptyFriendSub}>Open See all to add people and groups.</Text>
+            </View>
           ) : (
             <View style={styles.groupedCard}>
               {friends.map((f, i) => {
@@ -498,7 +509,7 @@ export default function BalancesPrototypeScreen() {
                         activeOpacity={0.75}
                       >
                         <View style={styles.groupIcon}>
-                          <Ionicons name="people" size={18} color={colors.primary} />
+                          <Ionicons name="people" size={18} color="#1F2937" />
                         </View>
                         <View style={{ flex: 1, marginLeft: 12 }}>
                           <Text style={styles.groupRowName}>{g.name}</Text>
@@ -591,19 +602,42 @@ export default function BalancesPrototypeScreen() {
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
             <View style={styles.allBankHead}>
-              <Text style={styles.sheetMerchant}>All bank charges</Text>
+              <Text style={styles.sheetMerchant}>Bank charges</Text>
               <TouchableOpacity onPress={() => setShowAllBank(false)} hitSlop={8}>
                 <Ionicons name="close" size={18} color={darkUI.labelMuted} />
               </TouchableOpacity>
             </View>
+            <View style={styles.sheetSearchWrap}>
+              <Ionicons name="search" size={16} color={darkUI.labelMuted} />
+              <TextInput
+                value={bankSearch}
+                onChangeText={setBankSearch}
+                placeholder='Search "food", "Uber", "$80"...'
+                placeholderTextColor={darkUI.labelMuted}
+                style={styles.sheetSearchInput}
+              />
+            </View>
+            <View style={styles.sheetFilterRow}>
+              {(["all", "unsplit"] as const).map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  onPress={() => setBankFilter(f)}
+                  style={[styles.sheetFilterChip, bankFilter === f && styles.sheetFilterChipActive]}
+                >
+                  <Text style={[styles.sheetFilterText, bankFilter === f && styles.sheetFilterTextActive]}>
+                    {f === "all" ? "All charges" : "Needs splitting"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              {allLinkedBankRows.length === 0 ? (
+              {filteredAllBankRows.length === 0 ? (
                 <View style={styles.emptyBank}>
                   <Text style={styles.emptyBankText}>No linked card charges found.</Text>
                 </View>
               ) : (
                 <View style={styles.groupedCard}>
-                  {allLinkedBankRows.map((tx, i) => (
+                  {filteredAllBankRows.map((tx, i) => (
                     <View key={tx.id}>
                       <TouchableOpacity
                         style={styles.friendRow}
@@ -634,22 +668,26 @@ export default function BalancesPrototypeScreen() {
                             {tx.merchant || tx.rawDescription || "Purchase"}
                           </Text>
                           <Text style={styles.friendMeta} numberOfLines={1}>
-                            {tx.dateStr || tx.date || "—"}
+                            {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
                           </Text>
                         </View>
                         <Text style={[styles.friendAmt, styles.balAmtOut]}>
-                          −${Math.abs(Number(tx.amount)).toFixed(2)}
+                          ${Math.abs(Number(tx.amount)).toFixed(2)}
                         </Text>
-                        <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                        {!tx.alreadySplit ? (
+                          <View style={styles.bankSplitPill}>
+                            <Text style={styles.bankSplitPillText}>Split</Text>
+                          </View>
+                        ) : null}
                       </TouchableOpacity>
-                      {i < allLinkedBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
+                      {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
                     </View>
                   ))}
                 </View>
               )}
             </ScrollView>
-            <TouchableOpacity style={styles.sheetClose} onPress={openBankOnWeb}>
-              <Text style={styles.sheetCloseText}>Open full transactions on web</Text>
+            <TouchableOpacity style={styles.sheetClose} onPress={() => setShowAllBank(false)}>
+              <Text style={styles.sheetCloseText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -659,29 +697,16 @@ export default function BalancesPrototypeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: darkUI.bg },
+  safe: { flex: 1, backgroundColor: "#F5F3F2" },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 132 },
   header: { marginBottom: 16, paddingTop: 4, flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  title: { fontSize: 26, fontFamily: font.black, color: darkUI.label, letterSpacing: -0.6 },
-  titleSub: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelMuted, marginTop: 2 },
-  themeFlag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: `${colors.primary}CC`,
-    borderWidth: 1,
-    borderColor: `${colors.primary}88`,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginTop: 4,
-  },
-  themeFlagText: { color: "#fff", fontSize: 12, fontFamily: font.bold },
+  title: { fontSize: 42, lineHeight: 44, fontFamily: font.black, color: "#1F2328", letterSpacing: -1.2 },
+  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#6B7280", marginTop: 2 },
   sLabel: {
     fontSize: 11,
     fontFamily: font.extrabold,
-    color: darkUI.labelMuted,
+    color: "#9AA0A6",
     textTransform: "uppercase",
     letterSpacing: 1.2,
     marginBottom: 8,
@@ -694,40 +719,25 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 2,
   },
-  seeAll: { fontSize: 13, fontFamily: font.semibold, color: colors.primary },
-  previewPill: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginBottom: 8,
-    backgroundColor: `${colors.primary}1A`,
-    borderColor: `${colors.primary}55`,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  previewPillText: { fontSize: 11, fontFamily: font.semibold, color: colors.primary },
-  previewCardDim: { opacity: 0.86 },
+  seeAll: { fontSize: 13, fontFamily: font.semibold, color: "#1F2328" },
   bankCard: {
     width: 168,
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     paddingHorizontal: 13,
     paddingTop: 13,
     paddingBottom: 11,
     ...shadow.sm,
   },
-  bankCardEmail: { borderColor: `${prototype.blue}66` },
+  bankCardEmail: { borderColor: "#D9D7F0" },
   bankTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 9 },
   bankEmojiWrap: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: darkUI.bg,
+    backgroundColor: "#F6F2EF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -742,39 +752,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bankMerchant: { fontSize: 13, fontFamily: font.bold, color: darkUI.label, marginBottom: 2 },
-  bankHint: { fontSize: 10, fontFamily: font.regular, color: darkUI.labelMuted, marginBottom: 7 },
+  bankMerchant: { fontSize: 13, fontFamily: font.bold, color: "#1F2328", marginBottom: 2 },
+  bankHint: { fontSize: 10, fontFamily: font.regular, color: "#81868D", marginBottom: 7 },
   bankEmailLine: { fontSize: 10, fontFamily: font.regular, color: prototype.blue, marginBottom: 7 },
   bankAmt: {
     fontSize: 20,
     fontFamily: font.black,
-    color: darkUI.label,
+    color: "#1F2328",
     letterSpacing: -0.8,
     marginBottom: 9,
   },
   bankCta: {
     borderWidth: 1,
-    borderColor: `${colors.primary}44`,
-    backgroundColor: `${colors.primary}18`,
+    borderColor: "#D8D0CB",
+    backgroundColor: "#F6F2EF",
     borderRadius: 9,
     paddingVertical: 8,
     alignItems: "center",
   },
-  bankCtaText: { fontSize: 13, fontFamily: font.extrabold, color: colors.primary },
+  bankCtaText: { fontSize: 13, fontFamily: font.extrabold, color: "#24292E" },
   emptyBank: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     padding: 16,
   },
-  emptyBankText: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, lineHeight: 18 },
+  emptyBankText: { fontSize: 13, fontFamily: font.regular, color: "#6B7280", lineHeight: 18 },
   emptyBankLoading: { alignItems: "center", paddingVertical: 24 },
   groupedCard: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     overflow: "hidden",
   },
   friendRow: {
@@ -783,11 +793,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  friendName: { fontSize: 15, fontFamily: font.bold, color: darkUI.label },
-  friendMeta: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
+  friendName: { fontSize: 15, fontFamily: font.bold, color: "#1F2328" },
+  friendMeta: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   friendAmt: { fontSize: 16, fontFamily: font.black, marginRight: 4, letterSpacing: -0.3 },
-  rowSep: { height: 1, backgroundColor: prototype.sep, marginLeft: 70 },
-  sectionDivider: { height: 1, backgroundColor: prototype.sep },
+  rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 70 },
+  sectionDivider: { height: 1, backgroundColor: "#EEE8E4" },
   inlineSectionLabel: {
     paddingHorizontal: 16,
     paddingBottom: 6,
@@ -796,12 +806,12 @@ const styles = StyleSheet.create({
   inlineSectionLabelFirst: {
     paddingTop: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: prototype.sep,
+    borderBottomColor: "#EEE8E4",
   },
   inlineSectionLabelText: {
     fontSize: 11,
     fontFamily: font.extrabold,
-    color: darkUI.labelMuted,
+    color: "#8A9098",
     textTransform: "uppercase",
     letterSpacing: 1.2,
   },
@@ -815,44 +825,44 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: radii.md,
-    backgroundColor: "rgba(61,142,98,0.2)",
+    backgroundColor: "rgba(0,0,0,0.05)",
     alignItems: "center",
     justifyContent: "center",
   },
-  groupRowName: { fontSize: 16, fontFamily: font.semibold, color: darkUI.label },
-  groupRowSub: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
+  groupRowName: { fontSize: 16, fontFamily: font.semibold, color: "#1F2328" },
+  groupRowSub: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 1 },
   groupRowBal: { fontSize: 16, fontFamily: font.extrabold, letterSpacing: -0.3, marginRight: 4 },
   balAmtIn: { color: prototype.green },
   balAmtOut: { color: prototype.red },
-  balMuted: { color: darkUI.labelMuted },
+  balMuted: { color: "#8A9098" },
   emptyFriend: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
-    backgroundColor: darkUI.card,
+    borderColor: "#E3DBD8",
+    backgroundColor: "#FFFFFF",
     paddingVertical: 32,
     paddingHorizontal: 20,
     alignItems: "center",
   },
-  emptyFriendTitle: { fontSize: 16, fontFamily: font.bold, color: darkUI.labelSecondary, marginTop: 10 },
-  emptyFriendSub: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4, textAlign: "center" },
-  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  emptyFriendTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 10 },
+  emptyFriendSub: { fontSize: 13, fontFamily: font.regular, color: "#7A8088", marginTop: 4, textAlign: "center" },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingHorizontal: 20,
     paddingBottom: 36,
     paddingTop: 8,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
   },
   sheetHandle: {
     alignSelf: "center",
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: darkUI.sep,
+    backgroundColor: "#D8D4CF",
     marginBottom: 16,
   },
   allBankHead: {
@@ -861,26 +871,70 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
   },
+  sheetSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    borderRadius: 16,
+    backgroundColor: "#F7F3F0",
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 10,
+  },
+  sheetSearchInput: {
+    flex: 1,
+    color: "#1F2328",
+    fontSize: 14,
+    fontFamily: font.regular,
+    paddingVertical: 0,
+  },
+  sheetFilterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sheetFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#F7F3F0",
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+  },
+  sheetFilterChipActive: {
+    backgroundColor: "#1F2328",
+    borderColor: "#1F2328",
+  },
+  sheetFilterText: {
+    fontSize: 13,
+    fontFamily: font.semibold,
+    color: "#7A8088",
+  },
+  sheetFilterTextActive: {
+    color: "#fff",
+  },
   sheetHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
   sheetEmoji: {
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: darkUI.bg,
+    backgroundColor: "#F7F3F0",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
   },
-  sheetMerchant: { fontSize: 17, fontFamily: font.extrabold, color: darkUI.label },
-  sheetDate: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
-  sheetAmt: { fontSize: 22, fontFamily: font.black, color: darkUI.label, letterSpacing: -1 },
+  sheetMerchant: { fontSize: 17, fontFamily: font.extrabold, color: "#1F2328" },
+  sheetDate: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
+  sheetAmt: { fontSize: 22, fontFamily: font.black, color: "#1F2328", letterSpacing: -1 },
   emailBox: {
-    backgroundColor: darkUI.bg,
+    backgroundColor: "#F7F3F0",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     marginBottom: 14,
   },
   emailRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
@@ -891,7 +945,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  emailSnippet: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelSecondary },
+  emailSnippet: { fontSize: 13, fontFamily: font.regular, color: "#3F464F" },
   splitBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -903,6 +957,31 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   splitBtnText: { fontSize: 16, fontFamily: font.bold, color: "#fff" },
+  bankSplitPill: {
+    marginLeft: 8,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: `${prototype.amber}22`,
+    borderWidth: 1,
+    borderColor: `${prototype.amber}50`,
+  },
+  bankSplitPillText: {
+    fontSize: 11,
+    fontFamily: font.bold,
+    color: prototype.amber,
+  },
   sheetClose: { alignItems: "center", paddingVertical: 10 },
-  sheetCloseText: { fontSize: 15, fontFamily: font.semibold, color: darkUI.labelSecondary },
+  sheetCloseText: { fontSize: 15, fontFamily: font.semibold, color: "#3F464F" },
+  homeLoadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  homeLoadingText: {
+    fontSize: 14,
+    fontFamily: font.medium,
+    color: "#7A8088",
+  },
 });

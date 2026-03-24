@@ -33,7 +33,7 @@ const STEPS: { key: Step; label: string }[] = [
   { key: "summary", label: "Summary" },
 ];
 
-const PC = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#9B59B6", "#00674B"];
+const PC = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#FF5A5F", "#9B59B6", "#334155"];
 function pColor(i: number) { return PC[i % PC.length]; }
 
 // Demo-only: compute minimal settlement suggestions (paid vs owed) so Summary feels real.

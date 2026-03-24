@@ -34,8 +34,8 @@ export function MerchantLogo({
     ? fallbackText.trim().slice(0, 2).toUpperCase()
     : (merchantName?.trim()?.charAt(0) ?? "?").toUpperCase();
 
-  const bg = backgroundColor ?? "rgba(61,142,98,0.14)";
-  const ring = borderColor ?? "rgba(61,142,98,0.22)";
+  const bg = backgroundColor ?? "rgba(31,35,40,0.08)";
+  const ring = borderColor ?? "rgba(31,35,40,0.14)";
 
   return (
     <View style={[s.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderColor: ring }, style]}>

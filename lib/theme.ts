@@ -3,55 +3,50 @@ import { Platform, TextStyle, ViewStyle } from "react-native";
 // ── Colors ──────────────────────────────────────────────────────────────────
 
 /**
- * Dark shell — aligned to `Create design prototype (1)/src/app/pages/MobileAppPage.tsx`
- * Warm charcoal stack + money green/red. Brand CTAs stay Coconut `colors.primary`.
+ * App shell tokens aligned to neutral website phone mock.
+ * Brand CTAs use `colors.primary` from theme context (same green).
  */
 export const darkUI = {
-  // Premium neutral dark shell (less brown, cleaner contrast).
-  bg: "#10141B",
-  bgElevated: "#151B24",
-  card: "#1B222D",
-  cardHover: "#222B38",
-  /** Prototype card3 — inputs / numpad tiles */
-  cardElevated: "#2A3545",
-  stroke: "#344255",
-  strokeSoft: "#2A3442",
-  /** Row dividers inside grouped cards (prototype `sep`) */
-  sep: "#2A3442",
-  label: "#F5F8FF",
-  /** Secondary body / empty-state titles — readable on #181410 / cards */
-  labelSecondary: "#D3DCEC",
-  /** Subtitles, meta lines, inactive tab icons — must stay legible on warm dark bg */
-  labelMuted: "#99A8C0",
-  /** Money semantics — prototype `green` / `red` */
-  moneyIn: "#2ECC8A",
-  moneyOut: "#F87171",
-  moneyInBg: "#153325",
-  moneyOutBg: "#3A1A1E",
+  bg: "#F5F3F2",
+  bgElevated: "#F7F3F0",
+  card: "#FFFFFF",
+  cardHover: "#FFFFFF",
+  /** Inputs / numpad tiles */
+  cardElevated: "#F7F3F0",
+  stroke: "#E3DBD8",
+  strokeSoft: "#EEE8E4",
+  sep: "#EEE8E4",
+  label: "#1F2328",
+  labelSecondary: "#4B5563",
+  labelMuted: "#8A9098",
+  moneyIn: "#3A7D44",
+  moneyOut: "#C23934",
+  moneyInBg: "#EEF5F0",
+  moneyOutBg: "#FCEDEC",
 } as const;
 
-/** Extra tokens from the same prototype (accent there is gold; app uses `colors.primary` for CTAs). */
+/** Shared demo / semantic accents (money positive matches MVP green). */
 export const prototype = {
-  green: "#2ECC8A",
-  greenBg: "#153325",
-  greenMid: "#1F4A36",
-  red: "#F87171",
-  redBg: "#3A1A1E",
-  sep: "#2A3442",
-  card2: "#222B38",
-  card3: "#2A3545",
-  blue: "#60A5FA",
-  blueBg: "#162741",
+  green: "#3A7D44",
+  greenBg: "#EEF5F0",
+  greenMid: "#DCEADE",
+  red: "#C23934",
+  redBg: "#FCEDEC",
+  sep: "#EEE8E4",
+  card2: "#FFFFFF",
+  card3: "#F7F3F0",
+  blue: "#4A6CF7",
+  blueBg: "#EEF2FF",
   amber: "#F59E0B",
-  amberBg: "#3D3218",
+  amberBg: "#FEF3C7",
 } as const;
 
 export const colors = {
-  // Brand
-  primary: "#3D8E62",
-  primaryLight: "#EEF7F2",
-  primaryMuted: "#C3E0D3",
-  primaryDark: "#2D7A52",
+  // Neutral website phone shell
+  primary: "#1F2328",
+  primaryLight: "#F3EEEA",
+  primaryMuted: "#E3DBD8",
+  primaryDark: "#1F2328",
 
   // Surfaces
   bg: "#F7FAF8",
@@ -99,7 +94,7 @@ export const colors = {
 } as const;
 
 export const ACCENT_PALETTE = [
-  "#3D8E62",
+  "#1F2328",
   "#4A6CF7",
   "#E8507A",
   "#F59E0B",

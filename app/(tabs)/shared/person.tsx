@@ -19,9 +19,9 @@ import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
-import { colors, font, radii, darkUI, prototype } from "../../../lib/theme";
+import { colors, font, radii, prototype } from "../../../lib/theme";
 
-const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
+const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
 function MemberAvatar({ name, size = 76 }: { name: string; size?: number }) {
   const hue = MEMBER_COLORS[name.charCodeAt(0) % MEMBER_COLORS.length];
@@ -186,13 +186,13 @@ export default function PersonScreen() {
               s.balancePill,
               pos ? { backgroundColor: prototype.greenBg, borderColor: `${prototype.green}44` } : detail.balance < 0
                 ? { backgroundColor: prototype.redBg, borderColor: `${prototype.red}44` }
-                : { backgroundColor: darkUI.card, borderColor: darkUI.stroke },
+                  : { backgroundColor: "#F7F3F0", borderColor: "#E3DBD8" },
             ]}
           >
             <Text
               style={[
                 s.balanceAmt,
-                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: darkUI.labelMuted },
+                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: "#8A9098" },
               ]}
             >
               {detail.balance === 0 ? "$0.00" : `${pos ? "+" : detail.balance < 0 ? "−" : ""}$${Math.abs(detail.balance).toFixed(2)}`}
@@ -200,7 +200,7 @@ export default function PersonScreen() {
             <Text
               style={[
                 s.balanceLbl,
-                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: darkUI.labelMuted },
+                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: "#8A9098" },
               ]}
             >
               {detail.balance > 0
@@ -234,7 +234,7 @@ export default function PersonScreen() {
             )}
             <TouchableOpacity style={s.btnGhost} onPress={handleMarkPaid} disabled={recordingSettlement} activeOpacity={0.7}>
               {recordingSettlement ? (
-                <ActivityIndicator size="small" color={darkUI.labelSecondary} />
+                <ActivityIndicator size="small" color="#4B5563" />
               ) : (
                 <Text style={s.btnGhostText}>Mark paid</Text>
               )}
@@ -257,7 +257,7 @@ export default function PersonScreen() {
             {detail.activity.map((a, i) => (
               <View key={a.id}>
                 <View style={s.txRow}>
-                  <MerchantLogo merchantName={a.merchant} size={38} backgroundColor={darkUI.bg} borderColor="transparent" />
+                  <MerchantLogo merchantName={a.merchant} size={38} backgroundColor="#F7F3F0" borderColor="transparent" />
                   <View style={s.txInfo}>
                     <Text style={s.txMerchant}>{a.merchant}</Text>
                     <Text style={s.txGroup}>{a.groupName}</Text>
@@ -270,7 +270,7 @@ export default function PersonScreen() {
                           ? { color: prototype.green }
                           : a.effectOnBalance < 0
                             ? { color: prototype.red }
-                            : { color: darkUI.labelMuted },
+                            : { color: "#8A9098" },
                       ]}
                     >
                       {a.effectOnBalance > 0 ? "+" : a.effectOnBalance < 0 ? "-" : ""}${Math.abs(a.effectOnBalance).toFixed(2)}
@@ -289,7 +289,7 @@ export default function PersonScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: darkUI.bg },
+  container: { flex: 1, backgroundColor: "#F5F3F2" },
   topBar: { paddingHorizontal: 8, paddingTop: 4 },
   backRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 8, paddingHorizontal: 8 },
   backText: { fontSize: 15, fontFamily: font.semibold, color: colors.primary },
@@ -303,8 +303,8 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   avatarText: { fontFamily: font.bold },
-  heroName: { fontSize: 20, fontFamily: font.black, color: darkUI.label, textAlign: "center" },
-  heroMeta: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4 },
+  heroName: { fontSize: 20, fontFamily: font.black, color: "#1F2328", textAlign: "center" },
+  heroMeta: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 4 },
   balancePill: {
     marginTop: 14,
     paddingHorizontal: 28,
@@ -334,20 +334,20 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: radii.md,
-    backgroundColor: prototype.blue,
+    backgroundColor: "#1F2328",
   },
   btnGhost: {
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
   btnText: { color: "#fff", fontWeight: "600", fontFamily: font.semibold, fontSize: 14 },
-  btnGhostText: { color: darkUI.labelSecondary, fontFamily: font.semibold, fontSize: 14 },
+  btnGhostText: { color: "#4B5563", fontFamily: font.semibold, fontSize: 14 },
   settledBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -363,33 +363,33 @@ const s = StyleSheet.create({
   section: {
     fontSize: 11,
     fontFamily: font.extrabold,
-    color: darkUI.labelMuted,
+    color: "#9AA0A6",
     textTransform: "uppercase",
     letterSpacing: 1.2,
     marginBottom: 10,
   },
-  emptyText: { fontSize: 14, fontFamily: font.regular, color: darkUI.labelMuted },
+  emptyText: { fontSize: 14, fontFamily: font.regular, color: "#7A8088" },
   card: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     overflow: "hidden",
   },
   txRow: { flexDirection: "row", alignItems: "center", paddingVertical: 13, paddingHorizontal: 16 },
-  rowSep: { height: 1, backgroundColor: prototype.sep, marginLeft: 66 },
+  rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 66 },
   txEmoji: {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: darkUI.bg,
+    backgroundColor: "#F7F3F0",
     alignItems: "center",
     justifyContent: "center",
   },
   txInfo: { flex: 1, marginLeft: 12 },
-  txMerchant: { fontSize: 14, fontFamily: font.semibold, color: darkUI.label },
-  txGroup: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
+  txMerchant: { fontSize: 14, fontFamily: font.semibold, color: "#1F2328" },
+  txGroup: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   txRight: { alignItems: "flex-end" },
   txAmt: { fontSize: 15, fontFamily: font.bold },
-  txTotal: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
+  txTotal: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
 });

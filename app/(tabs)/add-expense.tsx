@@ -12,6 +12,7 @@ import {
   Alert,
   Linking,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
@@ -96,6 +97,13 @@ function descriptionsSimilar(a: string, b: string): boolean {
   return short.length >= 3 && long.includes(short);
 }
 
+function syntheticGroupIdFromFriendKey(key: string): string | null {
+  if (key.startsWith("grp:")) return key.slice(4);
+  if (key.startsWith("opt-")) return key.slice(4);
+  if (key.startsWith("fb-")) return key.slice(3);
+  return null;
+}
+
 function pickDemoGroupIdForFriend(
   friendKey: string,
   personDetails: Record<string, { email: string | null; displayName: string; settlements?: { groupId: string }[] }>,
@@ -142,6 +150,9 @@ export default function AddExpenseScreen() {
   const [recurring, setRecurring] = useState<"none" | "weekly" | "biweekly" | "monthly">("none");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [optimisticFriends, setOptimisticFriends] = useState<Array<{ key: string; displayName: string; balance: number }>>([]);
   const [resolving, setResolving] = useState(false);
   const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(null);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
@@ -196,11 +207,87 @@ export default function AddExpenseScreen() {
       }
     }
   }, [prefillNonce, prefillDesc, prefillAmount]);
-  const friends = summary?.friends ?? [];
-  const groups = summary?.groups ?? [];
+  useEffect(() => {
+    if (isDemoOn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/groups");
+        if (!res.ok) return;
+        const data = await res.json().catch(() => []);
+        if (!cancelled && Array.isArray(data)) {
+          setFallbackGroups(
+            data.map((g) => ({
+              id: String(g.id),
+              name: String(g.name ?? "Group"),
+              memberCount: Number(g.memberCount ?? 0),
+              groupType: typeof g.groupType === "string" ? g.groupType : null,
+            }))
+          );
+        }
+      } catch {
+        // keep summary-only behavior when fallback fails
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiFetch, isDemoOn]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(`coconut.optimistic.friends.${userId}`);
+        if (!raw || cancelled) return;
+        const parsed = JSON.parse(raw) as {
+          groups?: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>;
+          friends?: Array<{ key: string; displayName: string; balance: number }>;
+        };
+        if (Array.isArray(parsed.groups)) setOptimisticGroups(parsed.groups);
+        if (Array.isArray(parsed.friends)) setOptimisticFriends(parsed.friends);
+      } catch {
+        // best effort only
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const summaryFriends = summary?.friends ?? [];
+  const summaryGroups = summary?.groups ?? [];
+  const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
+  const fallbackFriendRows = mergedFallbackGroups
+    .filter((g) => (g.groupType ?? "other") !== "home")
+    .map((g) => ({ key: `grp:${g.id}`, displayName: g.name, balance: 0 }));
+  const fallbackGroupRows = mergedFallbackGroups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    memberCount: g.memberCount,
+    myBalance: 0,
+    lastActivityAt: new Date().toISOString(),
+  }));
+  const mergedFallbackFriends = [
+    ...optimisticFriends,
+    ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
+  ];
+  const friends = summaryFriends.length > 0
+    ? [...summaryFriends, ...optimisticFriends.filter((o) => !summaryFriends.some((s) => s.displayName === o.displayName))]
+    : mergedFallbackFriends;
+  const groups = summaryGroups.length > 0 ? summaryGroups : fallbackGroupRows;
   const q = query.toLowerCase().trim();
   const filteredFriends = q ? friends.filter((f) => f.displayName.toLowerCase().includes(q)) : friends;
-  const filteredGroups = q ? groups.filter((g) => g.name.toLowerCase().includes(q)) : groups;
+  const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
+  const visibleGroups = groups.filter((g) => {
+    const groupName = g.name.trim().toLowerCase();
+    // Friend records are backed by 2-member groups internally.
+    // Hide duplicate rows in the Groups section.
+    if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
+    return true;
+  });
+  const filteredGroups = q ? visibleGroups.filter((g) => g.name.toLowerCase().includes(q)) : visibleGroups;
   const selectedKeys = new Set(targets.map((t) => t.key));
   const noMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
 
@@ -513,10 +600,32 @@ export default function AddExpenseScreen() {
     });
   };
 
+  const tapToPaySuggestion = useMemo(() => {
+    const effPayer = paidByMe ? (myMemberId ?? payerMemberId) : payerMemberId;
+    if (!effPayer || !resolvedGroupId || groupMembers.length < 2) return null;
+    const receiverMemberId = effPayer;
+    const payerShare = shares.find((s) => s.key !== effPayer && s.share > 0.001);
+    if (!payerShare) return null;
+    const amountOwed = Math.round(payerShare.share * 100) / 100;
+    if (amountOwed <= 0) return null;
+    return {
+      amount: amountOwed,
+      groupId: resolvedGroupId,
+      payerMemberId: payerShare.key,
+      receiverMemberId,
+    };
+  }, [paidByMe, myMemberId, payerMemberId, resolvedGroupId, groupMembers.length, shares]);
+
   const goTapToPay = () => {
-    nav.replace({
+    const amountToCharge = tapToPaySuggestion?.amount ?? total;
+    nav.push({
       pathname: "/(tabs)/pay",
-      params: { amount: total.toFixed(2), groupId: resolvedGroupId ?? "" },
+      params: {
+        amount: amountToCharge.toFixed(2),
+        groupId: tapToPaySuggestion?.groupId ?? (resolvedGroupId ?? ""),
+        payerMemberId: tapToPaySuggestion?.payerMemberId ?? "",
+        receiverMemberId: tapToPaySuggestion?.receiverMemberId ?? "",
+      },
     });
   };
 
@@ -540,7 +649,10 @@ export default function AddExpenseScreen() {
           <Text style={s.doneSub}>
             ${total.toFixed(2)} · {description || "Expense"} · {targets[0]?.name}
           </Text>
-          <Text style={s.doneHint}>Collect or record payment</Text>
+          <Text style={s.doneHint}>
+            Collect or record payment
+            {tapToPaySuggestion ? ` · Tap to Pay charges $${tapToPaySuggestion.amount.toFixed(2)}` : ""}
+          </Text>
 
           <TouchableOpacity style={s.primaryBtn} onPress={goTapToPay} activeOpacity={0.9}>
             <Ionicons name="phone-portrait-outline" size={20} color="#fff" />
@@ -700,7 +812,7 @@ export default function AddExpenseScreen() {
               return (
                 <TouchableOpacity
                   key={m.id}
-                  style={[s.paidByChip, selected && { borderColor: `${colors.primary}99`, backgroundColor: "rgba(61,142,98,0.18)" }]}
+                  style={[s.paidByChip, selected && { borderColor: `${colors.primary}99`, backgroundColor: "rgba(31,35,40,0.10)" }]}
                   onPress={() => {
                     setError(null);
                     if (isMe) {
@@ -891,9 +1003,16 @@ export default function AddExpenseScreen() {
         )}
         {filteredFriends.length > 0 && <Text style={s.secLabel}>Friends</Text>}
         {filteredFriends.map((f, i) => {
-          const on = selectedKeys.has(f.key);
+          const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
+          const isGroupBackedFriend = !!groupBackedId;
+          const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
+          const on = selectedKeys.has(targetKey);
           return (
-            <TouchableOpacity key={f.key} style={[s.row, on && s.rowOn]} onPress={() => toggle({ type: "friend", key: f.key, name: f.displayName })}>
+            <TouchableOpacity
+              key={f.key}
+              style={[s.row, on && s.rowOn]}
+              onPress={() => toggle({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
+            >
               <View style={[s.av, { backgroundColor: ACCENT[i % ACCENT.length] }]}>
                 <Text style={s.avTxt}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
               </View>
@@ -1011,9 +1130,9 @@ const s = StyleSheet.create({
   summaryHero: {
     borderRadius: 16,
     padding: 16,
-    backgroundColor: "rgba(61, 142, 98, 0.12)",
+    backgroundColor: "rgba(31,35,40,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(61, 142, 98, 0.35)",
+    borderColor: "#E3DBD8",
     marginBottom: 8,
     ...shadow.sm,
   },
@@ -1120,10 +1239,10 @@ const s = StyleSheet.create({
 
   secLabel: { fontSize: 11, fontFamily: font.extrabold, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, backgroundColor: darkUI.card, borderRadius: radii.lg, paddingHorizontal: 12, marginBottom: 6, borderWidth: 1, borderColor: darkUI.stroke },
-  rowOn: { borderColor: colors.primary, backgroundColor: "rgba(61,142,98,0.12)" },
+  rowOn: { borderColor: colors.primary, backgroundColor: "rgba(31,35,40,0.08)" },
   av: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avTxt: { color: "#fff", fontFamily: font.bold, fontSize: 13 },
-  grIcon: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: "rgba(61,142,98,0.2)", alignItems: "center", justifyContent: "center" },
+  grIcon: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: "rgba(31,35,40,0.10)", alignItems: "center", justifyContent: "center" },
   rowName: { flex: 1, fontSize: 15, fontFamily: font.semibold, color: darkUI.label },
   rowMeta: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted },
   check: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: darkUI.stroke, alignItems: "center", justifyContent: "center" },

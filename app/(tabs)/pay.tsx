@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 import type { Reader } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
@@ -56,6 +56,7 @@ function PayScreenInner() {
   const [lastOutcomeAmount, setLastOutcomeAmount] = useState<number | null>(null);
   type Phase = "idle" | "initializing" | "collecting" | "processing";
   const [paymentPhase, setPaymentPhase] = useState<Phase>("idle");
+  const autoConnectAttempted = useRef(false);
 
   const {
     initialize,
@@ -87,6 +88,17 @@ function PayScreenInner() {
     if (params.amount) setAmount(params.amount);
   }, [params.amount]);
 
+  const lockedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
+  const hasPrefilledCheckout = Boolean(params.amount) && lockedAmount > 0;
+
+  const handleClose = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/");
+  }, []);
+
   // Reader warm-up: discover at launch and when app returns to foreground (checklist 1.5)
   useEffect(() => {
     if (!isInitialized) return;
@@ -101,6 +113,10 @@ function PayScreenInner() {
     });
     return () => sub.remove();
   }, [isInitialized, discoverReaders]);
+
+  useEffect(() => {
+    autoConnectAttempted.current = false;
+  }, [params.amount, params.groupId, params.payerMemberId, params.receiverMemberId]);
 
   const connectTapToPay = useCallback(async () => {
     if (!isInitialized) return;
@@ -307,13 +323,36 @@ function PayScreenInner() {
 
   const isConnected = !!connectedReader;
 
+  useEffect(() => {
+    if (!hasPrefilledCheckout) return;
+    if (!isInitialized || isConnected || connecting || collecting) return;
+    if (discoveredReaders.length === 0) return;
+    if (autoConnectAttempted.current) return;
+    autoConnectAttempted.current = true;
+    void connectTapToPay();
+  }, [hasPrefilledCheckout, isInitialized, isConnected, connecting, collecting, discoveredReaders.length, connectTapToPay]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.surface }} edges={["top"]}>
       <View style={[styles.container, { backgroundColor: theme.surface }]}>
-      <Text style={[styles.title, { color: theme.text }]}>Tap to Pay</Text>
-      <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
-        Accept contactless payments with your phone. No reader required.
-      </Text>
+      {hasPrefilledCheckout ? (
+        <View style={styles.checkoutHeader}>
+          <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+            <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
+          </TouchableOpacity>
+          <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
+          <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+            <Ionicons name="close" size={20} color={theme.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <Text style={[styles.title, { color: theme.text }]}>Tap to Pay</Text>
+          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+            Accept contactless payments with your phone. No reader required.
+          </Text>
+        </>
+      )}
 
       {!API_URL && (
         <Text style={[styles.warning, { color: theme.error }]}>
@@ -321,72 +360,103 @@ function PayScreenInner() {
         </Text>
       )}
 
-      {/* Connect / Disconnect */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-          Reader: {isConnected ? "Connected" : "Not connected"}
-        </Text>
-        {isConnected ? (
-          <TouchableOpacity
-            style={[styles.button, styles.disconnectButton]}
-            onPress={disconnect}
-            disabled={connecting}
-          >
-            <Text style={styles.buttonText}>Disconnect</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: theme.primary }, connecting && styles.buttonDisabled]}
-            onPress={connectTapToPay}
-            disabled={connecting || !isInitialized || discoveredReaders.length === 0}
-          >
-            {connecting ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {!isInitialized
-                  ? "Initializing…"
-                  : discoveredReaders.length === 0
-                  ? "Tap to Pay not available"
-                  : "Connect Tap to Pay"}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Amount & Collect */}
-      {isConnected && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Amount ($)</Text>
-          <TextInput
-            style={[styles.input, { borderColor: theme.border, color: theme.text }]}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="0.00"
-            placeholderTextColor={theme.inputPlaceholder}
-            keyboardType="decimal-pad"
-            editable={!collecting}
-          />
+      {hasPrefilledCheckout ? (
+        <View style={[styles.checkoutCard, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
+          <Text style={[styles.checkoutAmount, { color: theme.text }]}>${lockedAmount.toFixed(2)}</Text>
+          <Text style={[styles.checkoutSub, { color: theme.textTertiary }]}>
+            {isConnected ? "Reader connected. Hold phone near card." : "Preparing Tap to Pay reader..."}
+          </Text>
           <TouchableOpacity
             style={[
               styles.button,
               { backgroundColor: theme.primary },
-              (!amount || parseFloat(amount) <= 0 || collecting) && styles.buttonDisabled,
+              (collecting || connecting || (!isConnected && (!isInitialized || discoveredReaders.length === 0))) && styles.buttonDisabled,
             ]}
-            onPress={collectPayment}
-            disabled={!amount || parseFloat(amount) <= 0 || collecting}
+            onPress={isConnected ? collectPayment : connectTapToPay}
+            disabled={collecting || connecting || (!isConnected && (!isInitialized || discoveredReaders.length === 0))}
           >
-            {collecting ? (
+            {collecting || connecting ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <View style={styles.buttonContent}>
-                <Ionicons name="hardware-chip-outline" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Collect payment</Text>
-              </View>
+              <Text style={styles.buttonText}>{isConnected ? `Charge $${lockedAmount.toFixed(2)}` : "Connect Tap to Pay"}</Text>
             )}
           </TouchableOpacity>
+          {isConnected ? (
+            <TouchableOpacity style={styles.checkoutLink} onPress={disconnect}>
+              <Text style={[styles.checkoutLinkText, { color: theme.textTertiary }]}>Disconnect reader</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
+      ) : (
+        <>
+          {/* Connect / Disconnect */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+              Reader: {isConnected ? "Connected" : "Not connected"}
+            </Text>
+            {isConnected ? (
+              <TouchableOpacity
+                style={[styles.button, styles.disconnectButton]}
+                onPress={disconnect}
+                disabled={connecting}
+              >
+                <Text style={styles.buttonText}>Disconnect</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: theme.primary }, connecting && styles.buttonDisabled]}
+                onPress={connectTapToPay}
+                disabled={connecting || !isInitialized || discoveredReaders.length === 0}
+              >
+                {connecting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>
+                    {!isInitialized
+                      ? "Initializing…"
+                      : discoveredReaders.length === 0
+                      ? "Tap to Pay not available"
+                      : "Connect Tap to Pay"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Amount & Collect */}
+          {isConnected && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Amount ($)</Text>
+              <TextInput
+                style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="0.00"
+                placeholderTextColor={theme.inputPlaceholder}
+                keyboardType="decimal-pad"
+                editable={!collecting}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  { backgroundColor: theme.primary },
+                  (!amount || parseFloat(amount) <= 0 || collecting) && styles.buttonDisabled,
+                ]}
+                onPress={collectPayment}
+                disabled={!amount || parseFloat(amount) <= 0 || collecting}
+              >
+                {collecting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Ionicons name="hardware-chip-outline" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Collect payment</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
 
       {/* 5.7 Initializing / 5.8 Processing overlay */}
@@ -443,12 +513,14 @@ function PayScreenInner() {
         </View>
       )}
 
-      <Text style={[styles.hint, { color: theme.textQuaternary }]}>
-        Tap to Pay does not work in Expo Go. Run{" "}
-        <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:ios</Text> or{" "}
-        <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:android</Text> to build with native Stripe support.
-        {"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
-      </Text>
+      {!hasPrefilledCheckout ? (
+        <Text style={[styles.hint, { color: theme.textQuaternary }]}>
+          Tap to Pay does not work in Expo Go. Run{" "}
+          <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:ios</Text> or{" "}
+          <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:android</Text> to build with native Stripe support.
+          {"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
+        </Text>
+      ) : null}
       </View>
     </SafeAreaView>
   );
@@ -498,6 +570,52 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     color: colors.text,
     marginBottom: 12,
+  },
+  checkoutHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  checkoutHeaderBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkoutHeaderTitle: {
+    fontSize: 20,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  checkoutCard: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: radii.xl,
+    padding: 18,
+    marginBottom: 24,
+  },
+  checkoutAmount: {
+    fontSize: 42,
+    lineHeight: 46,
+    fontFamily: font.black,
+    letterSpacing: -1.4,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  checkoutSub: {
+    fontSize: 14,
+    fontFamily: font.medium,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  checkoutLink: {
+    alignItems: "center",
+    marginTop: 10,
+  },
+  checkoutLinkText: {
+    fontSize: 13,
+    fontFamily: font.medium,
   },
   button: {
     backgroundColor: colors.primary,

@@ -39,7 +39,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     Promise.all([themeStorageGet(STORAGE_KEY), themeStorageGet(STORAGE_VARIANT_KEY)]).then(([v, vv]) => {
       if (v === "light" || v === "dark" || v === "auto") setModeState(v);
-      else setModeState("dark"); // split-first shell matches design prototype; user can switch in Settings
+      else setModeState("light"); // default to website-mock light shell
       if (vv === "forest" || vv === "midnight" || vv === "espresso") setVariantState(vv);
       setLoaded(true);
     });

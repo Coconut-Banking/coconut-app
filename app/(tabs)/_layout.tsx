@@ -30,7 +30,7 @@ export default function TabLayout() {
       <Tabs.Screen name="review" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="insights" options={{ href: null }} />
       <Tabs.Screen name="receipt" options={{ href: null }} />
-      <Tabs.Screen name="pay" options={{ href: null }} />
+      <Tabs.Screen name="pay" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

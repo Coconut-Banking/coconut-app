@@ -7,13 +7,11 @@ import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, darkUI, font, fontSize } from "../../lib/theme";
+import { font, fontSize } from "../../lib/theme";
 import { useState } from "react";
-import { useTheme } from "../../lib/theme-context";
 
 export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
-  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 22 : 10);
   const current = state.routes[state.index]?.name;
@@ -32,6 +30,12 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const goActivity = () => {
     navigation.navigate("activity" as never);
   };
+  const goFriends = () => {
+    navigation.navigate("shared" as never);
+  };
+  const goAccount = () => {
+    navigation.navigate("settings" as never);
+  };
   const goAdd = () => {
     triggerMediumHaptic();
     router.push({
@@ -49,14 +53,27 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   };
 
   const homeActive = current === "index";
+  const friendsActive = current === "shared";
   const activityActive = current === "activity";
+  const accountActive = current === "settings";
+  const activeColor = "#1F2328";
+  const inactiveColor = "#9AA0A6";
 
   if (current && hiddenRoutes.has(current)) {
     return null;
   }
 
   return (
-    <View style={[styles.bar, { paddingBottom: bottomPad, backgroundColor: theme.tabBar, borderTopColor: theme.border }]}>
+    <View
+      style={[
+        styles.bar,
+        {
+          paddingBottom: bottomPad,
+          backgroundColor: "rgba(255,255,255,0.97)",
+          borderTopColor: "#E6DFDA",
+        },
+      ]}
+    >
       <View style={styles.row}>
           <Pressable
             onPress={goIndex}
@@ -68,10 +85,27 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
             <Ionicons
               name={homeActive ? "home" : "home-outline"}
               size={22}
-              color={homeActive ? theme.tabActive : theme.tabInactive}
+              color={homeActive ? activeColor : inactiveColor}
             />
-            <Text style={[styles.label, { color: homeActive ? theme.tabActive : theme.tabInactive }]}>Home</Text>
+            <Text style={[styles.label, { color: homeActive ? activeColor : inactiveColor }]}>Home</Text>
           </Pressable>
+
+          <Pressable
+            onPress={goFriends}
+            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: friendsActive }}
+            accessibilityLabel="Friends"
+          >
+            <Ionicons
+              name={friendsActive ? "people" : "people-outline"}
+              size={22}
+              color={friendsActive ? activeColor : inactiveColor}
+            />
+            <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Friends</Text>
+          </Pressable>
+
+          <View style={styles.centerSpacer} />
 
           <Pressable
             onPress={goActivity}
@@ -83,21 +117,36 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
             <Ionicons
               name={activityActive ? "time" : "time-outline"}
               size={22}
-              color={activityActive ? theme.tabActive : theme.tabInactive}
+              color={activityActive ? activeColor : inactiveColor}
             />
-            <Text style={[styles.label, { color: activityActive ? theme.tabActive : theme.tabInactive }]}>Activity</Text>
+            <Text style={[styles.label, { color: activityActive ? activeColor : inactiveColor }]}>Activity</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={goAccount}
+            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: accountActive }}
+            accessibilityLabel="Account"
+          >
+            <Ionicons
+              name={accountActive ? "person" : "person-outline"}
+              size={22}
+              color={accountActive ? activeColor : inactiveColor}
+            />
+            <Text style={[styles.label, { color: accountActive ? activeColor : inactiveColor }]}>Account</Text>
           </Pressable>
         </View>
 
       <View style={styles.fabWrap} pointerEvents="box-none">
-        <View style={[styles.fabHalo, { backgroundColor: `${theme.primary}4D` }]} pointerEvents="none" />
+        <View style={styles.fabHalo} pointerEvents="none" />
         <Pressable
           onPress={() => {
             openAddMenu();
           }}
           style={({ pressed }) => [
             styles.fab,
-            { backgroundColor: theme.primary, borderColor: "rgba(255, 255, 255, 0.42)" },
+            { backgroundColor: "#1F2328", borderColor: "#FFFFFF" },
             pressed && styles.fabPressed,
           ]}
           accessibilityRole="button"
@@ -126,12 +175,12 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
               }}
               activeOpacity={0.75}
             >
-              <Ionicons name="create-outline" size={20} color={colors.primary} />
+              <Ionicons name="create-outline" size={20} color="#1F2328" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fabMenuRowTitle}>Add expense</Text>
                 <Text style={styles.fabMenuRowSub}>Split manually with people</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={darkUI.labelMuted} />
+              <Ionicons name="chevron-forward" size={18} color="#8A9098" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -143,12 +192,12 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
               }}
               activeOpacity={0.75}
             >
-              <Ionicons name="scan-outline" size={20} color={colors.primary} />
+              <Ionicons name="scan-outline" size={20} color="#1F2328" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fabMenuRowTitle}>Scan receipt</Text>
                 <Text style={styles.fabMenuRowSub}>Parse items, then assign</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={darkUI.labelMuted} />
+              <Ionicons name="chevron-forward" size={18} color="#8A9098" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -166,31 +215,31 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 /** Slightly larger than before; sits higher so it reads as floating above the bar. */
-const FAB = 64;
+const FAB = 58;
 /** Soft brand glow behind the button (reads as “lift” on dark UI). */
-const HALO = 16;
-const FAB_TOP = -(FAB / 2) - 14;
+const HALO = 10;
+const FAB_TOP = -(FAB / 2) - 10;
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: darkUI.bg,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: darkUI.stroke,
-    paddingTop: 10,
+    borderTopColor: "#E6DFDA",
+    paddingTop: 8,
     position: "relative",
     overflow: "visible",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    elevation: 18,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 6,
   },
   row: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
     minHeight: 52,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
   },
   side: {
     flex: 1,
@@ -199,14 +248,15 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingBottom: 4,
   },
+  centerSpacer: {
+    width: 64,
+    flexShrink: 0,
+  },
   label: {
     fontFamily: font.semibold,
     fontSize: fontSize["2xs"],
     letterSpacing: 0.2,
-    color: darkUI.labelSecondary,
-  },
-  labelActive: {
-    color: colors.primary,
+    color: "#8A9098",
   },
   fabWrap: {
     position: "absolute",
@@ -221,8 +271,8 @@ const styles = StyleSheet.create({
   fabHalo: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: (FAB + HALO) / 2,
-    backgroundColor: "rgba(61, 142, 98, 0.25)",
-    transform: [{ scale: 1.12 }],
+    backgroundColor: "rgba(31,35,40,0.08)",
+    transform: [{ scale: 1.06 }],
   },
   fab: {
     width: FAB,
@@ -231,15 +281,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    /** Richer than flat primary: aligns with money-positive green, still on-brand. */
-    backgroundColor: "#3FA56C",
+    backgroundColor: "#1F2328",
     borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderColor: "rgba(255, 255, 255, 0.9)",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 12,
   },
   fabPressed: {
     transform: [{ scale: 0.96 }],
@@ -270,9 +319,9 @@ const styles = StyleSheet.create({
   },
   fabMenu: {
     margin: 16,
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E6DFDA",
     borderRadius: 20,
     padding: 16,
     paddingTop: 10,
@@ -280,7 +329,7 @@ const styles = StyleSheet.create({
   fabMenuTitle: {
     fontFamily: font.bold,
     fontSize: 18,
-    color: darkUI.label,
+    color: "#1F2328",
     marginBottom: 10,
   },
   fabMenuRow: {
@@ -291,19 +340,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: darkUI.strokeSoft,
+    borderColor: "#ECE5E0",
     marginBottom: 10,
   },
   fabMenuRowTitle: {
     fontFamily: font.bold,
     fontSize: 15,
-    color: darkUI.label,
+    color: "#1F2328",
   },
   fabMenuRowSub: {
     marginTop: 2,
     fontFamily: font.regular,
     fontSize: 12,
-    color: darkUI.labelMuted,
+    color: "#7A8088",
   },
   fabMenuCancel: {
     alignItems: "center",
@@ -313,6 +362,6 @@ const styles = StyleSheet.create({
   fabMenuCancelText: {
     fontFamily: font.semibold,
     fontSize: 15,
-    color: darkUI.labelSecondary,
+    color: "#3F464F",
   },
 });

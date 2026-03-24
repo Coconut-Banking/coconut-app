@@ -22,7 +22,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 
-const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
+const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
 function MemberAvatar({ name, size = 32 }: { name: string; size?: number }) {
   const idx = name.charCodeAt(0) % MEMBER_COLORS.length;

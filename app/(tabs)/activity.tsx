@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { useRecentActivity, type RecentActivityItem } from "../../hooks/useGroups";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
-import { font, radii, darkUI, prototype, colors } from "../../lib/theme";
+import { font, radii, prototype, colors } from "../../lib/theme";
 
 function ActivityHeader() {
   return (
@@ -23,7 +23,7 @@ function ActivityHeader() {
         accessibilityRole="button"
         accessibilityLabel="Settings"
       >
-        <Ionicons name="settings-outline" size={22} color={darkUI.labelSecondary} />
+        <Ionicons name="settings-outline" size={22} color="#4B5563" />
       </TouchableOpacity>
     </View>
   );
@@ -97,13 +97,13 @@ export default function ActivityTabScreen() {
         </View>
 
         <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={darkUI.labelMuted} />
+          <Ionicons name="search" size={18} color="#8A9098" />
           <TextInput
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
             placeholder="Search people, merchants, amounts…"
-            placeholderTextColor={darkUI.labelMuted}
+            placeholderTextColor="#8A9098"
             returnKeyType="search"
             clearButtonMode="while-editing"
             autoCapitalize="none"
@@ -111,7 +111,7 @@ export default function ActivityTabScreen() {
           />
           {search.length > 0 ? (
             <TouchableOpacity onPress={() => setSearch("")} hitSlop={10} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color={darkUI.labelMuted} />
+              <Ionicons name="close-circle" size={18} color="#8A9098" />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -126,13 +126,13 @@ export default function ActivityTabScreen() {
         </View>
         {!activity.length ? (
           <View style={[styles.groupedCard, styles.emptyInner]}>
-            <Ionicons name="time-outline" size={32} color={darkUI.labelMuted} />
+            <Ionicons name="time-outline" size={32} color="#8A9098" />
             <Text style={styles.emptyTitle}>No activity</Text>
             <Text style={styles.emptySub}>Expenses and settlements show up here as they happen.</Text>
           </View>
         ) : !filteredActivity.length ? (
           <View style={[styles.groupedCard, styles.emptyInner]}>
-            <Ionicons name="search-outline" size={32} color={darkUI.labelMuted} />
+            <Ionicons name="search-outline" size={32} color="#8A9098" />
             <Text style={styles.emptyTitle}>No matches</Text>
             <Text style={styles.emptySub}>Try another name, merchant, or amount.</Text>
           </View>
@@ -161,7 +161,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
                   ? prototype.greenBg
                   : it.direction === "owe"
                     ? prototype.redBg
-                    : darkUI.bg,
+                    : "#F7F3F0",
             },
           ]}
         >
@@ -173,7 +173,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
                 ? prototype.green
                 : it.direction === "owe"
                   ? prototype.red
-                  : darkUI.labelMuted
+                  : "#8A9098"
             }
           />
         </View>
@@ -199,7 +199,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: darkUI.bg },
+  container: { flex: 1, backgroundColor: "#F5F3F2" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   page: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 8 },
@@ -210,25 +210,25 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   settingsBtn: { padding: 4, marginTop: 2 },
-  title: { fontSize: 26, fontFamily: font.black, color: darkUI.label, letterSpacing: -0.6 },
-  titleSub: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelMuted, marginTop: 2 },
+  title: { fontSize: 32, fontFamily: font.black, color: "#1F2328", letterSpacing: -0.9 },
+  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#7A8088", marginTop: 2 },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     marginBottom: 14,
-    backgroundColor: darkUI.cardHover,
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 46,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
   },
   searchInput: {
     flex: 1,
     fontFamily: font.regular,
     fontSize: 16,
-    color: darkUI.label,
+    color: "#1F2328",
     paddingVertical: 0,
   },
   sectionLabelRow: {
@@ -241,20 +241,20 @@ const styles = StyleSheet.create({
   sLabel: {
     fontSize: 11,
     fontFamily: font.extrabold,
-    color: darkUI.labelMuted,
+    color: "#9AA0A6",
     textTransform: "uppercase",
     letterSpacing: 1.2,
   },
   sLabelMeta: {
     fontSize: 11,
     fontFamily: font.medium,
-    color: darkUI.labelMuted,
+    color: "#9AA0A6",
   },
   groupedCard: {
-    backgroundColor: darkUI.card,
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: darkUI.stroke,
+    borderColor: "#E3DBD8",
     overflow: "hidden",
     marginBottom: 8,
   },
@@ -264,15 +264,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  rowSep: { height: 1, backgroundColor: prototype.sep, marginLeft: 66 },
+  rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 66 },
   emptyInner: { alignItems: "center", paddingVertical: 40, paddingHorizontal: 20 },
-  emptyTitle: { fontSize: 16, fontFamily: font.bold, color: darkUI.labelSecondary, marginTop: 12 },
-  emptySub: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4, textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 12 },
+  emptySub: { fontSize: 13, fontFamily: font.regular, color: "#7A8088", marginTop: 4, textAlign: "center" },
   actDot: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-  actWho: { fontSize: 14, fontFamily: font.regular, color: darkUI.label, lineHeight: 20 },
-  actIn: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
+  actWho: { fontSize: 14, fontFamily: font.regular, color: "#1F2328", lineHeight: 20 },
+  actIn: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   actAmt: { fontSize: 14, fontFamily: font.extrabold },
-  actTime: { fontSize: 11, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 2 },
-  green: { color: darkUI.moneyIn },
-  red: { color: darkUI.moneyOut },
+  actTime: { fontSize: 11, fontFamily: font.regular, color: "#8A9098", marginTop: 2 },
+  green: { color: "#3A7D44" },
+  red: { color: "#C23934" },
 });

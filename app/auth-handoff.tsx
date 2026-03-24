@@ -129,11 +129,11 @@ export default function AuthHandoffScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7FAF8", padding: 24 },
   errorText: { color: "#4B5563", textAlign: "center", marginBottom: 16 },
-  link: { color: "#3D8E62", fontWeight: "500" },
+  link: { color: "#1F2328", fontWeight: "500" },
   statusText: { color: "#4B5563", marginTop: 16 },
   stuckContainer: { marginTop: 24, alignItems: "center", gap: 12, maxWidth: 280 },
   stuckText: { fontSize: 14, color: "#6B7280", textAlign: "center" },
-  primaryButton: { width: "100%", paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#3D8E62", borderRadius: 12, alignItems: "center" },
+  primaryButton: { width: "100%", paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#1F2328", borderRadius: 12, alignItems: "center" },
   primaryButtonText: { color: "#fff", fontWeight: "500" },
   secondaryButton: { paddingHorizontal: 16, paddingVertical: 8 },
 });
