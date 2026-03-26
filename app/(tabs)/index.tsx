@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Redirect } from "expo-router";
 import {
   View,
   Text,
@@ -192,6 +191,11 @@ export default function HomeScreen() {
         method: "POST",
         body: { q },
       });
+      if (!res.ok) {
+        setSemanticResults([]);
+        setSemanticAnswer("Search failed. Please try again.");
+        return;
+      }
       const data = await res.json();
       const raw = data.transactions ?? [];
       const txs = Array.isArray(raw) ? raw.map(mapApiTx) : [];
@@ -205,10 +209,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Auto-redirect to sign-up when auth is loaded but user is not signed in (skip when SKIP_AUTH)
-  if (!SKIP_AUTH && authLoaded && !isSignedIn) {
-    return <Redirect href="/(auth)/sign-up" />;
-  }
 
   const openConnect = async () => {
     setConnectError(null);
@@ -257,8 +257,7 @@ export default function HomeScreen() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      // AuthSwitch will switch to (auth) automatically; router ensures we land on sign-in
-      router.replace("/(auth)/sign-in");
+      // AuthSwitch will detect !isSignedIn and render auth Stack automatically
     } catch (e) {
       console.error("[home] signOut failed:", e);
     }
