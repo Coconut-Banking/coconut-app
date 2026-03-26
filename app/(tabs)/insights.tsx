@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTransactions } from "../../hooks/useTransactions";
@@ -87,92 +88,94 @@ export default function InsightsScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>Insights</Text>
-        <TouchableOpacity onPress={openSettings} style={styles.settingsBtn} hitSlop={12}>
-          <Ionicons name="settings-outline" size={22} color="#6B7280" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Summary cards */}
-      <View style={styles.cardsRow}>
-        <View style={[styles.card, { backgroundColor: "#FEE2E2" }]}>
-          <Ionicons name="trending-down" size={20} color="#DC2626" />
-          <Text style={styles.cardValue}>${monthlySpend.toLocaleString()}</Text>
-          <Text style={styles.cardLabel}>This month</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top"]}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Insights</Text>
+          <TouchableOpacity onPress={openSettings} style={styles.settingsBtn} hitSlop={12}>
+            <Ionicons name="settings-outline" size={22} color="#6B7280" />
+          </TouchableOpacity>
         </View>
-        <View style={[styles.card, { backgroundColor: "#F3E8FF" }]}>
-          <Ionicons name="refresh" size={20} color="#7C3AED" />
-          <Text style={styles.cardValue}>${subsTotal.toFixed(0)}</Text>
-          <Text style={styles.cardLabel}>Subscriptions</Text>
-        </View>
-      </View>
 
-      <View style={[styles.card, { backgroundColor: "#EEF7F2", marginBottom: 24 }]}>
-        <Ionicons name="people" size={20} color="#3D8E62" />
-        <Text
-          style={[
-            styles.cardValue,
-            sharedNet > 0 && { color: "#059669" },
-            sharedNet < 0 && { color: "#B45309" },
-          ]}
-        >
-          {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
-        </Text>
-        <Text style={styles.cardLabel}>Shared net</Text>
-      </View>
-
-      {/* Top categories */}
-      {topCategories.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top spending</Text>
-          <View style={styles.categoryList}>
-            {topCategories.map((cat, i) => (
-              <View key={cat.name} style={styles.categoryRow}>
-                <Text style={styles.categoryIndex}>{i + 1}</Text>
-                <Text style={styles.categoryName} numberOfLines={1}>
-                  {cat.name}
-                </Text>
-                <Text style={styles.categoryAmount}>${cat.amount.toLocaleString()}</Text>
-              </View>
-            ))}
+        {/* Summary cards */}
+        <View style={styles.cardsRow}>
+          <View style={[styles.card, { backgroundColor: "#FEE2E2" }]}>
+            <Ionicons name="trending-down" size={20} color="#DC2626" />
+            <Text style={styles.cardValue}>${monthlySpend.toLocaleString()}</Text>
+            <Text style={styles.cardLabel}>This month</Text>
+          </View>
+          <View style={[styles.card, { backgroundColor: "#F3E8FF" }]}>
+            <Ionicons name="refresh" size={20} color="#7C3AED" />
+            <Text style={styles.cardValue}>${subsTotal.toFixed(0)}</Text>
+            <Text style={styles.cardLabel}>Subscriptions</Text>
           </View>
         </View>
-      )}
 
-      {/* Subscriptions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Subscriptions</Text>
-        {subsLoading ? (
-          <ActivityIndicator size="small" color="#3D8E62" />
-        ) : subscriptions.length === 0 ? (
-          <Text style={styles.emptyText}>No subscriptions detected yet</Text>
-        ) : (
-          <View style={styles.subList}>
-            {subscriptions.map((sub) => (
-              <View key={sub.id} style={styles.subRow}>
-                <View style={styles.subIcon}>
-                  <Ionicons name="refresh" size={16} color="#7C3AED" />
-                </View>
-                <View style={styles.subInfo}>
-                  <Text style={styles.subMerchant} numberOfLines={1}>
-                    {sub.merchant}
+        <View style={[styles.card, { backgroundColor: "#EEF7F2", marginBottom: 24 }]}>
+          <Ionicons name="people" size={20} color="#3D8E62" />
+          <Text
+            style={[
+              styles.cardValue,
+              sharedNet > 0 && { color: "#059669" },
+              sharedNet < 0 && { color: "#B45309" },
+            ]}
+          >
+            {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
+          </Text>
+          <Text style={styles.cardLabel}>Shared net</Text>
+        </View>
+
+        {/* Top categories */}
+        {topCategories.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Top spending</Text>
+            <View style={styles.categoryList}>
+              {topCategories.map((cat, i) => (
+                <View key={cat.name} style={styles.categoryRow}>
+                  <Text style={styles.categoryIndex}>{i + 1}</Text>
+                  <Text style={styles.categoryName} numberOfLines={1}>
+                    {cat.name}
                   </Text>
-                  <Text style={styles.subMeta}>
-                    ${sub.amount.toFixed(2)}/{sub.frequency}
-                  </Text>
+                  <Text style={styles.categoryAmount}>${cat.amount.toLocaleString()}</Text>
                 </View>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
         )}
-      </View>
-    </ScrollView>
+
+        {/* Subscriptions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Subscriptions</Text>
+          {subsLoading ? (
+            <ActivityIndicator size="small" color="#3D8E62" />
+          ) : subscriptions.length === 0 ? (
+            <Text style={styles.emptyText}>No subscriptions detected yet</Text>
+          ) : (
+            <View style={styles.subList}>
+              {subscriptions.map((sub) => (
+                <View key={sub.id} style={styles.subRow}>
+                  <View style={styles.subIcon}>
+                    <Ionicons name="refresh" size={16} color="#7C3AED" />
+                  </View>
+                  <View style={styles.subInfo}>
+                    <Text style={styles.subMerchant} numberOfLines={1}>
+                      {sub.merchant}
+                    </Text>
+                    <Text style={styles.subMeta}>
+                      ${sub.amount.toFixed(2)}/{sub.frequency}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
