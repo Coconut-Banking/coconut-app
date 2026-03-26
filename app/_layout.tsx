@@ -22,10 +22,13 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
       if (token) break;
       if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
     }
+    if (!token) {
+      throw new Error("Authentication token unavailable. Please sign in and try again.");
+    }
     const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/stripe/terminal/connection-token`, {
       method: "POST",
       headers: {
-        Authorization: token ? `Bearer ${token}` : "",
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
@@ -87,10 +90,11 @@ function AuthSwitch() {
   }
 
   // Block tabs when: not loaded, not signed in, OR FORCE_SIGN_OUT + cached session (until signOut completes)
-  if (!isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn)) {
+  if (!isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn && !hasClearedSession.current)) {
     return (
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="connected" options={{ headerShown: false }} />
       </Stack>
     );
   }

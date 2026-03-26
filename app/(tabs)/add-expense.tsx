@@ -94,11 +94,17 @@ export default function AddExpenseScreen() {
           personKey: selected.type === "person" ? selected.personKey : undefined,
         },
       });
-      const data = await res.json();
       if (res.ok) {
-        router.back();
+        router.navigate("/(tabs)");
       } else {
-        setError(data.error ?? "Failed to add expense");
+        let errorMsg = "Failed to add expense";
+        try {
+          const data = await res.json();
+          errorMsg = data.error ?? errorMsg;
+        } catch {
+          // Response wasn't JSON, use default message
+        }
+        setError(errorMsg);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed");
@@ -126,7 +132,7 @@ export default function AddExpenseScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+          <TouchableOpacity onPress={() => router.navigate("/(tabs)")} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color="#374151" />
           </TouchableOpacity>
           <Text style={styles.title}>Add an expense</Text>
