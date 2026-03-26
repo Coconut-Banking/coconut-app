@@ -408,7 +408,10 @@ function AssignStep({
 
   useEffect(() => {
     apiFetch("/api/groups/people")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return { people: [] };
+        return r.json();
+      })
       .then((d) => setContacts(d.people ?? []))
       .catch(() => {});
   }, [apiFetch]);
@@ -667,7 +670,10 @@ function SummaryStep({
 
   useEffect(() => {
     apiFetch("/api/groups")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return { groups: [] };
+        return r.json();
+      })
       .then((data) => {
         const list = Array.isArray(data) ? data : data.groups ?? [];
         setGroups(list);
@@ -942,7 +948,7 @@ function SummaryStep({
             ) : (
               <TouchableOpacity
                 style={[styles.fullButton, styles.secondaryButton]}
-                onPress={() => router.replace("/(tabs)/shared")}
+                onPress={() => router.push("/(tabs)/shared")}
               >
                 <Ionicons name="people" size={20} color="#3D8E62" />
                 <Text style={styles.secondaryButtonText}>Create group</Text>
@@ -1043,7 +1049,7 @@ function SummaryStep({
           <View style={styles.finishedNav}>
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => router.replace("/(tabs)/shared")}
+              onPress={() => router.push("/(tabs)/shared")}
             >
               <Text style={styles.primaryButtonText}>View all expenses</Text>
             </TouchableOpacity>
