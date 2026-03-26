@@ -51,6 +51,25 @@ export default function SettingsScreen() {
   const [wiping, setWiping] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
+  // Splitwise import (OAuth + token storage happens server-side; mobile just triggers and displays status)
+  const [splitwiseStatus, setSplitwiseStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    connectedAt?: string | null;
+  } | null>(null);
+  const [splitwiseImporting, setSplitwiseImporting] = useState(false);
+  const [splitwiseResult, setSplitwiseResult] = useState<{
+    ok?: boolean;
+    stats?: {
+      groups: number;
+      members: number;
+      expenses: number;
+      settlements: number;
+      skipped: number;
+    };
+    error?: string;
+  } | null>(null);
+
   useEffect(() => {
     if (user) {
       setName(user.fullName ?? "");
@@ -92,6 +111,67 @@ export default function SettingsScreen() {
     }
     prevFocused.current = isFocused;
   }, [isFocused, linked]);
+
+  const fetchSplitwiseStatus = async () => {
+    if (!user) return;
+    try {
+      const res = await apiFetch("/api/splitwise/status");
+      if (!res.ok) {
+        setSplitwiseStatus(null);
+        return;
+      }
+      const data = await res.json();
+      setSplitwiseStatus(data);
+    } catch {
+      setSplitwiseStatus(null);
+    }
+  };
+
+  // Refetch when returning to this tab (e.g. after Splitwise OAuth in system browser).
+  useEffect(() => {
+    if (!user) return;
+    if (!isFocused) return;
+    void fetchSplitwiseStatus();
+  }, [isFocused, user]);
+
+  const connectSplitwise = () => {
+    const base = API_URL.replace(/\/$/, "");
+    void Linking.openURL(`${base}/api/splitwise/auth`);
+  };
+
+  const startSplitwiseImport = async () => {
+    setSplitwiseImporting(true);
+    setSplitwiseResult(null);
+    try {
+      const res = await apiFetch("/api/splitwise/import", {
+        method: "POST",
+        body: {},
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSplitwiseResult({ ok: false, error: (data as any).error ?? "Import failed" });
+        return;
+      }
+      setSplitwiseResult(data as any);
+    } catch {
+      setSplitwiseResult({ ok: false, error: "Import failed. Please try again." });
+    } finally {
+      setSplitwiseImporting(false);
+      void fetchSplitwiseStatus();
+    }
+  };
+
+  const disconnectSplitwise = async () => {
+    try {
+      await apiFetch("/api/splitwise/status", { method: "DELETE" });
+    } catch {
+      // ignore
+    } finally {
+      setSplitwiseResult(null);
+      setSplitwiseStatus((prev) => (prev ? { ...prev, connected: false } : null));
+      void fetchSplitwiseStatus();
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -299,14 +379,79 @@ export default function SettingsScreen() {
             <Ionicons name="hardware-chip-outline" size={16} color={theme.primary} />
             <Text style={[styles.infoText, { color: theme.primary }]}>
               Accept contactless payments with your iPhone. No reader required. Connect and accept terms in the Pay tab.
+              Open the guide anytime for card, wallet, PIN, and fallback tips.
             </Text>
           </View>
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => router.push("/(tabs)/tap-to-pay-education")}
+          >
+            <Text style={[styles.link, { color: theme.primary }]}>Tap to Pay guide →</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => router.push("/(tabs)/pay")}
           >
             <Text style={[styles.link, { color: theme.primary }]}>Open Pay tab →</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Splitwise migration */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise migration</Text>
+          <View style={[styles.infoBox, { backgroundColor: theme.primaryLight, borderColor: theme.primaryLight }]}>
+            <Ionicons name="arrow-down-outline" size={16} color={theme.primary} />
+            <Text style={[styles.infoText, { color: theme.primary }]}>
+              Import your Splitwise groups, members, and expenses into Coconut.
+            </Text>
+          </View>
+
+          {splitwiseResult ? (
+            <View style={{ padding: 12, borderRadius: 12, backgroundColor: splitwiseResult.ok ? "#EEF7F2" : "#FEE2E2", borderWidth: 1, borderColor: splitwiseResult.ok ? "#C3E0D3" : theme.errorLight, marginTop: 6 }}>
+              <Text style={{ fontFamily: font.semibold, fontSize: 14, color: splitwiseResult.ok ? theme.textSecondary : theme.error }}>
+                {splitwiseResult.ok ? "Import complete!" : "Import failed"}
+              </Text>
+              {splitwiseResult.ok && splitwiseResult.stats ? (
+                <Text style={{ fontFamily: font.regular, fontSize: 13, color: theme.textQuaternary, marginTop: 6 }}>
+                  {splitwiseResult.stats.groups} groups, {splitwiseResult.stats.members} members • {splitwiseResult.stats.expenses} expenses • {splitwiseResult.stats.settlements} settlements
+                </Text>
+              ) : splitwiseResult.error ? (
+                <Text style={{ fontFamily: font.regular, fontSize: 13, color: theme.textQuaternary, marginTop: 6 }}>{splitwiseResult.error}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {!splitwiseStatus?.configured ? (
+            <Text style={[styles.muted, { color: theme.textQuaternary, marginTop: 12 }]}>
+              Splitwise integration not configured (missing SPLITWISE_* env vars).
+            </Text>
+          ) : !splitwiseStatus?.connected ? (
+            <TouchableOpacity style={styles.linkButton} onPress={connectSplitwise} disabled={splitwiseImporting}>
+              <Text style={[styles.link, { color: theme.primary }]}>Connect Splitwise →</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ gap: 12, marginTop: 10 }}>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  { backgroundColor: theme.primary },
+                  splitwiseImporting && styles.buttonDisabled,
+                ]}
+                onPress={startSplitwiseImport}
+                disabled={splitwiseImporting}
+              >
+                {splitwiseImporting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Import all groups</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.linkButton} onPress={disconnectSplitwise}>
+                <Text style={[styles.link, { color: theme.error }]}>Disconnect Splitwise</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Data & Security */}

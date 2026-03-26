@@ -2,12 +2,17 @@ import { Tabs } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { font } from "../../lib/theme";
 import { CoconutTabBar } from "../../components/navigation/CoconutTabBar";
+import { TapToPayHeroModal } from "../../components/TapToPayHeroModal";
+import { StripeTerminalRoot } from "../../components/StripeTerminalRoot";
 
 /** Split-first nav — Home · + · Activity (custom bar = Figma-style centered FAB). */
 export default function TabLayout() {
   const { theme } = useTheme();
 
   return (
+    <>
+      <TapToPayHeroModal />
+    <StripeTerminalRoot>
     <Tabs
       tabBar={(props) => <CoconutTabBar {...props} />}
       screenOptions={{
@@ -31,6 +36,9 @@ export default function TabLayout() {
       <Tabs.Screen name="insights" options={{ href: null }} />
       <Tabs.Screen name="receipt" options={{ href: null }} />
       <Tabs.Screen name="pay" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="tap-to-pay-education" options={{ href: null, headerShown: false }} />
     </Tabs>
+    </StripeTerminalRoot>
+    </>
   );
 }

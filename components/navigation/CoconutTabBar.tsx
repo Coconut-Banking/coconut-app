@@ -16,7 +16,7 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 22 : 10);
   const current = state.routes[state.index]?.name;
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
-  const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "review"]);
+  const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "review", "tap-to-pay-education"]);
 
   const triggerMediumHaptic = () => {
     // Some iOS runtimes/simulators expose expo-haptics without native support.

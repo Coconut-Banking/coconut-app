@@ -84,6 +84,7 @@ export default function SignInScreen() {
           SIGN_IN_TIMEOUT_MS,
           "Google setActive"
         );
+        setIsDemoOn(false);
         router.replace("/(tabs)");
       } else {
         setError("Google sign-in returned no session. Please try again.");
@@ -94,6 +95,7 @@ export default function SignInScreen() {
       const isSessionExists = err.errors?.some((x) => x.code === "session_exists");
       const msg = getClerkErrorMessage(e, "Google sign-in failed");
       if (isSessionExists || msg.toLowerCase().includes("already signed in")) {
+        setIsDemoOn(false);
         router.replace("/(tabs)");
         return;
       }
@@ -134,6 +136,7 @@ export default function SignInScreen() {
     } catch (e: unknown) {
       const msg = getClerkErrorMessage(e, "Sign in failed");
       if (msg.toLowerCase().includes("already signed in")) {
+        setIsDemoOn(false);
         router.replace("/(tabs)");
         return;
       }

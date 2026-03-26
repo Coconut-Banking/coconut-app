@@ -12,15 +12,15 @@ import {
   Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
-import type { Reader } from "@stripe/stripe-terminal-react-native";
+import { useStripeTerminal } from "@stripe/stripe-terminal-react-native";
+import type { Reader, StripeError } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { useAuth } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 
 /** Error codes that indicate unsupported device/OS — show "Please update iOS" per checklist 1.4 */
@@ -34,9 +34,67 @@ const UNSUPPORTED_DEVICE_CODES = [
   ErrorCode.TAP_TO_PAY_LIBRARY_NOT_INCLUDED,
 ] as const;
 
-type PaymentOutcome = "approved" | "declined" | "timeout" | null;
+type PaymentOutcome = "approved" | "declined" | "timeout" | "canceled" | null;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
+
+/**
+ * Dev-only: Terminal “internet” simulated reader — same Stripe payment steps (PI → collect → process) but not Tap to Pay / NFC / Apple.
+ * Set EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED=1 and restart Metro. https://docs.stripe.com/terminal/references/testing
+ */
+const USE_SIMULATED_TERMINAL_READER =
+  typeof __DEV__ !== "undefined" &&
+  __DEV__ &&
+  (process.env.EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED === "1" ||
+    process.env.EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED === "true");
+
+/** Visa test PAN for Terminal simulator (card_present). */
+const SIMULATED_TERMINAL_CARD_PAN = "4242424242424242";
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Dev-only: Stripe decline reasons live under apiError / lastPaymentError — surface them in Metro. */
+function logTerminalError(label: string, err: StripeError | undefined) {
+  if (!__DEV__ || !err) return;
+  console.log(`[Pay] ${label}`, {
+    code: err.code,
+    message: err.message,
+    nativeErrorCode: err.nativeErrorCode,
+    apiError: err.apiError,
+    underlyingError: err.underlyingError,
+  });
+}
+
+function logPaymentIntentStep(label: string, pi: { id?: string; status?: string } | undefined) {
+  if (!__DEV__ || !pi) return;
+  console.log(`[Pay] ${label}`, { id: pi.id, status: pi.status });
+}
+
+/** Shown on the result card when Stripe gives a known decline code. */
+function userFacingDeclineDetail(err: StripeError | undefined): string | null {
+  const dc = err?.apiError?.declineCode;
+  if (dc === "test_mode_live_card") {
+    return "Test mode can’t charge a real card. Use a Stripe physical test card on this phone, or switch to live mode for real cards.";
+  }
+  return null;
+}
+
+/** User-facing copy for Stripe Terminal reader display messages during collect. */
+function readerDisplayMessageLabel(message: Reader.DisplayMessage): string {
+  const labels: Record<Reader.DisplayMessage, string> = {
+    insertCard: "Insert card",
+    insertOrSwipeCard: "Insert or swipe card",
+    multipleContactlessCardsDetected: "Multiple cards detected — use one card",
+    removeCard: "Remove card",
+    retryCard: "Try the card again",
+    swipeCard: "Swipe card",
+    tryAnotherCard: "Try another card",
+    tryAnotherReadMethod: "Try another way to pay",
+    checkMobileDevice: "Check this device",
+    cardRemovedTooEarly: "Card removed too soon",
+  };
+  return labels[message] ?? "Processing…";
+}
 
 function PayScreenInner() {
   const { theme } = useTheme();
@@ -57,10 +115,22 @@ function PayScreenInner() {
   type Phase = "idle" | "initializing" | "collecting" | "processing";
   const [paymentPhase, setPaymentPhase] = useState<Phase>("idle");
   const autoConnectAttempted = useRef(false);
+  const readersRef = useRef<Reader.Type[]>([]);
+  const connectedReaderRef = useRef<Reader.Type | null>(null);
+  const collectingRef = useRef(false);
+  const connectingRef = useRef(false);
+  const [readerPrepVisible, setReaderPrepVisible] = useState(false);
+  const [readerPrepMessage, setReaderPrepMessage] = useState("Preparing Tap to Pay…");
+  const [ttpSoftwareUpdate, setTtpSoftwareUpdate] = useState(false);
+
+  useEffect(() => {
+    readersRef.current = discoveredReaders;
+  }, [discoveredReaders]);
 
   const {
     initialize,
     discoverReaders,
+    cancelDiscovering,
     connectReader,
     disconnectReader,
     isInitialized,
@@ -68,13 +138,58 @@ function PayScreenInner() {
     collectPaymentMethod,
     processPaymentIntent,
     retrievePaymentIntent,
+    setSimulatedCard,
   } = useStripeTerminal({
     onUpdateDiscoveredReaders: (readers) => setDiscoveredReaders(readers),
     onDidDisconnect: () => {
       setConnecting(false);
-      Alert.alert("Disconnected", "Tap to Pay reader disconnected.");
+      setTtpSoftwareUpdate(false);
+      setReaderPrepVisible(false);
+      Alert.alert(
+        "Disconnected",
+        USE_SIMULATED_TERMINAL_READER ? "Simulated reader disconnected." : "Tap to Pay reader disconnected."
+      );
+    },
+    onDidReportReaderSoftwareUpdateProgress: (progress) => {
+      setReaderPrepVisible(true);
+      setReaderPrepMessage(progress);
+    },
+    onDidStartInstallingUpdate: () => {
+      setTtpSoftwareUpdate(true);
+      setReaderPrepVisible(true);
+      setReaderPrepMessage("Updating Tap to Pay on iPhone…");
+    },
+    onDidFinishInstallingUpdate: () => {
+      setTtpSoftwareUpdate(false);
+      setReaderPrepVisible(false);
+      setReaderPrepMessage("Preparing Tap to Pay…");
+    },
+    onDidAcceptTermsOfService: () => {
+      router.push("/(tabs)/tap-to-pay-education?fromTerms=1");
+    },
+    onDidRequestReaderDisplayMessage: (message) => {
+      if (collectingRef.current) {
+        setReaderPrepVisible(true);
+        setReaderPrepMessage(readerDisplayMessageLabel(message));
+      }
+      if (__DEV__) console.log("[Pay] reader display message:", message);
+    },
+    onDidRequestReaderInput: (options) => {
+      if (__DEV__) console.log("[Pay] reader input options:", options);
     },
   });
+
+  useEffect(() => {
+    connectedReaderRef.current = connectedReader ?? null;
+  }, [connectedReader]);
+
+  useEffect(() => {
+    collectingRef.current = collecting;
+  }, [collecting]);
+
+  useEffect(() => {
+    connectingRef.current = connecting;
+  }, [connecting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,52 +214,133 @@ function PayScreenInner() {
     router.replace("/");
   }, []);
 
-  // Reader warm-up: discover at launch and when app returns to foreground (checklist 1.5)
+  /** One discovery at a time; skip when reader connected or payment in progress (avoids READER_BUSY). */
+  const warmDiscoverReaders = useCallback(async () => {
+    if (!isInitialized) return;
+    if (connectedReaderRef.current) return;
+    if (collectingRef.current || connectingRef.current) return;
+    await cancelDiscovering().catch(() => {});
+    const out = await discoverReaders(
+      USE_SIMULATED_TERMINAL_READER
+        ? { discoveryMethod: "internet", simulated: true }
+        : { discoveryMethod: "tapToPay" }
+    );
+    if (out?.error && __DEV__) {
+      console.warn("[Pay] discoverReaders", out.error);
+    }
+  }, [isInitialized, discoverReaders, cancelDiscovering]);
+
+  // Reader warm-up: discover at launch (checklist 1.5). Re-run if user disconnects.
   useEffect(() => {
     if (!isInitialized) return;
-    discoverReaders({ discoveryMethod: "tapToPay" });
-  }, [isInitialized, discoverReaders]);
+    void warmDiscoverReaders();
+  }, [isInitialized, connectedReader, warmDiscoverReaders]);
 
+  // Foreground: debounce so we don't overlap mount discovery (common READER_BUSY cause).
   useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | undefined;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && isInitialized) {
-        discoverReaders({ discoveryMethod: "tapToPay" });
-      }
+      if (state !== "active" || !isInitialized) return;
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        void warmDiscoverReaders();
+      }, 500);
     });
-    return () => sub.remove();
-  }, [isInitialized, discoverReaders]);
+    return () => {
+      sub.remove();
+      clearTimeout(debounce);
+    };
+  }, [isInitialized, warmDiscoverReaders]);
 
   useEffect(() => {
     autoConnectAttempted.current = false;
   }, [params.amount, params.groupId, params.payerMemberId, params.receiverMemberId]);
 
-  const connectTapToPay = useCallback(async () => {
-    if (!isInitialized) return;
+  useEffect(() => {
+    if (connectedReader && !ttpSoftwareUpdate) {
+      setReaderPrepVisible(false);
+    }
+  }, [connectedReader, ttpSoftwareUpdate]);
 
-    const reader = discoveredReaders[0];
-    if (!reader) {
+  const ensureTerminalReader = useCallback(async (): Promise<Reader.Type | null> => {
+    if (!isInitialized) return null;
+    if (readersRef.current[0]) return readersRef.current[0];
+    await cancelDiscovering().catch(() => {});
+    const discovered = await discoverReaders(
+      USE_SIMULATED_TERMINAL_READER
+        ? { discoveryMethod: "internet", simulated: true }
+        : { discoveryMethod: "tapToPay" }
+    );
+    if (discovered.error && __DEV__) {
+      console.warn("[Pay] discoverReaders", discovered.error);
+    }
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const r = readersRef.current[0];
+      if (r) return r;
+      await new Promise((res) => setTimeout(res, 200));
+    }
+    return readersRef.current[0] ?? null;
+  }, [isInitialized, discoverReaders, cancelDiscovering]);
+
+  const connectTapToPay = useCallback(async () => {
+    if (!isInitialized) {
       Alert.alert(
-        "No reader",
-        "Tap to Pay not available. Requires compatible iPhone (XS+) or Android with NFC."
+        "One moment",
+        USE_SIMULATED_TERMINAL_READER
+          ? "Terminal is still starting up. Try again in a second."
+          : "Tap to Pay is still starting up. Try again in a second."
       );
       return;
     }
 
     setConnecting(true);
+    setReaderPrepVisible(true);
+    setReaderPrepMessage(
+      USE_SIMULATED_TERMINAL_READER ? "Preparing simulated reader…" : "Preparing Tap to Pay…"
+    );
+
     try {
+      const reader = await ensureTerminalReader();
+      if (!reader) {
+        setReaderPrepVisible(false);
+        Alert.alert(
+          "No reader",
+          USE_SIMULATED_TERMINAL_READER
+            ? "Could not start the simulated Terminal reader. Use test mode keys, check Metro logs, and restart the app after enabling EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED."
+            : "Tap to Pay isn’t available on this device yet. Use an iPhone XS or newer with a current iOS version, or try again in a moment."
+        );
+        return;
+      }
+
+      if (USE_SIMULATED_TERMINAL_READER) {
+        const connectResult = await connectReader({
+          discoveryMethod: "internet",
+          reader,
+        });
+        if (connectResult.error) {
+          setReaderPrepVisible(false);
+          Alert.alert(
+            "Connection failed",
+            connectResult.error.message ?? "Could not connect simulated reader"
+          );
+        }
+        return;
+      }
+
       const locRes = await apiFetch("/api/stripe/terminal/location");
       if (!locRes.ok) {
         const errData = await locRes.json().catch(() => ({}));
+        setReaderPrepVisible(false);
         Alert.alert("Error", errData.error ?? "Could not get Terminal location");
-        setConnecting(false);
         return;
       }
       const locData = await locRes.json();
       const locationId = locData.locationId;
 
       if (!locationId) {
+        setReaderPrepVisible(false);
         Alert.alert("Error", "Could not get Terminal location. Ensure Stripe is configured.");
-        setConnecting(false);
         return;
       }
 
@@ -156,6 +352,7 @@ function PayScreenInner() {
       });
 
       if (connectResult.error) {
+        setReaderPrepVisible(false);
         const code = connectResult.error.code;
         if (UNSUPPORTED_DEVICE_CODES.includes(code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
           Alert.alert(
@@ -167,11 +364,12 @@ function PayScreenInner() {
         }
       }
     } catch (e) {
+      setReaderPrepVisible(false);
       Alert.alert("Error", e instanceof Error ? e.message : "Connection failed");
     } finally {
       setConnecting(false);
     }
-  }, [isInitialized, discoveredReaders, connectReader, apiFetch]);
+  }, [isInitialized, ensureTerminalReader, connectReader, apiFetch]);
 
   const disconnect = useCallback(async () => {
     await disconnectReader();
@@ -226,6 +424,9 @@ function PayScreenInner() {
       }
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
+      if (__DEV__ && piData.paymentIntentId) {
+        console.log("[Pay] PaymentIntent created (search in Stripe Dashboard → Payments):", piData.paymentIntentId);
+      }
 
       if (!clientSecret) {
         Alert.alert("Error", piData.error ?? "Failed to create payment intent");
@@ -235,17 +436,62 @@ function PayScreenInner() {
 
       const retrieveResult = await retrievePaymentIntent(clientSecret);
       if (retrieveResult.error || !retrieveResult.paymentIntent) {
+        logTerminalError("retrievePaymentIntent failed", retrieveResult.error);
         Alert.alert("Error", retrieveResult.error?.message ?? "Could not load payment");
         setCollecting(false);
         return;
       }
+      logPaymentIntentStep("after retrieve", retrieveResult.paymentIntent);
 
       setPaymentPhase("collecting");
-      const collectResult = await collectPaymentMethod({
-        paymentIntent: retrieveResult.paymentIntent,
-      });
+      const clientSecretForCollect = clientSecret;
+
+      let pi = retrieveResult.paymentIntent;
+      let collectResult: Awaited<ReturnType<typeof collectPaymentMethod>> | null = null;
+
+      for (let collectAttempt = 0; collectAttempt < 2; collectAttempt++) {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        if (USE_SIMULATED_TERMINAL_READER) {
+          const sim = await setSimulatedCard(SIMULATED_TERMINAL_CARD_PAN);
+          if (sim.error) {
+            logTerminalError("setSimulatedCard failed", sim.error);
+            Alert.alert(
+              "Simulated card",
+              sim.error.message ?? "Could not configure test card for simulated reader."
+            );
+            setCollecting(false);
+            return;
+          }
+        }
+        collectResult = await collectPaymentMethod({ paymentIntent: pi });
+        if (!collectResult.error) break;
+        if (collectResult.error.code === ErrorCode.CANCELED && collectAttempt === 0) {
+          if (__DEV__) console.log("[Pay] collect CANCELED — refreshing PaymentIntent and retrying collect once");
+          const again = await retrievePaymentIntent(clientSecretForCollect);
+          if (again.error || !again.paymentIntent) {
+            logTerminalError("retrievePaymentIntent retry after cancel failed", again.error);
+            break;
+          }
+          pi = again.paymentIntent;
+          await sleep(450);
+          continue;
+        }
+        break;
+      }
+
+      if (!collectResult) {
+        setCollecting(false);
+        setPaymentPhase("idle");
+        return;
+      }
+
       if (collectResult.error) {
+        logTerminalError("collectPaymentMethod failed", collectResult.error);
         if (collectResult.error.code === ErrorCode.CANCELED) {
+          setPaymentOutcome("canceled");
+          setLastOutcomeAmount(amt);
+          setLastPayment("Canceled — hold the card steady until the phone vibrates, then tap Charge again.");
+          setReaderPrepVisible(false);
           setCollecting(false);
           return;
         }
@@ -260,13 +506,21 @@ function PayScreenInner() {
           collectResult.error.code === ErrorCode.DECLINED_BY_STRIPE_API ||
           collectResult.error.code === ErrorCode.DECLINED_BY_READER
         ) {
+          const extra = userFacingDeclineDetail(collectResult.error);
           setPaymentOutcome("declined");
           setLastOutcomeAmount(amt);
-          setLastPayment(`Declined — $${amt.toFixed(2)}`);
+          setLastPayment(
+            extra ? `Declined — $${amt.toFixed(2)}. ${extra}` : `Declined — $${amt.toFixed(2)}`
+          );
           setCollecting(false);
           return;
         }
-        if (UNSUPPORTED_DEVICE_CODES.includes(collectResult.error.code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
+        if (collectResult.error.code === ErrorCode.READER_BUSY) {
+          Alert.alert(
+            "Reader busy",
+            "Tap to Pay is finishing another step. Wait a few seconds, then tap Charge again."
+          );
+        } else if (UNSUPPORTED_DEVICE_CODES.includes(collectResult.error.code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
           Alert.alert(
             "Update required",
             "Please update your iPhone to the latest iOS version to use Tap to Pay."
@@ -283,21 +537,45 @@ function PayScreenInner() {
         setPaymentPhase("idle");
         return;
       }
+      logPaymentIntentStep("after collect", collectResult.paymentIntent);
 
       setPaymentPhase("processing");
-      const processResult = await processPaymentIntent({
+      setReaderPrepVisible(false);
+      // Tap to Pay / Stripe often need a beat after collect before process; READER_BUSY is common if we call immediately.
+      await sleep(400);
+
+      let processResult = await processPaymentIntent({
         paymentIntent: collectResult.paymentIntent,
       });
+      let busyRetries = 0;
+      while (processResult.error?.code === ErrorCode.READER_BUSY && busyRetries < 8) {
+        busyRetries++;
+        await sleep(650);
+        processResult = await processPaymentIntent({
+          paymentIntent: collectResult.paymentIntent,
+        });
+      }
+
       if (processResult.error) {
+        logTerminalError("processPaymentIntent failed", processResult.error);
         const code = processResult.error.code;
         if (code === ErrorCode.DECLINED_BY_STRIPE_API || code === ErrorCode.DECLINED_BY_READER) {
+          const extra = userFacingDeclineDetail(processResult.error);
           setPaymentOutcome("declined");
           setLastOutcomeAmount(amt);
-          setLastPayment(`Declined — $${amt.toFixed(2)}`);
+          setLastPayment(
+            extra ? `Declined — $${amt.toFixed(2)}. ${extra}` : `Declined — $${amt.toFixed(2)}`
+          );
+        } else if (code === ErrorCode.READER_BUSY) {
+          Alert.alert(
+            "Reader busy",
+            "Tap to Pay is still finishing the last step. Wait a few seconds, tap Charge once, or disconnect and reconnect the reader."
+          );
         } else {
           Alert.alert("Payment failed", processResult.error.message ?? "Could not process payment");
         }
       } else {
+        logPaymentIntentStep("after process (success)", processResult.paymentIntent);
         setPaymentOutcome("approved");
         setLastOutcomeAmount(amt);
         setLastPayment(`Paid $${amt.toFixed(2)} successfully`);
@@ -319,6 +597,7 @@ function PayScreenInner() {
     retrievePaymentIntent,
     collectPaymentMethod,
     processPaymentIntent,
+    setSimulatedCard,
   ]);
 
   const isConnected = !!connectedReader;
@@ -326,11 +605,10 @@ function PayScreenInner() {
   useEffect(() => {
     if (!hasPrefilledCheckout) return;
     if (!isInitialized || isConnected || connecting || collecting) return;
-    if (discoveredReaders.length === 0) return;
     if (autoConnectAttempted.current) return;
     autoConnectAttempted.current = true;
     void connectTapToPay();
-  }, [hasPrefilledCheckout, isInitialized, isConnected, connecting, collecting, discoveredReaders.length, connectTapToPay]);
+  }, [hasPrefilledCheckout, isInitialized, isConnected, connecting, collecting, connectTapToPay]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.surface }} edges={["top"]}>
@@ -360,25 +638,60 @@ function PayScreenInner() {
         </Text>
       )}
 
+      {USE_SIMULATED_TERMINAL_READER ? (
+        <Text
+          style={[
+            styles.warning,
+            { color: theme.textSecondary, backgroundColor: theme.primaryLight, padding: 12, borderRadius: 12 },
+          ]}
+        >
+          Dev: Stripe internet simulator only — tests your API + PaymentIntent + collect/process. It does not exercise Tap to Pay on iPhone (Apple/NFC). For real TTP, use sk_test + a Stripe physical test card.
+        </Text>
+      ) : null}
+
       {hasPrefilledCheckout ? (
         <View style={[styles.checkoutCard, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
           <Text style={[styles.checkoutAmount, { color: theme.text }]}>${lockedAmount.toFixed(2)}</Text>
           <Text style={[styles.checkoutSub, { color: theme.textTertiary }]}>
-            {isConnected ? "Reader connected. Hold phone near card." : "Preparing Tap to Pay reader..."}
+            {USE_SIMULATED_TERMINAL_READER
+              ? isConnected
+                ? "Simulated reader ready — tap Charge (no physical card)."
+                : "Preparing simulated reader…"
+              : isConnected
+                ? "Reader connected. Hold phone near card."
+                : "Preparing Tap to Pay reader..."}
           </Text>
           <TouchableOpacity
-            style={[
-              styles.button,
-              { backgroundColor: theme.primary },
-              (collecting || connecting || (!isConnected && (!isInitialized || discoveredReaders.length === 0))) && styles.buttonDisabled,
-            ]}
-            onPress={isConnected ? collectPayment : connectTapToPay}
-            disabled={collecting || connecting || (!isConnected && (!isInitialized || discoveredReaders.length === 0))}
+            style={[styles.button, { backgroundColor: theme.primary }]}
+            onPress={() => {
+              if (collecting || connecting) return;
+              if (!isInitialized) {
+                Alert.alert(
+                  "One moment",
+                  USE_SIMULATED_TERMINAL_READER
+                    ? "Terminal is still starting up. Try again in a second."
+                    : "Tap to Pay is still starting up. Try again in a second."
+                );
+                return;
+              }
+              if (isConnected) void collectPayment();
+              else void connectTapToPay();
+            }}
+            disabled={collecting || connecting}
           >
             {collecting || connecting ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>{isConnected ? `Charge $${lockedAmount.toFixed(2)}` : "Connect Tap to Pay"}</Text>
+              <View style={styles.buttonContent}>
+                <TapToPayButtonIcon color="#fff" size={22} />
+                <Text style={styles.buttonText}>
+                  {isConnected
+                    ? `Charge $${lockedAmount.toFixed(2)}`
+                    : USE_SIMULATED_TERMINAL_READER
+                      ? "Connect simulated reader"
+                      : "Pay with Tap to Pay on iPhone"}
+                </Text>
+              </View>
             )}
           </TouchableOpacity>
           {isConnected ? (
@@ -404,20 +717,35 @@ function PayScreenInner() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: theme.primary }, connecting && styles.buttonDisabled]}
-                onPress={connectTapToPay}
-                disabled={connecting || !isInitialized || discoveredReaders.length === 0}
+                style={[styles.button, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  if (connecting) return;
+                  if (!isInitialized) {
+                    Alert.alert(
+                      "One moment",
+                      USE_SIMULATED_TERMINAL_READER
+                        ? "Terminal is still starting up. Try again in a second."
+                        : "Tap to Pay is still starting up. Try again in a second."
+                    );
+                    return;
+                  }
+                  void connectTapToPay();
+                }}
+                disabled={connecting}
               >
                 {connecting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>
-                    {!isInitialized
-                      ? "Initializing…"
-                      : discoveredReaders.length === 0
-                      ? "Tap to Pay not available"
-                      : "Connect Tap to Pay"}
-                  </Text>
+                  <View style={styles.buttonContent}>
+                    <TapToPayButtonIcon color="#fff" size={22} />
+                    <Text style={styles.buttonText}>
+                      {!isInitialized
+                        ? "Initializing…"
+                        : USE_SIMULATED_TERMINAL_READER
+                          ? "Connect simulated reader"
+                          : "Connect Tap to Pay"}
+                    </Text>
+                  </View>
                 )}
               </TouchableOpacity>
             )}
@@ -449,7 +777,7 @@ function PayScreenInner() {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <View style={styles.buttonContent}>
-                    <Ionicons name="hardware-chip-outline" size={20} color="#fff" />
+                    <TapToPayButtonIcon color="#fff" size={22} />
                     <Text style={styles.buttonText}>Collect payment</Text>
                   </View>
                 )}
@@ -457,6 +785,24 @@ function PayScreenInner() {
             </View>
           )}
         </>
+      )}
+
+      {/* Reader prep / software update progress (Apple checklist 3.9.1 — PSP equivalent) */}
+      {readerPrepVisible && (
+        <View style={[styles.overlay, { zIndex: 150 }]}>
+          <View style={[styles.overlayCard, { maxWidth: 320 }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.overlayTitle, { textAlign: "center" }]}>
+              {ttpSoftwareUpdate ? "Configuring Tap to Pay" : "Preparing Tap to Pay"}
+            </Text>
+            <Text style={[styles.overlaySubtitle, { color: theme.textSecondary }]}>
+              {readerPrepMessage}
+            </Text>
+            <Text style={[styles.overlayHint, { color: theme.textQuaternary }]}>
+              Tap to Pay may be unavailable until setup finishes.
+            </Text>
+          </View>
+        </View>
       )}
 
       {/* 5.7 Initializing / 5.8 Processing overlay */}
@@ -485,6 +831,8 @@ function PayScreenInner() {
                   ? "checkmark-circle"
                   : paymentOutcome === "declined"
                   ? "close-circle"
+                  : paymentOutcome === "canceled"
+                  ? "alert-circle-outline"
                   : "time-outline"
               }
               size={24}
@@ -493,18 +841,21 @@ function PayScreenInner() {
                   ? theme.positive
                   : paymentOutcome === "declined"
                   ? theme.negative
+                  : paymentOutcome === "canceled"
+                  ? theme.textTertiary
                   : theme.textQuaternary
               }
             />
             <Text style={[styles.resultLabel, { color: theme.textTertiary }]}>Last result</Text>
           </View>
           <Text style={[styles.resultText, { color: theme.text }]}>{lastPayment}</Text>
-          {lastOutcomeAmount != null && (
+          {lastOutcomeAmount != null &&
+            (paymentOutcome === "approved" ||
+              paymentOutcome === "declined" ||
+              paymentOutcome === "timeout") && (
             <TouchableOpacity
               style={styles.shareButton}
-              onPress={() =>
-                paymentOutcome && shareReceipt(paymentOutcome, lastOutcomeAmount)
-              }
+              onPress={() => shareReceipt(paymentOutcome, lastOutcomeAmount)}
             >
               <Ionicons name="share-outline" size={18} color={theme.primary} />
               <Text style={[styles.shareButtonText, { color: theme.primary }]}>Share receipt</Text>
@@ -661,6 +1012,20 @@ const styles = StyleSheet.create({
     fontFamily: font.semibold,
     color: colors.text,
   },
+  overlaySubtitle: {
+    fontSize: 14,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  overlayHint: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 17,
+    marginTop: 12,
+  },
   result: {
     marginTop: 24,
     padding: 16,
@@ -712,48 +1077,13 @@ const styles = StyleSheet.create({
 });
 
 export default function PayScreen() {
-  const { getToken } = useAuth();
   const [deferReady, setDeferReady] = useState(false);
 
-  // Defer Stripe init to avoid "invocation function for block" crash on cold start
-  // when app restores to Pay tab before auth/bridge is ready
+  // Defer Pay screen mount slightly so Clerk + Stripe Terminal native bridge are stable (StripeTerminalProvider lives at tab root).
   useEffect(() => {
     const t = setTimeout(() => setDeferReady(true), 600);
     return () => clearTimeout(t);
   }, []);
-
-  const fetchConnectionToken = useCallback(async () => {
-    try {
-      const gt = getToken;
-      if (!gt || typeof gt !== "function") {
-        throw new Error("Auth not ready");
-      }
-      let token: string | null = null;
-      for (let i = 0; i < 5; i++) {
-        try {
-          token = await gt({ skipCache: i > 0 });
-          if (token) break;
-        } catch {
-          // Retry
-        }
-        if (i < 4) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
-      }
-      const url = API_URL.replace(/\/$/, "");
-      const res = await fetch(`${url}/api/stripe/terminal/connection-token`, {
-        method: "POST",
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
-      if (!data.secret) throw new Error("No connection token");
-      return data.secret;
-    } catch (e) {
-      throw new Error(e instanceof Error ? e.message : "Connection token failed");
-    }
-  }, [getToken]);
 
   if (!deferReady) {
     return (
@@ -766,9 +1096,7 @@ export default function PayScreen() {
 
   return (
     <ErrorBoundary>
-      <StripeTerminalProvider logLevel="error" tokenProvider={fetchConnectionToken}>
-        <PayScreenInner />
-      </StripeTerminalProvider>
+      <PayScreenInner />
     </ErrorBoundary>
   );
 }

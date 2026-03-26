@@ -57,6 +57,7 @@ export default function SignUpScreen() {
       const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
+        setIsDemoOn(false);
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
@@ -98,6 +99,7 @@ export default function SignUpScreen() {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === "complete" && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
+        setIsDemoOn(false);
       } else {
         setError("Verification is not complete yet. Please try again.");
       }
