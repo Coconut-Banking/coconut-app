@@ -16,7 +16,7 @@ import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch } from "../../lib/api";
 import { useTransactions } from "../../hooks/useTransactions";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space, type as T } from "../../lib/theme";
 
@@ -69,6 +69,12 @@ export default function SettingsScreen() {
     };
     error?: string;
   } | null>(null);
+
+  const splitwiseAutoImportStarted = useRef(false);
+  const splitwiseParams = useLocalSearchParams<{
+    splitwise?: string;
+    import?: string;
+  }>();
 
   useEffect(() => {
     if (user) {
@@ -133,6 +139,16 @@ export default function SettingsScreen() {
     if (!isFocused) return;
     void fetchSplitwiseStatus();
   }, [isFocused, user]);
+
+  // When OAuth redirects back into the app, auto-start import and show UX loading.
+  useEffect(() => {
+    if (!user) return;
+    if (splitwiseAutoImportStarted.current) return;
+    if (splitwiseParams?.splitwise === "connected" && splitwiseParams?.import === "1") {
+      splitwiseAutoImportStarted.current = true;
+      void startSplitwiseImport();
+    }
+  }, [splitwiseParams?.splitwise, splitwiseParams?.import, user]);
 
   const connectSplitwise = () => {
     const base = API_URL.replace(/\/$/, "");
@@ -441,7 +457,10 @@ export default function SettingsScreen() {
                 disabled={splitwiseImporting}
               >
                 {splitwiseImporting ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={[styles.buttonText, { fontSize: 14 }]}>Loading imports…</Text>
+                  </View>
                 ) : (
                   <Text style={styles.buttonText}>Import all groups</Text>
                 )}
