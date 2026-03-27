@@ -81,7 +81,7 @@ export function useApiFetch() {
       }
       return fetch(url, { ...opts, headers, body });
     },
-    []
+    [getToken, isLoaded, isSignedIn]
   );
 }
 
