@@ -243,6 +243,7 @@ export interface RecentActivityItem {
   in: string;
   direction: "get_back" | "owe" | "settled";
   amount: number;
+  currency?: string;
   time: string;
 }
 

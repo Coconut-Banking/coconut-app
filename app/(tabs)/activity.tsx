@@ -151,8 +151,19 @@ export default function ActivityTabScreen() {
   );
 }
 
+function currencySymbol(code?: string): string {
+  switch (code) {
+    case "CAD": return "CA$";
+    case "EUR": return "€";
+    case "GBP": return "£";
+    default: return "$";
+  }
+}
+
 function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean }) {
   const { theme } = useTheme();
+  const sym = currencySymbol(it.currency);
+  const isSettlement = it.direction === "settled";
   return (
     <View>
       <View style={styles.groupedRow}>
@@ -170,7 +181,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
           ]}
         >
           <Ionicons
-            name={it.direction === "settled" ? "checkmark" : it.direction === "get_back" ? "arrow-down" : "arrow-up"}
+            name={isSettlement ? "checkmark" : it.direction === "get_back" ? "arrow-down" : "arrow-up"}
             size={14}
             color={
               it.direction === "get_back"
@@ -184,14 +195,18 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.actWho, { color: theme.text }]} numberOfLines={2}>
             <Text style={{ fontFamily: font.bold }}>{it.who}</Text> {it.action}
-            {it.what ? ` "${it.what}"` : ""}
+            {it.what ? (isSettlement ? ` ${it.what}` : ` "${it.what}"`) : ""}
           </Text>
           {it.in ? <Text style={[styles.actIn, { color: theme.textTertiary }]}>{it.in}</Text> : null}
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          {it.direction !== "settled" && (
+          {isSettlement ? (
+            <Text style={[styles.actAmt, { color: "#8A9098" }]}>
+              {sym}{it.amount.toFixed(2)}
+            </Text>
+          ) : (
             <Text style={[styles.actAmt, it.direction === "get_back" ? styles.green : styles.red]}>
-              {it.direction === "get_back" ? "+" : "−"}${it.amount.toFixed(2)}
+              {it.direction === "get_back" ? "+" : "−"}{sym}{it.amount.toFixed(2)}
             </Text>
           )}
           <Text style={styles.actTime}>{it.time}</Text>
