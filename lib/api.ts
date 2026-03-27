@@ -116,7 +116,11 @@ export function useApiFetch() {
       if (__DEV__) console.log(`[api] → ${(opts.method ?? "GET").toUpperCase()} ${path}`);
 
       const controller = new AbortController();
-      const timeoutMs = path.includes("plaid/transactions") ? 45_000 : 20_000;
+      const timeoutMs = path.includes("plaid/transactions")
+        ? 45_000
+        : path.includes("splitwise/import")
+          ? 180_000
+          : 20_000;
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {

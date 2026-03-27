@@ -31,14 +31,19 @@ export interface Transaction {
 /** `api_unreachable` = HTTP 404 on /api/plaid/status (usually wrong EXPO_PUBLIC_API_URL, not auth). */
 export type PlaidStatus = "ok" | "unauthorized" | "not_linked" | "api_unreachable";
 
+/** Throttle POST /api/plaid/transactions (Plaid refresh + sync) when returning to the app. */
+const FOREGROUND_PLAID_PUSH_MIN_MS = 20 * 60 * 1000;
+
 export function useTransactions() {
   const apiFetch = useApiFetch();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [linked, setLinked] = useState(false);
+  const linkedRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<PlaidStatus>("ok");
   const hasShownInitialLoad = useRef(false);
   const transientRetryCount = useRef(0);
+  const lastPlaidPushAtRef = useRef(Date.now());
 
   const fetchData = useCallback((silent = false): Promise<void> => {
     let cancelled = false;
@@ -68,6 +73,7 @@ export function useTransactions() {
         }
         transientRetryCount.current = 0;
         if (r.status === 401) {
+          linkedRef.current = false;
           setStatus("unauthorized");
           setLoading(false);
           return null;
@@ -77,11 +83,13 @@ export function useTransactions() {
             const base = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/$/, "") || "(unset EXPO_PUBLIC_API_URL)";
             console.warn(`[pipeline:tx] /api/plaid/status 404 — check API host (e.g. ${base})`);
           }
+          linkedRef.current = false;
           setStatus("api_unreachable");
           setLoading(false);
           return null;
         }
         if (!r.ok) {
+          linkedRef.current = false;
           setLoading(false);
           return null;
         }
@@ -91,6 +99,7 @@ export function useTransactions() {
         if (cancelled || !data) return null;
         if (!data.linked) {
           if (__DEV__) console.log("[pipeline:tx] 3. not linked → stop");
+          linkedRef.current = false;
           setLinked(false);
           setTransactions([]);
           setStatus("not_linked");
@@ -98,6 +107,7 @@ export function useTransactions() {
           return null;
         }
         if (__DEV__) console.log("[pipeline:tx] 3. linked → GET /api/plaid/transactions");
+        linkedRef.current = true;
         setLinked(true);
         return apiFetch("/api/plaid/transactions");
       })
@@ -125,13 +135,13 @@ export function useTransactions() {
       });
   }, [apiFetch]);
 
-  /** Full sync with Plaid (POST then GET). Slow (~15–30s); use for pull-to-refresh only. */
+  /** Full sync with Plaid (POST = institution refresh + sync, then GET). Slow (~15–30s); pull-to-refresh. */
   const runFullSync = useCallback(
     async (silent = true) => {
-      // Fetch cached transactions first (fast), then sync in background
       await fetchData(silent);
       try {
         await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+        lastPlaidPushAtRef.current = Date.now();
         fetchData(true);
       } catch {
         // Sync may fail; cached data is already displayed
@@ -140,18 +150,32 @@ export function useTransactions() {
     [apiFetch, fetchData]
   );
 
-  // Initial load: fetch from DB only (no Plaid sync). Shows in ~2–5s instead of ~30s.
+  // Initial load: GET only (fast). POST sync runs on pull-to-refresh or throttled foreground return.
   useEffect(() => {
     fetchData(false);
   }, [fetchData]);
 
-  // When app returns from background: refetch from DB only (no full sync).
+  // When app returns from background: refetch DB; periodically nudge Plaid (refresh + sync) like pull-to-refresh.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") fetchData(true);
+      if (state !== "active") return;
+      void fetchData(true);
+      if (!linkedRef.current) return;
+      const now = Date.now();
+      if (now - lastPlaidPushAtRef.current < FOREGROUND_PLAID_PUSH_MIN_MS) return;
+      lastPlaidPushAtRef.current = now;
+      void (async () => {
+        try {
+          if (__DEV__) console.log("[pipeline:tx] foreground Plaid POST (refresh+sync)");
+          await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+          await fetchData(true);
+        } catch {
+          // Non-fatal — user already has DB snapshot from fetchData above
+        }
+      })();
     });
     return () => sub.remove();
-  }, [fetchData]);
+  }, [fetchData, apiFetch]);
 
   // Settings → Disconnect bank does not unmount tabs; force a fresh Plaid status read.
   useEffect(() => {

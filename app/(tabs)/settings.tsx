@@ -205,12 +205,18 @@ export default function SettingsScreen() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSplitwiseResult({ ok: false, error: (data as { error?: string }).error ?? "Import failed" });
+        const msg = (data as { error?: string }).error ?? "Import failed";
+        if (__DEV__) console.warn("[splitwise] import HTTP", res.status, msg);
+        setSplitwiseResult({ ok: false, error: msg });
         return;
       }
       setSplitwiseResult(data as typeof splitwiseResult);
-    } catch {
-      setSplitwiseResult({ ok: false, error: "Import failed. Please try again." });
+    } catch (e) {
+      if (__DEV__) console.warn("[splitwise] import exception", e);
+      setSplitwiseResult({
+        ok: false,
+        error: "Import failed. Please try again.",
+      });
     } finally {
       setSplitwiseImporting(false);
       void fetchSplitwiseStatus();
