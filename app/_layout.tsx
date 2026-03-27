@@ -16,6 +16,9 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
   const { getToken } = useAuth();
 
   const fetchConnectionToken = async () => {
+    if (process.env.EXPO_PUBLIC_SKIP_AUTH === "true") {
+      throw new Error("Auth skipped: Terminal unavailable in preview mode");
+    }
     let token: string | null = null;
     for (let i = 0; i < 4; i++) {
       token = await getToken({ skipCache: i > 0 });
