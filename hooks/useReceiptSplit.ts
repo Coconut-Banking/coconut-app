@@ -23,6 +23,15 @@ type ApiFetch = (
 ) => Promise<Response>;
 
 export function useReceiptSplit(apiFetch: ApiFetch) {
+  return useReceiptSplitInternal(apiFetch, { demo: false });
+}
+
+export function useReceiptSplitWithOptions(apiFetch: ApiFetch, opts?: { demo?: boolean }) {
+  return useReceiptSplitInternal(apiFetch, { demo: Boolean(opts?.demo) });
+}
+
+function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
+  const demoMode = opts.demo;
   const [step, setStep] = useState<Step>("upload");
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -73,6 +82,42 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
       setUploadError(null);
       setImageUri(uri);
       setIsPdf(opts?.mimeType === "application/pdf");
+
+      if (demoMode) {
+        // Demo-only: skip network parsing, but keep the same UI flow.
+        const demoReceiptId = `demo-receipt-${Date.now()}`;
+        const demoMerchant = "Blue Bottle Coffee";
+        const receiptItems = [
+          { id: `d-${Date.now()}-1`, name: "Iced Latte", quantity: 2, unit_price: 6.5, total_price: 13.0 },
+          { id: `d-${Date.now()}-2`, name: "Banana Bread", quantity: 1, unit_price: 5.75, total_price: 5.75 },
+          { id: `d-${Date.now()}-3`, name: "Tip", quantity: 1, unit_price: 3.0, total_price: 3.0 },
+        ];
+        const subtotal = receiptItems.reduce((s, i) => s + i.total_price, 0);
+        const tax = Math.round(subtotal * 0.0825 * 100) / 100;
+        const tip = 3.0;
+        const total = Math.round((subtotal + tax + tip) * 100) / 100;
+
+        // Let the UI breathe: the stage indicator is driven by `uploading`.
+        setReceiptId(demoReceiptId);
+        setEditItems(
+          receiptItems.map((i) => ({
+            id: i.id,
+            name: i.name,
+            quantity: Number(i.quantity),
+            unitPrice: Number(i.unit_price),
+            totalPrice: Number(i.total_price),
+          }))
+        );
+        setEditSubtotal(subtotal);
+        setEditTax(tax);
+        setEditTip(tip);
+        setEditExtras([]);
+        setEditTotal(total);
+        setEditMerchant(demoMerchant);
+        setStep("review");
+        setUploading(false);
+        return;
+      }
 
       const mimeType = opts?.mimeType ?? "image/jpeg";
       const fileName = opts?.name ?? "receipt.jpg";
@@ -134,12 +179,24 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         setUploading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, demoMode]
   );
 
   const confirmItems = useCallback(
     async () => {
       if (!receiptId) return;
+      if (demoMode) {
+        const withExtras = distributeExtras(
+          editItems,
+          editSubtotal,
+          editTax,
+          editTip,
+          editExtras
+        );
+        setItemsWithExtras(withExtras);
+        setStep("assign");
+        return;
+      }
       setSaving(true);
       try {
         const res = await apiFetch(`/api/receipt/${receiptId}/items`, {
@@ -215,8 +272,36 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
       editExtras,
       editTotal,
       editMerchant,
+      demoMode,
     ]
   );
+
+  const addItem = useCallback(() => {
+    const id = `new-${Date.now()}`;
+    setEditItems((prev) => [...prev, { id, name: "New item", quantity: 1, unitPrice: 0, totalPrice: 0 }]);
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setEditItems((prev) => prev.filter((i) => i.id !== id));
+    setAssignments((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const updateItem = useCallback((id: string, updates: Partial<Omit<ReceiptItem, "id">>) => {
+    setEditItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, ...updates };
+        if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+          updated.totalPrice = Math.round(updated.quantity * updated.unitPrice * 100) / 100;
+        }
+        return updated;
+      })
+    );
+  }, []);
 
   const addPerson = useCallback(
     (
@@ -321,6 +406,10 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const saveAssignments = useCallback(
     async () => {
       if (!receiptId) return;
+      if (demoMode) {
+        // Demo-only: assignments are handled locally; Summary is computed from local state.
+        return;
+      }
       setSaving(true);
       try {
         const payload = Array.from(assignments.entries()).map(
@@ -348,7 +437,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         setSaving(false);
       }
     },
-    [receiptId, apiFetch, assignments]
+    [receiptId, apiFetch, assignments, demoMode]
   );
 
   const reset = useCallback(() => {
@@ -382,6 +471,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     uploadReceipt,
     editItems,
     setEditItems,
+    addItem,
+    removeItem,
+    updateItem,
     editSubtotal,
     setEditSubtotal,
     editTax,

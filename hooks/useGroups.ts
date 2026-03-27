@@ -5,22 +5,36 @@ export interface GroupSummary {
   id: string;
   name: string;
   memberCount: number;
-  myBalance: number;
+  /** Net for you in this group when exactly one currency is outstanding; otherwise null. */
+  myBalance: number | null;
+  /** Per-currency net for you in this group (Splitwise-style; never add across currencies). */
+  myBalances: Array<{ currency: string; amount: number }>;
   lastActivityAt: string;
 }
 
 export interface FriendBalance {
   key: string;
   displayName: string;
-  balance: number;
+  /** Single-currency shortcut when `balances.length === 1`; null when multiple currencies. */
+  balance: number | null;
+  balances: Array<{ currency: string; amount: number }>;
+}
+
+export interface CurrencyTotalsRow {
+  currency: string;
+  owedToMe: number;
+  iOwe: number;
+  net: number;
 }
 
 export interface GroupsSummary {
   groups: GroupSummary[];
   friends: FriendBalance[];
-  totalOwedToMe: number;
-  totalIOwe: number;
-  netBalance: number;
+  /** Headline totals when a single currency; null when multiple (use `totalsByCurrency`). */
+  totalOwedToMe: number | null;
+  totalIOwe: number | null;
+  netBalance: number | null;
+  totalsByCurrency: CurrencyTotalsRow[];
 }
 
 export interface GroupMember {
@@ -33,33 +47,49 @@ export interface GroupMember {
 export interface GroupDetail {
   id: string;
   name: string;
+  isOwner?: boolean;
+  /** ISO timestamp when archived; null/undefined = active */
+  archivedAt?: string | null;
   members: GroupMember[];
   activity: Array<{
     id: string;
     merchant: string;
     amount: number;
+    currency: string;
     paidBy: string;
     splitCount: number;
     createdAt: string;
   }>;
-  balances: Array<{ memberId: string; paid: number; owed: number; total: number }>;
+  balances: Array<{
+    memberId: string;
+    currency: string;
+    paid: number;
+    owed: number;
+    total: number;
+  }>;
   suggestions: Array<{
+    currency: string;
     fromMemberId: string;
     toMemberId: string;
     amount: number;
     fromMember?: GroupMember;
     toMember?: GroupMember;
   }>;
-  totalSpend: number;
+  /** Total paid into the group when one currency; null when expenses use multiple currencies. */
+  totalSpend: number | null;
+  totalSpendByCurrency: Array<{ currency: string; amount: number }>;
 }
 
 export interface PersonDetail {
   displayName: string;
-  balance: number;
+  /** One currency only; null when multiple currencies outstanding. */
+  balance: number | null;
+  currencyBalances: Array<{ currency: string; amount: number }>;
   activity: Array<{
     id: string;
     merchant: string;
     amount: number;
+    currency: string;
     groupName: string;
     paidByMe: boolean;
     paidByThem: boolean;
@@ -70,28 +100,59 @@ export interface PersonDetail {
   }>;
   email: string | null;
   key: string;
-  settlements?: Array<{ groupId: string; fromMemberId: string; toMemberId: string; amount: number }>;
+  settlements?: Array<{
+    groupId: string;
+    fromMemberId: string;
+    toMemberId: string;
+    amount: number;
+    currency: string;
+  }>;
 }
 
-export function useGroupsSummary() {
+export type UseGroupsSummaryOptions = {
+  /**
+   * When true, GET /api/groups/summary?contacts=1 — all group members & groups (incl. $0 net).
+   * Use for expense pickers. Default (false) = Splitwise-style: only unsettled friends & groups.
+   */
+  contacts?: boolean;
+};
+
+export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
+  const contacts = options?.contacts === true;
+  const summaryPath = contacts ? "/api/groups/summary?contacts=1" : "/api/groups/summary";
   const apiFetch = useApiFetch();
   const [summary, setSummary] = useState<GroupsSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchSummary = useCallback(async () => {
-    try {
-      const res = await apiFetch("/api/groups/summary");
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data);
-      } else setSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [apiFetch]);
+  const fetchSummary = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) setLoading(true);
+      try {
+        const res = await apiFetch(summaryPath);
+        if (res.ok) {
+          const data = await res.json();
+          if (__DEV__)
+            console.log(
+              "[summary]",
+              contacts ? "contacts" : "outstanding",
+              "friends:",
+              data.friends?.length ?? 0,
+              "groups:",
+              data.groups?.length ?? 0
+            );
+          setSummary(data);
+        } else if (showLoading) {
+          setSummary(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiFetch, summaryPath, contacts]
+  );
 
   useEffect(() => {
-    fetchSummary();
+    fetchSummary(true);
   }, [fetchSummary]);
 
   return { summary, loading, refetch: fetchSummary };

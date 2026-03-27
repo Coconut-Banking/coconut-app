@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { useAuth } from "@clerk/expo";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
+const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
 
 function unauthResponse() {
@@ -11,19 +11,66 @@ function unauthResponse() {
   });
 }
 
-/** Clerk has a race: getToken() can return null right after isSignedIn. Retry a few times. */
+let _tokenPromise: Promise<string | null> | null = null;
+let _lastGoodToken: string | null = null;
+
+function isOfflineError(e: unknown): boolean {
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return msg.includes("offline") || msg.includes("network request failed") || msg.includes("clerk_offline");
+}
+
 async function getTokenWithRetry(
   getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
-  maxAttempts = 8
+  maxAttempts = 4
 ): Promise<string | null> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const token = await getToken({ skipCache: i > 0 });
-    if (token) return token;
-    if (i < maxAttempts - 1) {
-      await new Promise((r) => setTimeout(r, 350 * (i + 1)));
+  if (_tokenPromise) return _tokenPromise;
+
+  _tokenPromise = (async () => {
+    // First: try the cache (no network) — works offline
+    try {
+      const cached = await getToken({ skipCache: false });
+      if (cached) {
+        _lastGoodToken = cached;
+        return cached;
+      }
+    } catch (e) {
+      if (isOfflineError(e)) {
+        // Offline: return last known good token if available
+        if (_lastGoodToken) {
+          if (__DEV__) console.warn("[api] offline — using cached token");
+          return _lastGoodToken;
+        }
+      }
     }
+
+    // Then: retry with network refresh
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const token = await getToken({ skipCache: true });
+        if (token) {
+          _lastGoodToken = token;
+          return token;
+        }
+      } catch (e) {
+        const msg = (e instanceof Error ? e.message : String(e));
+        if (__DEV__ && !isOfflineError(e)) console.warn("[api] getToken attempt", i, msg);
+        if (isOfflineError(e) && _lastGoodToken) {
+          if (__DEV__) console.warn("[api] offline — using cached token after retry");
+          return _lastGoodToken;
+        }
+      }
+      if (i < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      }
+    }
+    return _lastGoodToken ?? null;
+  })();
+
+  try {
+    return await _tokenPromise;
+  } finally {
+    _tokenPromise = null;
   }
-  return null;
 }
 
 export function useApiFetch() {
@@ -36,56 +83,62 @@ export function useApiFetch() {
       path: string,
       opts: Omit<RequestInit, "body"> & { body?: object | FormData } = {}
     ) => {
-      // SKIP_AUTH: never wait for token, return 401 so UI shows Connect state immediately
       if (SKIP_AUTH) return unauthResponse();
 
       const { isLoaded: loaded, isSignedIn: signedIn, getToken: gt } = ref.current;
-      console.log(`[apiFetch] ${path} loaded=${loaded} signedIn=${signedIn}`);
       if (loaded && !signedIn) return unauthResponse();
 
       const token = await getTokenWithRetry(gt);
       if (!token) {
-        const { isLoaded: loadedNow, isSignedIn: signedInNow } = ref.current;
-        if (loadedNow && !signedInNow) return unauthResponse();
-        // Token race window: don't hit backend unauthenticated.
+        if (loaded && !signedIn) return unauthResponse();
         return new Response(
           JSON.stringify({ error: "Session token unavailable" }),
-          {
-            status: 425,
-            headers: {
-              "Content-Type": "application/json",
-              "X-Coconut-Auth": "token-missing",
-            },
-          }
+          { status: 425, headers: { "Content-Type": "application/json", "X-Coconut-Auth": "token-missing" } }
         );
       }
 
       const headers: Record<string, string> = {
         ...(opts.headers as Record<string, string>),
+        Authorization: `Bearer ${token}`,
       };
-      headers["Authorization"] = `Bearer ${token}`;
-      if (
-        opts.body &&
-        typeof opts.body === "object" &&
-        !(opts.body instanceof FormData)
-      ) {
+      if (opts.body && typeof opts.body === "object" && !(opts.body instanceof FormData)) {
         headers["Content-Type"] = "application/json";
       }
-      const url = `${API_URL.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+
+      const url = `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
       let body: FormData | string | undefined;
       if (opts.body instanceof FormData) {
         body = opts.body;
-      } else if (opts.body && typeof opts.body === "object" && !("uri" in opts.body)) {
+      } else if (opts.body && typeof opts.body === "object") {
         body = JSON.stringify(opts.body);
-      } else {
-        body = undefined;
       }
-      return fetch(url, { ...opts, headers, body });
+
+      if (__DEV__) console.log(`[api] → ${(opts.method ?? "GET").toUpperCase()} ${path}`);
+
+      const controller = new AbortController();
+      const timeoutMs = path.includes("plaid/transactions")
+        ? 45_000
+        : path.includes("splitwise/import")
+          ? 180_000
+          : 20_000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, { ...opts, headers, body, signal: controller.signal });
+        clearTimeout(timer);
+        if (__DEV__) console.log(`[api] ← ${path} ${response.status}`);
+        return response;
+      } catch (e) {
+        clearTimeout(timer);
+        const isAbort = e instanceof DOMException && e.name === "AbortError";
+        const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
+        if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
+        return new Response(
+          JSON.stringify({ error: isAbort ? "Request timed out. Please try again." : "Network request failed. Check your connection and retry." }),
+          { status: 503, statusText: msg, headers: { "Content-Type": "application/json" } }
+        );
+      }
     },
     [getToken, isLoaded, isSignedIn]
   );
-}
-
-export function getApiUrl() {
-  return API_URL;
 }
