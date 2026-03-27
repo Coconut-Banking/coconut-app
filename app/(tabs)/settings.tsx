@@ -12,6 +12,7 @@ import {
   DeviceEventEmitter,
   Platform,
   AppState,
+  InteractionManager,
   type AppStateStatus,
 } from "react-native";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
@@ -139,6 +140,8 @@ export default function SettingsScreen() {
   } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
   const [splitwiseClearing, setSplitwiseClearing] = useState(false);
+  /** True only while the in-focus Settings fetch runs (avoids treating null status as “not configured”). */
+  const [splitwiseLoading, setSplitwiseLoading] = useState(false);
   const [splitwiseResult, setSplitwiseResult] = useState<{
     ok?: boolean;
     stats?: {
@@ -152,12 +155,17 @@ export default function SettingsScreen() {
   } | null>(null);
 
   const splitwiseAutoImportStarted = useRef(false);
+  const splitwiseStatusRef = useRef(splitwiseStatus);
   const splitwiseParams = useLocalSearchParams<{
     splitwise?: string;
     import?: string;
     splitwise_error?: string;
   }>();
   const splitwiseErrorAlertShown = useRef(false);
+
+  useEffect(() => {
+    splitwiseStatusRef.current = splitwiseStatus;
+  }, [splitwiseStatus]);
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsLoading(true);
@@ -218,46 +226,53 @@ export default function SettingsScreen() {
     prevFocused.current = isFocused;
   }, [isFocused, linked]);
 
-  const fetchSplitwiseStatus = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await apiFetch("/api/splitwise/status");
-      if (!res.ok) {
+  const fetchSplitwiseStatus = useCallback(
+    async (opts?: { showLoading?: boolean }) => {
+      if (!user) return;
+      const showBlockingLoad = opts?.showLoading === true && splitwiseStatusRef.current === null;
+      if (showBlockingLoad) setSplitwiseLoading(true);
+      try {
+        const res = await apiFetch("/api/splitwise/status");
+        if (!res.ok) {
+          setSplitwiseStatus(null);
+          return;
+        }
+        const data: unknown = await res.json();
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          typeof (data as { configured?: unknown }).configured !== "boolean" ||
+          typeof (data as { connected?: unknown }).connected !== "boolean"
+        ) {
+          setSplitwiseStatus(null);
+          return;
+        }
+        const row = data as {
+          configured: boolean;
+          connected: boolean;
+          connectedAt?: string | null;
+          importedSplitwiseGroupCount?: unknown;
+        };
+        const n = row.importedSplitwiseGroupCount;
+        setSplitwiseStatus({
+          configured: row.configured,
+          connected: row.connected,
+          connectedAt: row.connectedAt ?? null,
+          importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+        });
+      } catch {
         setSplitwiseStatus(null);
-        return;
+      } finally {
+        if (showBlockingLoad) setSplitwiseLoading(false);
       }
-      const data: unknown = await res.json();
-      if (
-        typeof data !== "object" ||
-        data === null ||
-        typeof (data as { configured?: unknown }).configured !== "boolean" ||
-        typeof (data as { connected?: unknown }).connected !== "boolean"
-      ) {
-        setSplitwiseStatus(null);
-        return;
-      }
-      const row = data as {
-        configured: boolean;
-        connected: boolean;
-        connectedAt?: string | null;
-        importedSplitwiseGroupCount?: unknown;
-      };
-      const n = row.importedSplitwiseGroupCount;
-      setSplitwiseStatus({
-        configured: row.configured,
-        connected: row.connected,
-        connectedAt: row.connectedAt ?? null,
-        importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
-      });
-    } catch {
-      setSplitwiseStatus(null);
-    }
-  }, [user, apiFetch]);
+    },
+    [user, apiFetch]
+  );
 
   useEffect(() => {
     if (!user) return;
     if (!isFocused) return;
-    void fetchSplitwiseStatus();
+    void fetchSplitwiseStatus({ showLoading: true });
   }, [isFocused, user, fetchSplitwiseStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
@@ -370,12 +385,47 @@ export default function SettingsScreen() {
         return;
       }
 
-      WebBrowser.maybeCompleteAuthSession();
-      const result = await WebBrowser.openAuthSessionAsync(url, callbackUrl, {
-        preferEphemeralSession: true,
+      // Defer so ASWebAuthenticationSession / Custom Tabs can attach a valid window (avoids no-op opens).
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => resolve());
       });
 
+      let result: WebBrowser.WebBrowserAuthSessionResult;
+      try {
+        result = await WebBrowser.openAuthSessionAsync(url, callbackUrl, {
+          preferEphemeralSession: true,
+        });
+      } catch (e) {
+        if (__DEV__) console.warn("[splitwise] openAuthSessionAsync failed", e);
+        const canOpen = await Linking.canOpenURL(url).catch(() => false);
+        if (canOpen) {
+          Alert.alert(
+            "Open Splitwise",
+            "In-app sign-in didn’t start. Open Splitwise in your browser instead?",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open browser", onPress: () => void Linking.openURL(url) },
+            ],
+          );
+        } else {
+          Alert.alert("Could not open Splitwise", "Something went wrong. Please try again.");
+        }
+        return;
+      }
+
       if (result.type !== "success") {
+        const hint =
+          result.type === "cancel"
+            ? "Sign-in was cancelled or the sign-in window didn’t appear."
+            : "The sign-in window closed before finishing.";
+        Alert.alert(
+          "Splitwise sign-in",
+          `${hint} Try again, or open Splitwise in your browser to continue.`,
+          [
+            { text: "OK", style: "cancel" },
+            { text: "Open browser", onPress: () => void Linking.openURL(url) },
+          ],
+        );
         return;
       }
 
@@ -463,6 +513,29 @@ export default function SettingsScreen() {
     }
   };
 
+  const runSplitwiseClearAndRefresh = async () => {
+    setSplitwiseClearing(true);
+    try {
+      const res = await apiFetch("/api/splitwise/clear", {
+        method: "POST",
+        body: { disconnectToken: true },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        Alert.alert("Could not disconnect", (data as { error?: string }).error ?? "Try again.");
+        return;
+      }
+      setSplitwiseResult(null);
+      DeviceEventEmitter.emit("groups-updated");
+      await fetchSplitwiseStatus();
+    } catch {
+      Alert.alert("Error", "Could not disconnect. Check your connection.");
+    } finally {
+      setSplitwiseClearing(false);
+    }
+  };
+
+  /** Full disconnect: only after Splitwise data exists in Coconut (imported groups or a successful import this session). */
   const disconnectSplitwiseAndClear = () => {
     Alert.alert(
       "Disconnect Splitwise?",
@@ -472,31 +545,33 @@ export default function SettingsScreen() {
         {
           text: "Disconnect",
           style: "destructive",
-          onPress: async () => {
-            setSplitwiseClearing(true);
-            try {
-              const res = await apiFetch("/api/splitwise/clear", {
-                method: "POST",
-                body: { disconnectToken: true },
-              });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                Alert.alert("Could not disconnect", (data as { error?: string }).error ?? "Try again.");
-                return;
-              }
-              setSplitwiseResult(null);
-              DeviceEventEmitter.emit("groups-updated");
-              await fetchSplitwiseStatus();
-            } catch {
-              Alert.alert("Error", "Could not disconnect. Check your connection.");
-            } finally {
-              setSplitwiseClearing(false);
-            }
-          },
+          onPress: () => void runSplitwiseClearAndRefresh(),
         },
       ]
     );
   };
+
+  /** Linked token only (no imported data yet): remove OAuth token without implying a full data wipe. */
+  const removeSplitwiseSavedLogin = () => {
+    Alert.alert(
+      "Remove saved login?",
+      "Coconut will forget your Splitwise authorization. You haven’t imported groups yet, so nothing is removed from Shared.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => void runSplitwiseClearAndRefresh(),
+        },
+      ]
+    );
+  };
+
+  const hasSplitwiseImportedData = useMemo(
+    () =>
+      (splitwiseStatus?.importedSplitwiseGroupCount ?? 0) > 0 || Boolean(splitwiseResult?.ok),
+    [splitwiseStatus?.importedSplitwiseGroupCount, splitwiseResult?.ok]
+  );
 
   const disconnectBank = () => {
     Alert.alert(
@@ -756,8 +831,8 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise</Text>
           <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Connect once in the browser, then import groups and expenses. &quot;Disconnect&quot; removes Coconut&apos;s copy and
-            the saved Splitwise token on our servers (your Splitwise account is unchanged).
+            Connect once in the browser, then import groups and expenses. After data is imported, you can disconnect to remove
+            Coconut&apos;s copy and the saved token (your Splitwise account is unchanged).
           </Text>
 
           {splitwiseResult ? (
@@ -784,11 +859,17 @@ export default function SettingsScreen() {
             </View>
           ) : null}
 
-          {!splitwiseStatus?.configured ? (
+          {splitwiseLoading && splitwiseStatus === null ? (
+            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
+          ) : splitwiseStatus === null ? (
+            <Text style={[styles.muted, { color: theme.textQuaternary, marginTop: 8 }]}>
+              Couldn&apos;t load Splitwise status. Check your connection and open Settings again.
+            </Text>
+          ) : !splitwiseStatus.configured ? (
             <Text style={[styles.muted, { color: theme.textQuaternary, marginTop: 8 }]}>
               Not available in this environment.
             </Text>
-          ) : !splitwiseStatus?.connected ? (
+          ) : !splitwiseStatus.connected ? (
             <View style={{ gap: 12, marginTop: 4 }}>
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
@@ -800,10 +881,10 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <View style={{ gap: 12, marginTop: 4 }}>
-              {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) === 0 ? (
+              {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) === 0 && !splitwiseResult?.ok ? (
                 <Text style={[styles.muted, { color: theme.textTertiary, marginBottom: 4 }]}>
                   Splitwise is linked to your account, but nothing is imported yet. Open the Shared tab after import, or tap
-                  Import now. If you didn&apos;t mean to connect, use Disconnect to remove the saved login.
+                  Import now.
                 </Text>
               ) : null}
               <TouchableOpacity
@@ -817,22 +898,34 @@ export default function SettingsScreen() {
                   <Text style={styles.primaryBtnText}>Import from Splitwise</Text>
                 )}
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.splitwiseDisconnectBtn,
-                  { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
-                ]}
-                onPress={disconnectSplitwiseAndClear}
-                disabled={splitwiseClearing || splitwiseImporting}
-              >
-                {splitwiseClearing ? (
-                  <ActivityIndicator size="small" color={theme.error} />
-                ) : (
-                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error }]}>
-                    Disconnect &amp; remove saved login
+              {hasSplitwiseImportedData ? (
+                <TouchableOpacity
+                  style={[
+                    styles.splitwiseDisconnectBtn,
+                    { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
+                  ]}
+                  onPress={disconnectSplitwiseAndClear}
+                  disabled={splitwiseClearing || splitwiseImporting}
+                >
+                  {splitwiseClearing ? (
+                    <ActivityIndicator size="small" color={theme.error} />
+                  ) : (
+                    <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error }]}>
+                      Disconnect &amp; remove saved login
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={removeSplitwiseSavedLogin}
+                  disabled={splitwiseClearing || splitwiseImporting}
+                  style={{ alignSelf: "flex-start", paddingVertical: 4 }}
+                >
+                  <Text style={{ color: theme.textQuaternary, fontSize: 14, textDecorationLine: "underline" }}>
+                    Remove saved Splitwise login
                   </Text>
-                )}
-              </TouchableOpacity>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
