@@ -5,7 +5,7 @@ import { useTheme } from "../lib/theme-context";
 
 /**
  * OAuth return target — URL must stay iOS-Safari-safe (no parentheses in path).
- * Server HTML page links to e.g. coconut-dev:///splitwise-callback?splitwise=connected&import=1
+ * Server HTML page links to e.g. coconut-dev://splitwise-callback?splitwise=connected&import=1
  */
 export default function SplitwiseCallbackScreen() {
   const { theme } = useTheme();
