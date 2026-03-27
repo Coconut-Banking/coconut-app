@@ -23,6 +23,7 @@ import { useApiFetch } from "../../lib/api";
 import { useTransactions } from "../../hooks/useTransactions";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Constants from "expo-constants";
+import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../lib/theme-context";
 import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -300,8 +301,8 @@ export default function SettingsScreen() {
   }, [splitwiseParams?.splitwise_error, router]);
 
   /**
-   * GET /api/splitwise/auth-url returns JSON { url } — RN fetch usually follows 302 and drops Location,
-   * so redirect: "manual" on /api/splitwise/auth does not work reliably.
+   * Native: in-app auth session (SFSafariViewController / Custom Tabs) so the callback URL returns to the app
+   * without system Safari / invalid custom-scheme links. Web: open external browser.
    */
   const connectSplitwise = async () => {
     splitwiseAutoImportStarted.current = false;
@@ -361,7 +362,65 @@ export default function SettingsScreen() {
         Alert.alert("Could not open Splitwise", "Server did not return an authorization URL. Deploy the latest API.");
         return;
       }
-      await Linking.openURL(url);
+
+      const callbackUrl = `${API_URL.replace(/\/$/, "")}/api/splitwise/callback`;
+
+      if (Platform.OS === "web") {
+        await Linking.openURL(url);
+        return;
+      }
+
+      WebBrowser.maybeCompleteAuthSession();
+      const result = await WebBrowser.openAuthSessionAsync(url, callbackUrl, {
+        preferEphemeralSession: true,
+      });
+
+      if (result.type !== "success") {
+        return;
+      }
+
+      try {
+        const returned = new URL(result.url);
+        if (returned.searchParams.get("error")) {
+          Alert.alert("Splitwise", "Authorization was cancelled or denied.");
+          return;
+        }
+      } catch {
+        /* ignore malformed return URL */
+      }
+
+      const verifyRes = await apiFetch("/api/splitwise/status");
+      if (!verifyRes.ok) {
+        Alert.alert("Splitwise", "Could not verify the connection. Pull to refresh on Settings.");
+        return;
+      }
+      const st = (await verifyRes.json()) as {
+        configured?: boolean;
+        connected?: boolean;
+        connectedAt?: string | null;
+        importedSplitwiseGroupCount?: unknown;
+      };
+      if (typeof st.configured !== "boolean" || typeof st.connected !== "boolean") {
+        Alert.alert("Splitwise", "Could not verify the connection. Pull to refresh on Settings.");
+        return;
+      }
+      const n = st.importedSplitwiseGroupCount;
+      setSplitwiseStatus({
+        configured: st.configured,
+        connected: st.connected,
+        connectedAt: st.connectedAt ?? null,
+        importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+      });
+      if (!st.connected) {
+        Alert.alert(
+          "Splitwise",
+          "Connection did not complete. Try Connect again, or use the Coconut website if this keeps happening.",
+        );
+        return;
+      }
+
+      splitwiseAutoImportStarted.current = false;
+      await startSplitwiseImport();
     } catch (e) {
       if (__DEV__) console.warn("[splitwise] auth exception", e);
       Alert.alert("Could not open Splitwise", "Something went wrong. Please try again.");
