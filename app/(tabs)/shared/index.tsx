@@ -24,6 +24,7 @@ import { useDemoMode } from "../../../lib/demo-mode-context";
 import { SharedSkeletonScreen } from "../../../components/ui";
 import { useDemoData } from "../../../lib/demo-context";
 import { colors, font, radii, prototype } from "../../../lib/theme";
+import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../../lib/format-split-money";
 
 const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -77,7 +78,12 @@ export default function SharedIndex() {
   const [addingFriend, setAddingFriend] = useState(false);
   const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
   const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
-  const [optimisticFriends, setOptimisticFriends] = useState<Array<{ key: string; displayName: string; balance: number }>>([]);
+  const [optimisticFriends, setOptimisticFriends] = useState<
+    Array<{ key: string; displayName: string; balance: number; balances?: { currency: string; amount: number }[] }>
+  >([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedGroups, setArchivedGroups] = useState<Array<{ id: string; name: string; memberCount: number }>>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
   const prevFocused = useRef(false);
   const prevDemoOn = useRef(isDemoOn);
   const optimisticStoreKey = `coconut.optimistic.friends.${userId ?? "anon"}`;
@@ -165,6 +171,32 @@ export default function SharedIndex() {
   }, [isDemoOn, onRefresh]);
 
   useEffect(() => {
+    if (!showArchived || isDemoOn) return;
+    let cancelled = false;
+    (async () => {
+      setArchivedLoading(true);
+      try {
+        const res = await apiFetch("/api/groups?archived=1");
+        if (!res.ok || cancelled) return;
+        const data = await res.json().catch(() => []);
+        if (!Array.isArray(data) || cancelled) return;
+        setArchivedGroups(
+          data.map((g: { id: unknown; name?: string; memberCount?: number }) => ({
+            id: String(g.id),
+            name: String(g.name ?? "Group"),
+            memberCount: Number(g.memberCount ?? 0),
+          }))
+        );
+      } finally {
+        if (!cancelled) setArchivedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showArchived, isDemoOn, apiFetch]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -172,10 +204,22 @@ export default function SharedIndex() {
         if (!raw || cancelled) return;
         const parsed = JSON.parse(raw) as {
           groups?: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>;
-          friends?: Array<{ key: string; displayName: string; balance: number }>;
+          friends?: Array<{
+            key: string;
+            displayName: string;
+            balance: number;
+            balances?: { currency: string; amount: number }[];
+          }>;
         };
         if (Array.isArray(parsed.groups)) setOptimisticGroups(parsed.groups);
-        if (Array.isArray(parsed.friends)) setOptimisticFriends(parsed.friends);
+        if (Array.isArray(parsed.friends)) {
+          setOptimisticFriends(
+            parsed.friends.map((f) => ({
+              ...f,
+              balances: f.balances ?? [],
+            }))
+          );
+        }
       } catch {
         // ignore cache parse errors
       }
@@ -260,7 +304,10 @@ export default function SharedIndex() {
       await refetch(true);
       await onRefresh();
       const nextGroups = [{ id: group.id, name, memberCount: 2, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== group.id)];
-      const nextFriends = [{ key: `opt-${group.id}`, displayName: name, balance: 0 }, ...optimisticFriends.filter((f) => f.displayName !== name)];
+      const nextFriends = [
+        { key: `opt-${group.id}`, displayName: name, balance: 0, balances: [] as { currency: string; amount: number }[] },
+        ...optimisticFriends.filter((f) => f.displayName !== name),
+      ];
       setOptimisticGroups(nextGroups);
       setOptimisticFriends(nextFriends);
       await persistOptimistic(nextGroups, nextFriends);
@@ -279,7 +326,12 @@ export default function SharedIndex() {
   const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
   const fallbackFriendRows = fallbackGroups
     .filter((g) => (g.groupType ?? "other") !== "home")
-    .map((g) => ({ key: `fb-${g.id}`, displayName: g.name, balance: 0 }));
+    .map((g) => ({
+      key: `fb-${g.id}`,
+      displayName: g.name,
+      balance: 0,
+      balances: [] as { currency: string; amount: number }[],
+    }));
   const mergedFallbackFriends = [
     ...optimisticFriends,
     ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
@@ -303,6 +355,7 @@ export default function SharedIndex() {
           name: g.name,
           memberCount: g.memberCount,
           myBalance: 0,
+          myBalances: [] as { currency: string; amount: number }[],
           lastActivityAt: new Date().toISOString(),
         }));
   const optimisticAsGroups = optimisticGroups
@@ -312,6 +365,7 @@ export default function SharedIndex() {
       name: g.name,
       memberCount: g.memberCount,
       myBalance: 0,
+      myBalances: [] as { currency: string; amount: number }[],
       lastActivityAt: new Date().toISOString(),
     }));
   const groups = !isDemoOn && realSummary != null ? [...optimisticAsGroups, ...groupsFromApi] : isDemoOn ? summaryGroups : groupsFromApi;
@@ -446,12 +500,34 @@ export default function SharedIndex() {
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={st.rowName}>{f.displayName}</Text>
                     <Text style={st.rowSub}>
-                      {f.balance === 0 ? "settled up" : f.balance > 0 ? "owes you" : "you owe"}
+                      {(() => {
+                        const lines = friendBalanceLines(f);
+                        if (lines.length === 0) return "settled up";
+                        const pos =
+                          lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
+                        const neg =
+                          lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
+                        if (!pos && !neg) return "balances";
+                        return pos ? "owes you" : "you owe";
+                      })()}
                     </Text>
                   </View>
-                  <Text style={[st.rowBal, f.balance > 0 ? st.balIn : f.balance < 0 ? st.balOut : st.muted]}>
-                    {f.balance === 0 ? "—" : `${f.balance > 0 ? "+" : "−"}$${Math.abs(f.balance).toFixed(2)}`}
-                  </Text>
+                  <View style={{ alignItems: "flex-end" }}>
+                    {friendBalanceLines(f).length === 0 ? (
+                      <Text style={[st.rowBal, st.muted]}>—</Text>
+                    ) : (
+                      friendBalanceLines(f).map((b) => {
+                        const p = b.amount > 0.005;
+                        const n = b.amount < -0.005;
+                        return (
+                          <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
+                            {p ? "+" : n ? "−" : ""}
+                            {formatSplitCurrencyAmount(b.amount, b.currency)}
+                          </Text>
+                        );
+                      })
+                    )}
+                  </View>
                   <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
                 </TouchableOpacity>
                 {i < friends.length - 1 ? <View style={st.rowSep} /> : null}
@@ -483,9 +559,18 @@ export default function SharedIndex() {
                     <Text style={st.rowName}>{g.name}</Text>
                     <Text style={st.rowSub}>{g.memberCount} members · {timeAgo(g.lastActivityAt)}</Text>
                   </View>
-                  <Text style={[st.rowBal, g.myBalance > 0 ? st.balIn : g.myBalance < 0 ? st.balOut : st.muted]}>
-                    {g.myBalance === 0 ? "—" : `${g.myBalance > 0 ? "+" : "−"}$${Math.abs(g.myBalance).toFixed(2)}`}
-                  </Text>
+                  <View style={{ alignItems: "flex-end" }}>
+                    {groupBalanceLines(g).length === 0 ? (
+                      <Text style={[st.rowBal, st.muted]}>—</Text>
+                    ) : (
+                      groupBalanceLines(g).map((b) => (
+                        <Text key={b.currency} style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
+                          {b.amount > 0 ? "+" : "−"}
+                          {formatSplitCurrencyAmount(b.amount, b.currency)}
+                        </Text>
+                      ))
+                    )}
+                  </View>
                   <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
                 </TouchableOpacity>
                 {i < visibleGroups.length - 1 ? <View style={st.rowSep} /> : null}
@@ -493,6 +578,52 @@ export default function SharedIndex() {
             ))}
           </View>
         )}
+
+        {!isDemoOn ? (
+          <View style={{ marginTop: 8 }}>
+            <TouchableOpacity
+              onPress={() => setShowArchived((v) => !v)}
+              style={{ paddingVertical: 14 }}
+              hitSlop={8}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 14, fontFamily: font.semibold, color: colors.primary }}>
+                {showArchived ? "Hide archived groups" : "Show archived groups"}
+              </Text>
+            </TouchableOpacity>
+            {showArchived ? (
+              archivedLoading ? (
+                <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primary} />
+              ) : archivedGroups.length === 0 ? (
+                <Text style={[st.emptySub, { marginBottom: 16 }]}>No archived groups.</Text>
+              ) : (
+                <View style={st.groupedCard}>
+                  {archivedGroups.map((g, i) => (
+                    <View key={g.id}>
+                      <TouchableOpacity
+                        style={st.groupedRow}
+                        onPress={() =>
+                          router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })
+                        }
+                        activeOpacity={0.75}
+                      >
+                        <View style={st.groupIcon}>
+                          <Ionicons name="archive-outline" size={18} color="#1F2328" />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={st.rowName}>{g.name}</Text>
+                          <Text style={st.rowSub}>{g.memberCount} members · archived</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+                      </TouchableOpacity>
+                      {i < archivedGroups.length - 1 ? <View style={st.rowSep} /> : null}
+                    </View>
+                  ))}
+                </View>
+              )
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

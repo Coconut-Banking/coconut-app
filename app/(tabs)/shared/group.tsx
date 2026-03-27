@@ -9,6 +9,7 @@ import {
   Alert,
   Share,
   RefreshControl,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { useTheme } from "../../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme";
+import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
@@ -63,6 +65,23 @@ export default function GroupScreen() {
     try { await refetch(true); } finally { setRefreshing(false); }
   }, [refetch]);
 
+  const patchArchive = async (archived: boolean) => {
+    if (!id || isDemoOn) return;
+    const res = await apiFetch(`/api/groups/${id}`, {
+      method: "PATCH",
+      body: { archived } as object,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      Alert.alert("Couldn’t update group", (err as { error?: string }).error ?? "Try again.");
+      return;
+    }
+    DeviceEventEmitter.emit("groups-updated");
+    await refetch(true);
+    await refetchSummary();
+    if (archived) router.back();
+  };
+
   if (!detail) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -72,7 +91,9 @@ export default function GroupScreen() {
   }
 
   const hasActivity = (detail.activity?.length ?? 0) > 0;
-  const allSettled = (detail.balances?.filter((b) => b.total !== 0).length ?? 0) === 0;
+  const allSettled = (detail.balances?.filter((b) => Math.abs(b.total) >= 0.005).length ?? 0) === 0;
+  const isArchived = Boolean(detail.archivedAt);
+  const memberNameById = new Map(detail.members.map((m) => [m.id, m.display_name]));
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -89,9 +110,71 @@ export default function GroupScreen() {
           <View>
             <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
             <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
-              {detail.members.length} members · ${detail.totalSpend?.toFixed(2) ?? "0.00"} total
+              {detail.members.length} members ·{" "}
+              {detail.totalSpend != null
+                ? `$${detail.totalSpend.toFixed(2)}`
+                : (detail.totalSpendByCurrency ?? [])
+                    .map((r) => `${r.currency} ${r.amount.toFixed(2)}`)
+                    .join(" · ") || "—"}{" "}
+              total
             </Text>
           </View>
+        </View>
+
+        {isArchived ? (
+          <View
+            style={[
+              s.archivedBanner,
+              { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight },
+            ]}
+          >
+            <Text style={[s.archivedBannerText, { color: theme.textSecondary }]}>
+              Archived — hidden from your main group list.
+            </Text>
+            {detail.isOwner ? (
+              <TouchableOpacity onPress={() => patchArchive(false)} hitSlop={8}>
+                <Text style={[s.archivedRestore, { color: theme.primary }]}>Restore</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        <Text style={[s.section, { color: theme.textTertiary }]}>Balances</Text>
+        <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          {allSettled ? (
+            <Text style={[s.balanceRowText, { color: theme.textQuaternary, padding: 14 }]}>
+              Everyone is settled up in this group.
+            </Text>
+          ) : (
+            (detail.balances ?? [])
+              .filter((b) => Math.abs(b.total) >= 0.005)
+              .map((b, i, arr) => (
+                <View
+                  key={`${b.memberId}-${b.currency}`}
+                  style={[
+                    s.balanceRow,
+                    i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+                  ]}
+                >
+                  <Text style={[s.balanceRowName, { color: theme.text }]}>
+                    {memberNameById.get(b.memberId) ?? "Member"}{" "}
+                    <Text style={{ color: theme.textQuaternary, fontSize: 12 }}>({b.currency})</Text>
+                  </Text>
+                  <Text
+                    style={[
+                      s.balanceRowAmt,
+                      { color: b.total > 0 ? theme.positive : b.total < 0 ? "#C94C4C" : theme.textQuaternary },
+                    ]}
+                  >
+                    {b.total > 0
+                      ? `Gets back ${formatSplitCurrencyAmount(b.total, b.currency)}`
+                      : b.total < 0
+                        ? `Owes ${formatSplitCurrencyAmount(b.total, b.currency)}`
+                        : "Settled"}
+                  </Text>
+                </View>
+              ))
+          )}
         </View>
 
         <Text style={[s.section, { color: theme.textTertiary }]}>Transactions</Text>
@@ -118,7 +201,9 @@ export default function GroupScreen() {
                   <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
                   <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
                 </View>
-                <Text style={[s.txAmount, { color: theme.text }]}>${a.amount.toFixed(2)}</Text>
+                <Text style={[s.txAmount, { color: theme.text }]}>
+                  {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
+                </Text>
               </View>
             ))}
           </View>
@@ -133,8 +218,13 @@ export default function GroupScreen() {
               const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
               const theyPayMe = myMemberId && su.toMemberId === myMemberId;
               const iPayThem = myMemberId && su.fromMemberId === myMemberId;
+              const canMarkPaid =
+                Boolean(theyPayMe || iPayThem || (detail.isOwner && !isDemoOn));
               return (
-                <View key={`${su.fromMemberId}-${su.toMemberId}`} style={[s.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+                <View
+                  key={`${su.currency}-${su.fromMemberId}-${su.toMemberId}`}
+                  style={[s.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}
+                >
                   <View style={s.suggPeople}>
                     <MemberAvatar name={fromName} />
                     <Ionicons name="arrow-forward" size={14} color={theme.textQuaternary} />
@@ -144,7 +234,9 @@ export default function GroupScreen() {
                     <Text style={[s.suggText, { color: theme.textSecondary }]}>
                       <Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>{toName}</Text>
                     </Text>
-                    <Text style={[s.suggAmount, { color: theme.positive }]}>${su.amount.toFixed(2)}</Text>
+                    <Text style={[s.suggAmount, { color: theme.positive }]}>
+                      {formatSplitCurrencyAmount(su.amount, su.currency)}
+                    </Text>
                   </View>
                   <View style={s.suggActions}>
                     {theyPayMe && (
@@ -170,12 +262,18 @@ export default function GroupScreen() {
                         <Text style={s.miniBtnText}>Request</Text>
                       </TouchableOpacity>
                     )}
-                    {(theyPayMe || iPayThem) && (
+                    {canMarkPaid && (
                       <TouchableOpacity
                         style={[s.miniBtn, { borderWidth: 1, borderColor: theme.border }]}
                         onPress={() => {
                           if (isDemoOn && id) { demo.settleGroupSuggestion(id, su.fromMemberId, su.toMemberId); return; }
-                          Alert.alert("Mark as paid", `Mark $${su.amount.toFixed(2)} as paid?`, [
+                          const who = `${fromName} → ${toName}`;
+                          Alert.alert(
+                            "Mark as paid",
+                            detail.isOwner && !theyPayMe && !iPayThem
+                              ? `Record that ${who} settled $${su.amount.toFixed(2)}? (You’re the group owner.)`
+                              : `Mark $${su.amount.toFixed(2)} as paid?`,
+                            [
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Mark paid",
@@ -184,9 +282,16 @@ export default function GroupScreen() {
                                 try {
                                   const res = await apiFetch("/api/settlements", {
                                     method: "POST",
-                                    body: { groupId: id, payerMemberId: su.fromMemberId, receiverMemberId: su.toMemberId, amount: su.amount, method: "manual" },
+                                    body: {
+                                      groupId: id,
+                                      payerMemberId: su.fromMemberId,
+                                      receiverMemberId: su.toMemberId,
+                                      amount: su.amount,
+                                      method: "manual",
+                                      currency: su.currency,
+                                    },
                                   });
-                                  if (res.ok) { refetch(); refetchSummary(); }
+                                  if (res.ok) { refetch(); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
                                 } finally { setRecordingSettlement(false); }
                               },
                             },
@@ -211,6 +316,25 @@ export default function GroupScreen() {
             <Text style={[s.settledBadgeText, { color: theme.primaryDark }]}>All settled up</Text>
           </View>
         )}
+
+        {!isDemoOn && detail.isOwner && !isArchived ? (
+          <TouchableOpacity
+            style={{ marginTop: 28, paddingVertical: 12 }}
+            onPress={() =>
+              Alert.alert(
+                "Archive this group?",
+                "It will disappear from your main list. Open People & groups → Show archived groups to restore it.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Archive", style: "destructive", onPress: () => void patchArchive(true) },
+                ]
+              )
+            }
+            activeOpacity={0.7}
+          >
+            <Text style={[s.archiveLink, { color: theme.textQuaternary }]}>Archive group</Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -250,6 +374,29 @@ const s = StyleSheet.create({
   miniBtnSecondaryText: { color: colors.textSecondary, fontWeight: "500", fontFamily: font.medium, fontSize: 13 },
   settledBadge: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.primaryLight, padding: 14, borderRadius: radii.md },
   settledBadgeText: { fontSize: 14, color: colors.primaryDark, fontWeight: "600", fontFamily: font.semibold },
+  archivedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 12,
+  },
+  archivedBannerText: { flex: 1, fontSize: 13, fontFamily: font.regular },
+  archivedRestore: { fontSize: 14, fontFamily: font.semibold },
+  balanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  balanceRowName: { fontSize: 15, fontFamily: font.semibold, flex: 1 },
+  balanceRowAmt: { fontSize: 14, fontFamily: font.semibold, marginLeft: 8 },
+  balanceRowText: { fontSize: 14, fontFamily: font.regular },
+  archiveLink: { fontSize: 14, fontFamily: font.medium, textAlign: "center" },
   bold: { fontWeight: "700", fontFamily: font.bold },
   green: { color: colors.green },
   avatar: { justifyContent: "center", alignItems: "center" },

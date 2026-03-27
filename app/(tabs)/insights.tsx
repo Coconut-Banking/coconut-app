@@ -57,9 +57,20 @@ export default function InsightsScreen() {
     () => deriveTopCategories(transactions),
     [transactions]
   );
-  const sharedNet = groupsSummary
-    ? groupsSummary.totalOwedToMe - groupsSummary.totalIOwe
-    : 0;
+  const sharedNetText =
+    groupsSummary?.netBalance != null
+      ? `${groupsSummary.netBalance >= 0 ? "+" : ""}$${Math.abs(groupsSummary.netBalance).toFixed(0)}`
+      : (groupsSummary?.totalsByCurrency?.length ?? 0) > 1
+        ? "Multiple currencies"
+        : "$0";
+  const sharedNetTone =
+    groupsSummary?.netBalance != null
+      ? groupsSummary.netBalance > 0
+        ? 1
+        : groupsSummary.netBalance < 0
+          ? -1
+          : 0
+      : 0;
 
   const openSettings = () => router.push("/(tabs)/settings");
 
@@ -124,11 +135,11 @@ export default function InsightsScreen() {
           style={[
             styles.cardValue,
             { color: theme.text },
-            sharedNet > 0 && { color: theme.positive },
-            sharedNet < 0 && { color: "#B45309" },
+            sharedNetTone > 0 && { color: theme.positive },
+            sharedNetTone < 0 && { color: "#B45309" },
           ]}
         >
-          {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
+          {sharedNetText}
         </Text>
         <Text style={[styles.cardLabel, { color: theme.textTertiary }]}>Shared net</Text>
       </View>

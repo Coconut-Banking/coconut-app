@@ -35,6 +35,7 @@ import {
   demoChargeToStripRow,
   type HomeBankStripRow,
 } from "../../lib/home-bank-strip";
+import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 
 const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -140,7 +141,7 @@ export default function BalancesPrototypeScreen() {
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
-  const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx } = useTransactions();
+  const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx, runFullSync } = useTransactions();
   const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
   const initialHomeLoading =
     !isDemoOn &&
@@ -189,11 +190,12 @@ export default function BalancesPrototypeScreen() {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      await Promise.all([refetch(), refetchTx()]);
+      // runFullSync pulls fresh data from Plaid into the DB, then reloads the list (can take ~15–30s).
+      await Promise.all([refetch(), runFullSync(false)]);
     } finally {
       setRefreshing(false);
     }
-  }, [isDemoOn, refetch, refetchTx]);
+  }, [isDemoOn, refetch, runFullSync]);
 
   useEffect(() => {
     if (isDemoOn) return;
@@ -320,6 +322,11 @@ export default function BalancesPrototypeScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
+            {linked && txStatus === "ok" ? (
+              <Text style={styles.bankSyncHint}>
+                Pull down on Home to sync new charges from your bank (often ~15–30s). Updates also arrive in the background when your bank notifies Plaid.
+              </Text>
+            ) : null}
             {txStatus === "api_unreachable" ? (
               <View style={styles.emptyBank}>
                 <Text style={styles.emptyBankText}>
@@ -470,8 +477,26 @@ export default function BalancesPrototypeScreen() {
             <View style={styles.groupedCard}>
               {friends.map((f, i) => {
                 const nExp = friendExpenseCount(f.key);
-                const pos = f.balance > 0;
-                const neg = f.balance < 0;
+                const lines = friendBalanceLines(f);
+                const settled = lines.length === 0;
+                const pos =
+                  !settled &&
+                  lines.some((l) => l.amount > 0.005) &&
+                  lines.every((l) => l.amount >= -0.005);
+                const neg =
+                  !settled &&
+                  lines.some((l) => l.amount < -0.005) &&
+                  lines.every((l) => l.amount <= 0.005);
+                const mixed = !settled && !pos && !neg;
+                const expSuffix =
+                  nExp != null ? ` · ${nExp} expense${nExp !== 1 ? "s" : ""}` : "";
+                const meta = settled
+                  ? "settled up"
+                  : mixed
+                    ? `balances${expSuffix}`
+                    : pos
+                      ? `owes you${expSuffix}`
+                      : `you owe${expSuffix}`;
                 return (
                   <View key={f.key}>
                     <TouchableOpacity
@@ -482,24 +507,31 @@ export default function BalancesPrototypeScreen() {
                       <FriendAvatar name={f.displayName} />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={styles.friendName}>{f.displayName}</Text>
-                        <Text style={styles.friendMeta}>
-                          {f.balance === 0
-                            ? "settled up"
-                            : pos
-                              ? `owes you${nExp != null ? ` · ${nExp} expense${nExp !== 1 ? "s" : ""}` : ""}`
-                              : `you owe${nExp != null ? ` · ${nExp} expense${nExp !== 1 ? "s" : ""}` : ""}`}
-                        </Text>
+                        <Text style={styles.friendMeta}>{meta}</Text>
                       </View>
-                      <Text
-                        style={[
-                          styles.friendAmt,
-                          pos && { color: prototype.green },
-                          neg && { color: prototype.red },
-                          f.balance === 0 && { color: darkUI.labelMuted },
-                        ]}
-                      >
-                        {f.balance === 0 ? "—" : `${pos ? "+" : "−"}$${Math.abs(f.balance).toFixed(2)}`}
-                      </Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        {settled ? (
+                          <Text style={[styles.friendAmt, { color: darkUI.labelMuted }]}>—</Text>
+                        ) : (
+                          lines.map((b) => {
+                            const p = b.amount > 0.005;
+                            const n = b.amount < -0.005;
+                            return (
+                              <Text
+                                key={b.currency}
+                                style={[
+                                  styles.friendAmt,
+                                  p && { color: prototype.green },
+                                  n && { color: prototype.red },
+                                ]}
+                              >
+                                {p ? "+" : n ? "−" : ""}
+                                {formatSplitCurrencyAmount(b.amount, b.currency)}
+                              </Text>
+                            );
+                          })
+                        )}
+                      </View>
                       <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
                     </TouchableOpacity>
                     {i < friends.length - 1 ? <View style={styles.rowSep} /> : null}
@@ -534,15 +566,21 @@ export default function BalancesPrototypeScreen() {
                             {g.memberCount} members · {timeAgo(g.lastActivityAt)}
                           </Text>
                         </View>
-                        {g.myBalance !== 0 ? (
-                          <Text
-                            style={[
-                              styles.groupRowBal,
-                              g.myBalance > 0 ? styles.balAmtIn : styles.balAmtOut,
-                            ]}
-                          >
-                            {g.myBalance > 0 ? "+" : "−"}${Math.abs(g.myBalance).toFixed(2)}
-                          </Text>
+                        {groupBalanceLines(g).length > 0 ? (
+                          <View style={{ alignItems: "flex-end" }}>
+                            {groupBalanceLines(g).map((b) => (
+                              <Text
+                                key={b.currency}
+                                style={[
+                                  styles.groupRowBal,
+                                  b.amount > 0 ? styles.balAmtIn : styles.balAmtOut,
+                                ]}
+                              >
+                                {b.amount > 0 ? "+" : "−"}
+                                {formatSplitCurrencyAmount(b.amount, b.currency)}
+                              </Text>
+                            ))}
+                          </View>
                         ) : (
                           <Text style={[styles.groupRowBal, styles.balMuted]}>—</Text>
                         )}
@@ -737,6 +775,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   seeAll: { fontSize: 13, fontFamily: font.semibold, color: "#1F2328" },
+  bankSyncHint: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#7A8088",
+    marginTop: -4,
+    marginBottom: 10,
+    lineHeight: 17,
+  },
   bankCard: {
     width: 168,
     backgroundColor: "#FFFFFF",

@@ -20,6 +20,7 @@ import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { colors, font, radii, prototype } from "../../../lib/theme";
+import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -69,8 +70,31 @@ export default function PersonScreen() {
     return <PersonSkeletonScreen />;
   }
 
+  const EPS = 0.005;
+  const balLines =
+    detail.currencyBalances && detail.currencyBalances.length > 0
+      ? detail.currencyBalances
+      : detail.balance != null && Math.abs(detail.balance) >= EPS
+        ? [{ currency: "USD", amount: detail.balance }]
+        : [];
+  const settled = balLines.length === 0;
+  const hasPos = balLines.some((b) => b.amount > EPS);
+  const hasNeg = balLines.some((b) => b.amount < -EPS);
+  const pillGreen = hasPos && !hasNeg;
+  const pillRed = hasNeg && !hasPos;
+  const singleOwedYou = balLines.length === 1 && balLines[0].amount > EPS;
+  const firstLine = balLines[0];
+  const canStripeUsd = singleOwedYou && firstLine.currency === "USD";
+
   const handleRequest = async () => {
-    if (detail.balance <= 0) return;
+    if (!singleOwedYou) return;
+    if (!canStripeUsd) {
+      Alert.alert(
+        "Payment request",
+        "In-app payment links are available for USD-only balances. Use Mark paid after settling outside the app."
+      );
+      return;
+    }
     if (isDemoOn) {
       Alert.alert("Demo", "Payment request sent!");
       return;
@@ -78,10 +102,11 @@ export default function PersonScreen() {
     setRequestingPayment(true);
     try {
       const se = (detail.settlements ?? [])[0];
+      const amt = firstLine.amount;
       const res = await apiFetch("/api/stripe/create-payment-link", {
         method: "POST",
         body: {
-          amount: detail.balance,
+          amount: amt,
           description: "expenses",
           recipientName: detail.displayName,
           groupId: se?.groupId,
@@ -92,7 +117,7 @@ export default function PersonScreen() {
       const data = await res.json();
       if (res.ok && data.url) {
         await Share.share({
-          message: `You owe me $${detail.balance.toFixed(2)}. Pay here: ${data.url}`,
+          message: `You owe me ${formatSplitCurrencyAmount(amt, "USD")}. Pay here: ${data.url}`,
           url: data.url,
           title: "Payment request",
         });
@@ -110,7 +135,11 @@ export default function PersonScreen() {
       router.back();
       return;
     }
-    Alert.alert("Mark as paid", `Mark $${Math.abs(detail.balance).toFixed(2)} as paid?`, [
+    const summary =
+      balLines.length > 0
+        ? balLines.map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(", ")
+        : formatSplitCurrencyAmount(0, "USD");
+    Alert.alert("Mark as paid", `Record settled amounts: ${summary}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Mark paid",
@@ -126,6 +155,7 @@ export default function PersonScreen() {
                   receiverMemberId: se.toMemberId,
                   amount: se.amount,
                   method: "manual",
+                  currency: se.currency ?? "USD",
                 },
               });
             }
@@ -141,7 +171,10 @@ export default function PersonScreen() {
   };
 
   const handleTapToPay = () => {
-    if (detail.balance <= 0) return;
+    if (!singleOwedYou || !canStripeUsd) {
+      Alert.alert("Tap to Pay", "Tap to Pay is available for USD balances only.");
+      return;
+    }
     if (isDemoOn) {
       Alert.alert("Demo", "Opening Tap to Pay...");
       return;
@@ -151,15 +184,13 @@ export default function PersonScreen() {
     router.push({
       pathname: "/(tabs)/pay",
       params: {
-        amount: detail.balance.toFixed(2),
+        amount: firstLine.amount.toFixed(2),
         groupId: se.groupId,
         payerMemberId: se.fromMemberId,
         receiverMemberId: se.toMemberId,
       },
     });
   };
-
-  const pos = detail.balance > 0;
 
   return (
     <SafeAreaView style={s.container} edges={["top"]}>
@@ -184,37 +215,58 @@ export default function PersonScreen() {
           <View
             style={[
               s.balancePill,
-              pos ? { backgroundColor: prototype.greenBg, borderColor: `${prototype.green}44` } : detail.balance < 0
-                ? { backgroundColor: prototype.redBg, borderColor: `${prototype.red}44` }
+              pillGreen
+                ? { backgroundColor: prototype.greenBg, borderColor: `${prototype.green}44` }
+                : pillRed
+                  ? { backgroundColor: prototype.redBg, borderColor: `${prototype.red}44` }
                   : { backgroundColor: "#F7F3F0", borderColor: "#E3DBD8" },
             ]}
           >
-            <Text
-              style={[
-                s.balanceAmt,
-                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: "#8A9098" },
-              ]}
-            >
-              {detail.balance === 0 ? "$0.00" : `${pos ? "+" : detail.balance < 0 ? "−" : ""}$${Math.abs(detail.balance).toFixed(2)}`}
-            </Text>
+            {settled ? (
+              <Text style={[s.balanceAmt, { color: "#8A9098" }]}>{formatSplitCurrencyAmount(0, "USD")}</Text>
+            ) : (
+              balLines.map((b) => {
+                const p = b.amount > EPS;
+                const n = b.amount < -EPS;
+                return (
+                  <Text
+                    key={b.currency}
+                    style={[
+                      s.balanceAmt,
+                      p ? { color: prototype.green } : n ? { color: prototype.red } : { color: "#8A9098" },
+                      balLines.length > 1 ? { fontSize: 22, marginBottom: 4 } : null,
+                    ]}
+                  >
+                    {p ? "+" : n ? "−" : ""}
+                    {formatSplitCurrencyAmount(b.amount, b.currency)}
+                  </Text>
+                );
+              })
+            )}
             <Text
               style={[
                 s.balanceLbl,
-                pos ? { color: prototype.green } : detail.balance < 0 ? { color: prototype.red } : { color: "#8A9098" },
+                pillGreen
+                  ? { color: prototype.green }
+                  : pillRed
+                    ? { color: prototype.red }
+                    : { color: "#8A9098" },
               ]}
             >
-              {detail.balance > 0
-                ? `${detail.displayName.split(" ")[0] ?? "They"} owes you`
-                : detail.balance < 0
-                  ? `You owe ${detail.displayName.split(" ")[0] ?? "them"}`
-                  : "All settled up"}
+              {settled
+                ? "All settled up"
+                : pillGreen
+                  ? `${detail.displayName.split(" ")[0] ?? "They"} owes you`
+                  : pillRed
+                    ? `You owe ${detail.displayName.split(" ")[0] ?? "them"}`
+                    : "Open balances"}
             </Text>
           </View>
         </View>
 
-        {detail.balance !== 0 && (
+        {!settled && (
           <View style={s.actions}>
-            {detail.balance > 0 && (
+            {singleOwedYou && (
               <>
                 <TouchableOpacity style={s.btnPrimary} onPress={handleRequest} disabled={requestingPayment} activeOpacity={0.7}>
                   {requestingPayment ? (
@@ -242,7 +294,7 @@ export default function PersonScreen() {
           </View>
         )}
 
-        {detail.balance === 0 && detail.activity.length > 0 && (
+        {settled && detail.activity.length > 0 && (
           <View style={s.settledBadge}>
             <Ionicons name="checkmark-circle" size={20} color={prototype.green} />
             <Text style={s.settledText}>All settled up with {detail.displayName}</Text>
@@ -273,9 +325,12 @@ export default function PersonScreen() {
                             : { color: "#8A9098" },
                       ]}
                     >
-                      {a.effectOnBalance > 0 ? "+" : a.effectOnBalance < 0 ? "-" : ""}${Math.abs(a.effectOnBalance).toFixed(2)}
+                      {a.effectOnBalance > 0 ? "+" : a.effectOnBalance < 0 ? "-" : ""}
+                      {formatSplitCurrencyAmount(a.effectOnBalance, a.currency ?? "USD")}
                     </Text>
-                    <Text style={s.txTotal}>${a.amount.toFixed(2)} total</Text>
+                    <Text style={s.txTotal}>
+                      {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")} total
+                    </Text>
                   </View>
                 </View>
                 {i < detail.activity.length - 1 ? <View style={s.rowSep} /> : null}

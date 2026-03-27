@@ -37,9 +37,47 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const [activity, setActivity] = useState<RecentActivityItem[]>([...DEMO_ACTIVITY]);
 
   const recalcSummary = useCallback((friends: FriendBalance[]) => {
-    const totalOwedToMe = friends.filter(f => f.balance > 0).reduce((s, f) => s + f.balance, 0);
-    const totalIOwe = friends.filter(f => f.balance < 0).reduce((s, f) => s + Math.abs(f.balance), 0);
-    return { totalOwedToMe, totalIOwe, netBalance: totalOwedToMe - totalIOwe };
+    const totalsMap = new Map<string, { owedToMe: number; iOwe: number }>();
+    for (const f of friends) {
+      const lines =
+        f.balances && f.balances.length > 0
+          ? f.balances
+          : f.balance != null && Math.abs(f.balance) >= 0.005
+            ? [{ currency: "USD", amount: f.balance }]
+            : [];
+      for (const b of lines) {
+        const t = totalsMap.get(b.currency) ?? { owedToMe: 0, iOwe: 0 };
+        if (b.amount > 0.005) t.owedToMe += b.amount;
+        else if (b.amount < -0.005) t.iOwe += Math.abs(b.amount);
+        totalsMap.set(b.currency, t);
+      }
+    }
+    const totalsByCurrency = [...totalsMap.entries()]
+      .map(([currency, v]) => ({
+        currency,
+        owedToMe: Math.round(v.owedToMe * 100) / 100,
+        iOwe: Math.round(v.iOwe * 100) / 100,
+        net: Math.round((v.owedToMe - v.iOwe) * 100) / 100,
+      }))
+      .sort((a, b) => a.currency.localeCompare(b.currency));
+
+    let totalOwedToMe: number | null;
+    let totalIOwe: number | null;
+    let netBalance: number | null;
+    if (totalsByCurrency.length === 0) {
+      totalOwedToMe = 0;
+      totalIOwe = 0;
+      netBalance = 0;
+    } else if (totalsByCurrency.length === 1) {
+      totalOwedToMe = totalsByCurrency[0].owedToMe;
+      totalIOwe = totalsByCurrency[0].iOwe;
+      netBalance = totalsByCurrency[0].net;
+    } else {
+      totalOwedToMe = null;
+      totalIOwe = null;
+      netBalance = null;
+    }
+    return { totalOwedToMe, totalIOwe, netBalance, totalsByCurrency };
   }, []);
 
   const addExpense = useCallback((amount: number, description: string, targetKey: string, targetType: "friend" | "group") => {
@@ -54,6 +92,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
           id,
           merchant: description,
           amount,
+          currency: "USD",
           groupName: "Direct",
           paidByMe: true,
           paidByThem: false,
@@ -62,15 +101,24 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
           effectOnBalance: splitAmount,
           createdAt: new Date().toISOString(),
         }, ...person.activity];
+        const nextBal = (person.balance ?? 0) + splitAmount;
+        const nextLines = [{ currency: "USD", amount: nextBal }];
         return {
           ...prev,
-          [targetKey]: { ...person, balance: person.balance + splitAmount, activity: newActivity },
+          [targetKey]: {
+            ...person,
+            balance: nextBal,
+            currencyBalances: nextLines,
+            activity: newActivity,
+          },
         };
       });
 
       setSummary(prev => {
-        const friends = prev.friends.map(f =>
-          f.key === targetKey ? { ...f, balance: f.balance + splitAmount } : f
+        const friends = prev.friends.map((f) =>
+          f.key === targetKey
+            ? { ...f, balance: (f.balance ?? 0) + splitAmount, balances: [{ currency: "USD", amount: (f.balance ?? 0) + splitAmount }] }
+            : f
         );
         const totals = recalcSummary(friends);
         return { ...prev, friends, ...totals };
@@ -83,13 +131,21 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
           id,
           merchant: description,
           amount,
+          currency: "USD",
           paidBy: "m1",
           splitCount: group.members.length,
           createdAt: new Date().toISOString(),
         }, ...group.activity];
+        const prevSpend = group.totalSpend ?? 0;
+        const nextSpend = prevSpend + amount;
         return {
           ...prev,
-          [targetKey]: { ...group, activity: newAct, totalSpend: group.totalSpend + amount },
+          [targetKey]: {
+            ...group,
+            activity: newAct,
+            totalSpend: nextSpend,
+            totalSpendByCurrency: [{ currency: "USD", amount: nextSpend }],
+          },
         };
       });
 
@@ -117,11 +173,11 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     setPersonDetails(prev => {
       const person = prev[key];
       if (!person) return prev;
-      return { ...prev, [key]: { ...person, balance: 0, settlements: [] } };
+      return { ...prev, [key]: { ...person, balance: 0, currencyBalances: [], settlements: [] } };
     });
 
     setSummary(prev => {
-      const friends = prev.friends.map(f => f.key === key ? { ...f, balance: 0 } : f);
+      const friends = prev.friends.map((f) => (f.key === key ? { ...f, balance: 0, balances: [] } : f));
       const totals = recalcSummary(friends);
       return { ...prev, friends, ...totals };
     });

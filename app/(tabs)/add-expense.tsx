@@ -261,12 +261,18 @@ export default function AddExpenseScreen() {
   const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
   const fallbackFriendRows = mergedFallbackGroups
     .filter((g) => (g.groupType ?? "other") !== "home")
-    .map((g) => ({ key: `grp:${g.id}`, displayName: g.name, balance: 0 }));
+    .map((g) => ({
+      key: `grp:${g.id}`,
+      displayName: g.name,
+      balance: 0,
+      balances: [] as { currency: string; amount: number }[],
+    }));
   const fallbackGroupRows = mergedFallbackGroups.map((g) => ({
     id: g.id,
     name: g.name,
     memberCount: g.memberCount,
     myBalance: 0,
+    myBalances: [],
     lastActivityAt: new Date().toISOString(),
   }));
   const mergedFallbackFriends = [
