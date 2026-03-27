@@ -68,6 +68,7 @@ function AuthSwitch() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
+        <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
       </Stack>
     );
   }
@@ -88,6 +89,7 @@ function AuthSwitch() {
     <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="connected" options={{ headerShown: false }} />
+      <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
     </Stack>
   );
 }
