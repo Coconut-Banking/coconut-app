@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
 import { router } from "expo-router";
 import { useApiFetch } from "../../lib/api";
@@ -83,6 +84,16 @@ export default function SharedScreen() {
       setRefreshing(false);
     }
   }, [refetch, refetchActivity, refetchGroup, refetchPerson, selectedGroupId, selectedPersonKey]);
+
+  const isFocused = useIsFocused();
+  const prevFocusedRef = useRef(false);
+  useEffect(() => {
+    if (isFocused && prevFocusedRef.current) {
+      refetch();
+      refetchActivity();
+    }
+    prevFocusedRef.current = isFocused;
+  }, [isFocused]);
 
   useEffect(() => {
     apiFetch("/api/plaid/status")
