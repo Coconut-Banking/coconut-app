@@ -45,7 +45,8 @@ export function useApiFetch() {
 
       const token = await getTokenWithRetry(gt);
       if (!token) {
-        if (loaded && !signedIn) return unauthResponse();
+        const { isLoaded: loadedNow, isSignedIn: signedInNow } = ref.current;
+        if (loadedNow && !signedInNow) return unauthResponse();
         // Token race window: don't hit backend unauthenticated.
         return new Response(
           JSON.stringify({ error: "Session token unavailable" }),
