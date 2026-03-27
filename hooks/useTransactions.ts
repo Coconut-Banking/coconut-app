@@ -26,9 +26,9 @@ export function useTransactions() {
   const [status, setStatus] = useState<PlaidStatus>("ok");
   const hasShownInitialLoad = useRef(false);
   const transientRetryCount = useRef(0);
+  const cancelledRef = useRef(false);
 
   const fetchData = useCallback((silent = false): Promise<void> => {
-    let cancelled = false;
     const isFirstLoad = !hasShownInitialLoad.current;
     console.log(`[useTransactions] fetchData started silent=${silent} isFirstLoad=${isFirstLoad}`);
     setStatus("ok");
@@ -38,14 +38,14 @@ export function useTransactions() {
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
         clearTimeout(timeout);
-        if (cancelled) return null;
+        if (cancelledRef.current) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
           if (transientRetryCount.current < 8) {
             transientRetryCount.current += 1;
             console.log(`[useTransactions] 425 retry ${transientRetryCount.current}/8`);
             setTimeout(() => {
-              if (!cancelled) fetchData(true);
+              if (!cancelledRef.current) fetchData(true);
             }, 800);
             return null;
           }
@@ -67,7 +67,7 @@ export function useTransactions() {
         return r.json();
       })
       .then((data) => {
-        if (cancelled || !data) return null;
+        if (cancelledRef.current || !data) return null;
         if (!data.linked) {
           console.log("[useTransactions] not linked, loading=false");
           setStatus("not_linked");
@@ -79,15 +79,15 @@ export function useTransactions() {
         return apiFetch("/api/plaid/transactions");
       })
       .then((r) => {
-        if (cancelled || !r || !r.ok) return null;
+        if (cancelledRef.current || !r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelledRef.current) return;
         if (Array.isArray(data)) setTransactions(data as Transaction[]);
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!cancelledRef.current) {
           clearTimeout(timeout);
           hasShownInitialLoad.current = true;
           setLoading(false);
@@ -95,12 +95,16 @@ export function useTransactions() {
       })
       .catch(() => {
         clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
+        if (!cancelledRef.current) setLoading(false);
       });
   }, [apiFetch]);
 
   useEffect(() => {
+    cancelledRef.current = false;
     fetchData();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [fetchData]);
 
   // Refetch when app returns from background (e.g. after connect flow in browser)
