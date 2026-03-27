@@ -223,9 +223,8 @@ export default function SettingsScreen() {
   }, [splitwiseParams?.splitwise_error, router]);
 
   /**
-   * Safari has no Clerk cookie on the API domain — opening /api/splitwise/auth in the browser
-   * returns 401. We fetch with the Bearer token and redirect: "manual", then open the
-   * Location URL (Splitwise) in the system browser.
+   * GET /api/splitwise/auth-url returns JSON { url } — RN fetch usually follows 302 and drops Location,
+   * so redirect: "manual" on /api/splitwise/auth does not work reliably.
    */
   const connectSplitwise = async () => {
     splitwiseAutoImportStarted.current = false;
@@ -233,31 +232,34 @@ export default function SettingsScreen() {
     const scheme =
       typeof rawScheme === "string" ? rawScheme : Array.isArray(rawScheme) ? rawScheme[0] ?? "coconut" : "coconut";
     const qs = new URLSearchParams({ app: "1", scheme });
-    const path = `/api/splitwise/auth?${qs.toString()}`;
+    const path = `/api/splitwise/auth-url?${qs.toString()}`;
     try {
-      const res = await apiFetch(path, { redirect: "manual" });
-      if (res.status >= 300 && res.status < 400) {
-        const loc = res.headers.get("Location");
-        if (loc) {
-          await Linking.openURL(loc);
+      const res = await apiFetch(path);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          Alert.alert("Sign in required", "Sign in to Coconut again, then tap Connect Splitwise.");
           return;
         }
-      }
-      if (res.status === 401) {
-        Alert.alert("Sign in required", "Sign in to Coconut again, then tap Connect Splitwise.");
-        return;
-      }
-      if (res.status === 503) {
-        const data = await res.json().catch(() => ({}));
+        if (res.status === 503) {
+          Alert.alert(
+            "Splitwise unavailable",
+            (data as { error?: string }).error ?? "Splitwise is not configured on the server.",
+          );
+          return;
+        }
         Alert.alert(
-          "Splitwise unavailable",
-          (data as { error?: string }).error ?? "Splitwise is not configured on the server.",
+          "Could not open Splitwise",
+          (data as { error?: string }).error ?? "Check your connection and API URL, then try again.",
         );
         return;
       }
-      const text = await res.text();
-      if (__DEV__) console.warn("[splitwise] auth unexpected", res.status, text.slice(0, 200));
-      Alert.alert("Could not open Splitwise", "Check your connection and API URL, then try again.");
+      const url = (data as { url?: string }).url;
+      if (!url || typeof url !== "string") {
+        Alert.alert("Could not open Splitwise", "Server did not return an authorization URL. Deploy the latest API.");
+        return;
+      }
+      await Linking.openURL(url);
     } catch (e) {
       if (__DEV__) console.warn("[splitwise] auth exception", e);
       Alert.alert("Could not open Splitwise", "Something went wrong. Please try again.");
