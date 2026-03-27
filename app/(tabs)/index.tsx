@@ -158,10 +158,10 @@ export default function BalancesPrototypeScreen() {
   }, [useDemoBankUi, dismissedBank]);
 
   const liveStripRows = useMemo(() => {
-    if (useDemoBankUi) return [];
+    if (useDemoBankUi || !linked) return [];
     const built = buildLiveMatchedStrip(bankVisibleTransactions);
     return built.filter((r) => !dismissedBank.includes(r.stripId));
-  }, [useDemoBankUi, bankVisibleTransactions, dismissedBank]);
+  }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank]);
 
   const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
   const allLinkedBankRows = useMemo(() => {
@@ -204,6 +204,14 @@ export default function BalancesPrototypeScreen() {
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
+
+  /** After disconnect, strip rows must stay empty; close sheet and reset dismiss state. */
+  useEffect(() => {
+    if (isDemoOn || linked) return;
+    setDismissedBank([]);
+    setShowAllBank(false);
+    setSelectedStrip(null);
+  }, [isDemoOn, linked]);
 
   const friends = summary?.friends ?? [];
   const groups = summary?.groups ?? [];

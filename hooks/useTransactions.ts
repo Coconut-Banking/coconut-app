@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { AppState } from "react-native";
+import { AppState, DeviceEventEmitter } from "react-native";
 import { useApiFetch } from "../lib/api";
 
 export interface Transaction {
@@ -91,6 +91,8 @@ export function useTransactions() {
         if (cancelled || !data) return null;
         if (!data.linked) {
           if (__DEV__) console.log("[pipeline:tx] 3. not linked → stop");
+          setLinked(false);
+          setTransactions([]);
           setStatus("not_linked");
           setLoading(false);
           return null;
@@ -147,6 +149,14 @@ export function useTransactions() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") fetchData(true);
+    });
+    return () => sub.remove();
+  }, [fetchData]);
+
+  // Settings → Disconnect bank does not unmount tabs; force a fresh Plaid status read.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("bank-disconnected", () => {
+      void fetchData(true);
     });
     return () => sub.remove();
   }, [fetchData]);

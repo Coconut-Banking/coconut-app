@@ -16,7 +16,8 @@ import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch } from "../../lib/api";
 import { useTransactions } from "../../hooks/useTransactions";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import Constants from "expo-constants";
 import { useTheme } from "../../lib/theme-context";
 import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -33,6 +34,7 @@ type PlaidAccount = {
 };
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { theme, mode, setMode } = useTheme();
   const { setIsDemoOn } = useDemoMode();
   const { user } = useUser();
@@ -71,7 +73,9 @@ export default function SettingsScreen() {
   const splitwiseParams = useLocalSearchParams<{
     splitwise?: string;
     import?: string;
+    splitwise_error?: string;
   }>();
+  const splitwiseErrorAlertShown = useRef(false);
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsLoading(true);
@@ -99,6 +103,30 @@ export default function SettingsScreen() {
   useEffect(() => {
     fetchAccounts(linked);
   }, [linked]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("bank-disconnected", async () => {
+      setAccounts([]);
+      setAccountsLoading(true);
+      setAccountsError(null);
+      try {
+        const res = await apiFetch("/api/plaid/accounts");
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setAccounts(Array.isArray(body?.accounts) ? body.accounts : []);
+        } else {
+          setAccountsError((body as { error?: string }).error ?? "Failed to load");
+          setAccounts([]);
+        }
+      } catch {
+        setAccountsError("Failed to load accounts");
+        setAccounts([]);
+      } finally {
+        setAccountsLoading(false);
+      }
+    });
+    return () => sub.remove();
+  }, [apiFetch]);
 
   useEffect(() => {
     if (isFocused && !prevFocused.current && linked) {
@@ -137,9 +165,34 @@ export default function SettingsScreen() {
     }
   }, [splitwiseParams?.splitwise, splitwiseParams?.import, user]);
 
+  useEffect(() => {
+    const err = splitwiseParams?.splitwise_error;
+    if (!err || splitwiseErrorAlertShown.current) return;
+    splitwiseErrorAlertShown.current = true;
+    const msg =
+      err === "token_exchange_failed"
+        ? "Failed to connect to Splitwise. Please try again."
+        : err === "invalid_state"
+          ? "That link expired or was invalid. Try Connect Splitwise again."
+          : "Could not connect to Splitwise.";
+    Alert.alert("Splitwise", msg, [
+      {
+        text: "OK",
+        onPress: () => {
+          router.replace("/(tabs)/settings");
+          splitwiseErrorAlertShown.current = false;
+        },
+      },
+    ]);
+  }, [splitwiseParams?.splitwise_error, router]);
+
   const connectSplitwise = () => {
     const base = API_URL.replace(/\/$/, "");
-    void Linking.openURL(`${base}/api/splitwise/auth`);
+    const rawScheme = Constants.expoConfig?.scheme;
+    const scheme =
+      typeof rawScheme === "string" ? rawScheme : Array.isArray(rawScheme) ? rawScheme[0] ?? "coconut" : "coconut";
+    const qs = new URLSearchParams({ app: "1", scheme });
+    void Linking.openURL(`${base}/api/splitwise/auth?${qs.toString()}`);
   };
 
   const startSplitwiseImport = async () => {
@@ -164,53 +217,32 @@ export default function SettingsScreen() {
     }
   };
 
-  const disconnectSplitwise = async () => {
-    try {
-      await apiFetch("/api/splitwise/status", { method: "DELETE" });
-    } catch {
-      // ignore
-    } finally {
-      setSplitwiseResult(null);
-      setSplitwiseStatus((prev) => (prev ? { ...prev, connected: false } : null));
-      void fetchSplitwiseStatus();
-    }
-  };
-
-  const confirmClearSplitwise = (disconnectToken: boolean) => {
+  const disconnectSplitwiseAndClear = () => {
     Alert.alert(
-      disconnectToken ? "Clear and disconnect Splitwise" : "Clear Splitwise import",
-      disconnectToken
-        ? "Removes every Splitwise-imported group and expense from Coconut and deletes your stored Splitwise login. Your Splitwise account is unchanged."
-        : "Removes every group and expense that was imported from Splitwise in Coconut. Manual groups you created here stay. Your Splitwise account is unchanged.",
+      "Disconnect Splitwise?",
+      "Removes every Splitwise-imported group and expense from Coconut and disconnects your Splitwise login. Your Splitwise account is unchanged.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: disconnectToken ? "Clear & disconnect" : "Clear data",
+          text: "Disconnect",
           style: "destructive",
           onPress: async () => {
             setSplitwiseClearing(true);
             try {
               const res = await apiFetch("/api/splitwise/clear", {
                 method: "POST",
-                body: { disconnectToken },
+                body: { disconnectToken: true },
               });
               const data = await res.json().catch(() => ({}));
               if (!res.ok) {
-                Alert.alert("Could not clear", (data as { error?: string }).error ?? "Try again.");
+                Alert.alert("Could not disconnect", (data as { error?: string }).error ?? "Try again.");
                 return;
               }
               setSplitwiseResult(null);
               DeviceEventEmitter.emit("groups-updated");
               await fetchSplitwiseStatus();
-              const n = (data as { deletedSplitwiseGroups?: number }).deletedSplitwiseGroups ?? 0;
-              Alert.alert(
-                "Done",
-                disconnectToken
-                  ? "Imported data removed and Splitwise disconnected."
-                  : `Removed ${n} imported group${n === 1 ? "" : "s"}. Run Import again for a fresh sync.`
-              );
             } catch {
-              Alert.alert("Error", "Could not clear. Check your connection.");
+              Alert.alert("Error", "Could not disconnect. Check your connection.");
             } finally {
               setSplitwiseClearing(false);
             }
@@ -235,6 +267,9 @@ export default function SettingsScreen() {
               const res = await apiFetch("/api/plaid/disconnect", { method: "POST" });
               if (!res.ok) {
                 Alert.alert("Error", "Failed to disconnect");
+              } else {
+                DeviceEventEmitter.emit("bank-disconnected");
+                Alert.alert("Bank disconnected", "You can link a bank again from the Home tab or Connect flow.");
               }
             } catch {
               Alert.alert("Error", "Failed to disconnect");
@@ -259,6 +294,14 @@ export default function SettingsScreen() {
           setTimeout(() => reject(new Error("Sign out timed out")), 15_000),
         ),
       ]);
+      // Root AuthSwitch will swap stacks; replace so back never returns to signed-in tabs.
+      setTimeout(() => {
+        try {
+          router.replace("/(auth)/sign-in");
+        } catch {
+          /* ignore */
+        }
+      }, 0);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Sign out failed";
       Alert.alert("Sign out", msg === "Sign out timed out" ? "Sign out is taking too long. Try again." : msg);
@@ -377,9 +420,10 @@ export default function SettingsScreen() {
 
         {/* Splitwise import */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise import</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise</Text>
           <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Bring groups, members, and expenses from Splitwise into Coconut.
+            Connect once in the browser, then import groups and expenses. Disconnect removes Coconut&apos;s copy and your saved
+            Splitwise login.
           </Text>
 
           {splitwiseResult ? (
@@ -412,17 +456,12 @@ export default function SettingsScreen() {
             </Text>
           ) : !splitwiseStatus?.connected ? (
             <View style={{ gap: 12, marginTop: 4 }}>
-              <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={connectSplitwise} disabled={splitwiseImporting}>
-                <Text style={styles.primaryBtnText}>Connect Splitwise</Text>
-              </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => confirmClearSplitwise(false)}
-                disabled={splitwiseClearing}
-                style={splitwiseClearing && styles.disabled}
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+                onPress={connectSplitwise}
+                disabled={splitwiseImporting}
               >
-                <Text style={[styles.linkCenter, { color: theme.textTertiary }]}>
-                  {splitwiseClearing ? "Clearing…" : "Clear imported Splitwise data"}
-                </Text>
+                <Text style={styles.primaryBtnText}>Connect Splitwise</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -430,7 +469,7 @@ export default function SettingsScreen() {
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
                 onPress={startSplitwiseImport}
-                disabled={splitwiseImporting}
+                disabled={splitwiseImporting || splitwiseClearing}
               >
                 {splitwiseImporting ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -438,32 +477,33 @@ export default function SettingsScreen() {
                   <Text style={styles.primaryBtnText}>Import from Splitwise</Text>
                 )}
               </TouchableOpacity>
-              <TouchableOpacity onPress={disconnectSplitwise}>
-                <Text style={[styles.linkCenter, { color: theme.error }]}>Disconnect Splitwise</Text>
-              </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => confirmClearSplitwise(false)}
-                disabled={splitwiseClearing}
-                style={splitwiseClearing && styles.disabled}
+                style={[
+                  styles.splitwiseDisconnectBtn,
+                  { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
+                ]}
+                onPress={disconnectSplitwiseAndClear}
+                disabled={splitwiseClearing || splitwiseImporting}
               >
-                <Text style={[styles.linkCenter, { color: theme.textTertiary }]}>
-                  {splitwiseClearing ? "Clearing…" : "Clear imported Splitwise data"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => confirmClearSplitwise(true)}
-                disabled={splitwiseClearing}
-                style={splitwiseClearing && styles.disabled}
-              >
-                <Text style={[styles.linkCenter, { color: theme.error }]}>
-                  Clear data and disconnect Splitwise
-                </Text>
+                {splitwiseClearing ? (
+                  <ActivityIndicator size="small" color={theme.error} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error }]}>Disconnect Splitwise</Text>
+                )}
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} disabled={signingOut}>
+        <TouchableOpacity
+          style={[
+            styles.signOutButton,
+            { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
+          ]}
+          onPress={handleSignOut}
+          disabled={signingOut}
+          activeOpacity={0.85}
+        >
           {signingOut ? (
             <ActivityIndicator size="small" color={theme.error} />
           ) : (
@@ -544,6 +584,22 @@ const styles = StyleSheet.create({
   primaryBtn: { paddingVertical: 14, borderRadius: radii.md, alignItems: "center", marginTop: 4 },
   primaryBtnText: { color: "#fff", fontSize: 16, fontFamily: font.semibold },
   disabled: { opacity: 0.6 },
-  signOutButton: { paddingVertical: 18, alignItems: "center", marginTop: 8 },
+  splitwiseDisconnectBtn: {
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  splitwiseDisconnectBtnText: { fontSize: 16, fontFamily: font.semibold },
+  signOutButton: {
+    marginTop: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    minHeight: 52,
+  },
   signOutText: { fontSize: 16, fontFamily: font.semibold },
 });
