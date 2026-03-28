@@ -189,7 +189,12 @@ export default function GroupScreen() {
         ) : (
           <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             {(detail.activity ?? []).map((a, i) => (
-              <View key={a.id} style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}>
+              <TouchableOpacity
+                key={a.id}
+                style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}
+                activeOpacity={0.7}
+                onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
+              >
                 <MerchantLogo
                   merchantName={a.merchant}
                   size={36}
@@ -204,7 +209,7 @@ export default function GroupScreen() {
                 <Text style={[s.txAmount, { color: theme.text }]}>
                   {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}

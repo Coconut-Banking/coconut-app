@@ -308,7 +308,11 @@ export default function PersonScreen() {
           <View style={s.card}>
             {detail.activity.map((a, i) => (
               <View key={a.id}>
-                <View style={s.txRow}>
+                <TouchableOpacity
+                  style={s.txRow}
+                  activeOpacity={0.7}
+                  onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
+                >
                   <MerchantLogo merchantName={a.merchant} size={38} backgroundColor="#F7F3F0" borderColor="transparent" />
                   <View style={s.txInfo}>
                     <Text style={s.txMerchant}>{a.merchant}</Text>
@@ -332,7 +336,7 @@ export default function PersonScreen() {
                       {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")} total
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
                 {i < detail.activity.length - 1 ? <View style={s.rowSep} /> : null}
               </View>
             ))}

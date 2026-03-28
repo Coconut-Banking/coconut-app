@@ -235,6 +235,54 @@ export function usePersonDetail(key: string | null) {
   return { detail, loading, refetch: fetchDetail };
 }
 
+export interface TransactionDetail {
+  id: string;
+  description: string;
+  amount: number | null;
+  currency: string;
+  date: string | null;
+  createdAt: string;
+  groupName: string | null;
+  groupId: string;
+  paidBy: { memberId: string; displayName: string; isMe: boolean } | null;
+  shares: Array<{ memberId: string; displayName: string; isMe: boolean; amount: number }>;
+  notes: string | null;
+  category: string | null;
+  receiptUrl: string | null;
+  splitwiseUrl: string | null;
+}
+
+export function useTransactionDetail(id: string | null) {
+  const apiFetch = useApiFetch();
+  const [detail, setDetail] = useState<TransactionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDetail = useCallback(
+    async (silent = false) => {
+      if (!id) {
+        setDetail(null);
+        setLoading(false);
+        return;
+      }
+      if (!silent) setLoading(true);
+      try {
+        const res = await apiFetch(`/api/groups/transaction?id=${encodeURIComponent(id)}`);
+        if (res.ok) setDetail(await res.json());
+        else setDetail(null);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [id, apiFetch]
+  );
+
+  useEffect(() => {
+    fetchDetail();
+  }, [fetchDetail]);
+
+  return { detail, loading, refetch: fetchDetail };
+}
+
 export interface RecentActivityItem {
   id: string;
   who: string;

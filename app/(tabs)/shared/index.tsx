@@ -68,7 +68,7 @@ export default function SharedIndex() {
   const isFocused = useIsFocused();
   const { isDemoOn, setIsDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: realSummary, loading, refetch } = useGroupsSummary({ contacts: true });
+  const { summary: realSummary, loading, refetch } = useGroupsSummary();
   const summary = isDemoOn ? demo.summary : realSummary;
 
   const [refreshing, setRefreshing] = useState(false);

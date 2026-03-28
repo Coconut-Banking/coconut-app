@@ -1,5 +1,4 @@
 import { View, Text, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import type { GroupsSummary } from "../../hooks/useGroups";
 import { font, shadow, prototype } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
@@ -13,70 +12,56 @@ const emptySummary: GroupsSummary = {
   totalsByCurrency: [],
 };
 
-/**
- * Matches `MobileAppPage.tsx` `HomeScreen` balance card — wired to real `GroupsSummary`.
- */
 export function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
   const s = summary ?? emptySummary;
-  const multi = (s.totalsByCurrency?.length ?? 0) > 1;
   const rows = s.totalsByCurrency ?? [];
+  const multi = rows.length > 1;
+
+  const nonZeroRows = rows.filter((r) => Math.abs(r.net) >= 0.005);
+  const allSettled = nonZeroRows.length === 0;
+
+  if (allSettled) {
+    return (
+      <View style={styles.heroCard}>
+        <Text style={styles.heroKicker}>Overall</Text>
+        <Text style={[styles.heroAmount, { color: "#8A9098" }]}>
+          {formatSplitCurrencyAmount(0, rows.length === 1 ? rows[0].currency : "USD")}
+        </Text>
+        <Text style={[styles.heroSub, { color: "#8A9098" }]}>All settled up</Text>
+      </View>
+    );
+  }
 
   if (multi) {
     return (
       <View style={styles.heroCard}>
-        <Text style={styles.heroKicker}>Balances by currency</Text>
-        <Text style={styles.heroSubMulti}>
-          You have expenses in more than one currency. Totals are shown separately (like Splitwise).
-        </Text>
-        {rows.map((row) => {
-          const net = row.net;
-          const hasNet = Math.abs(net) >= 0.005;
-          const isPos = net >= 0;
-          return (
-            <View key={row.currency} style={styles.multiBlock}>
-              <Text style={styles.multiCurrency}>{row.currency}</Text>
-              <Text
-                style={[
-                  styles.multiNet,
-                  hasNet ? (isPos ? styles.heroAmtIn : styles.heroAmtOut) : { color: "#8A9098" },
-                ]}
-              >
-                {hasNet
-                  ? `${isPos ? "+" : "−"}${formatSplitCurrencyAmount(net, row.currency)}`
-                  : `${formatSplitCurrencyAmount(0, row.currency)} settled`}
-              </Text>
-              <View style={styles.heroStatsRow}>
-                <View style={styles.heroStatBox}>
-                  <View style={styles.heroStatLblRow}>
-                    <Ionicons name="arrow-down-left-box" size={12} color={prototype.green} />
-                    <Text style={styles.heroStatLbl}>Owed to you</Text>
-                  </View>
-                  <Text style={[styles.heroStatVal, { color: prototype.green }]}>
-                    {formatSplitCurrencyAmount(row.owedToMe, row.currency)}
-                  </Text>
-                </View>
-                <View style={styles.heroStatBox}>
-                  <View style={styles.heroStatLblRow}>
-                    <Ionicons name="arrow-up-right-box" size={12} color={prototype.red} />
-                    <Text style={styles.heroStatLbl}>You owe</Text>
-                  </View>
-                  <Text style={[styles.heroStatVal, { color: prototype.red }]}>
-                    {formatSplitCurrencyAmount(row.iOwe, row.currency)}
-                  </Text>
-                </View>
+        <Text style={styles.heroKicker}>Overall</Text>
+        <View style={styles.multiLines}>
+          {nonZeroRows.map((row) => {
+            const isPos = row.net > 0;
+            return (
+              <View key={row.currency} style={styles.multiRow}>
+                <Text
+                  style={[
+                    styles.multiAmt,
+                    isPos ? styles.heroAmtIn : styles.heroAmtOut,
+                  ]}
+                >
+                  {isPos ? "+" : "−"}{formatSplitCurrencyAmount(row.net, row.currency)}
+                </Text>
+                <Text style={[styles.multiLabel, isPos ? { color: prototype.green } : { color: prototype.red }]}>
+                  {isPos ? "owed to you" : "you owe"}
+                </Text>
               </View>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
     );
   }
 
   const net = s.netBalance ?? 0;
-  const totalOwed = s.totalOwedToMe ?? 0;
-  const totalOwing = s.totalIOwe ?? 0;
   const isPos = net >= 0;
-  const hasNet = Math.abs(net) >= 0.005;
   const singleCur = rows.length === 1 ? rows[0].currency : "USD";
 
   return (
@@ -85,44 +70,22 @@ export function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
         style={[
           styles.heroGlow,
           {
-            backgroundColor: hasNet
-              ? isPos
-                ? "rgba(62, 187, 116, 0.14)"
-                : "rgba(248, 113, 113, 0.10)"
-              : "transparent",
+            backgroundColor: isPos
+              ? "rgba(62, 187, 116, 0.14)"
+              : "rgba(248, 113, 113, 0.10)",
           },
         ]}
         pointerEvents="none"
       />
       <Text style={styles.heroKicker}>
-        {hasNet ? (isPos ? "You're owed" : "You owe") : "All settled up"}
+        {isPos ? "You're owed" : "You owe"}
       </Text>
-      <Text style={[styles.heroAmount, hasNet ? (isPos ? styles.heroAmtIn : styles.heroAmtOut) : { color: "#8A9098" }]}>
-        {hasNet
-          ? `${isPos ? "+" : "−"}${formatSplitCurrencyAmount(net, singleCur)}`
-          : formatSplitCurrencyAmount(0, singleCur)}
+      <Text style={[styles.heroAmount, isPos ? styles.heroAmtIn : styles.heroAmtOut]}>
+        {isPos ? "+" : "−"}{formatSplitCurrencyAmount(net, singleCur)}
       </Text>
-      <Text style={styles.heroSub}>{hasNet ? (isPos ? "overall. Keep it up." : "overall. Settle up.") : "overall. Keep it up."}</Text>
-      <View style={styles.heroStatsRow}>
-        <View style={styles.heroStatBox}>
-          <View style={styles.heroStatLblRow}>
-            <Ionicons name="arrow-down-left-box" size={12} color={prototype.green} />
-            <Text style={styles.heroStatLbl}>Owed to you</Text>
-          </View>
-          <Text style={[styles.heroStatVal, { color: prototype.green }]}>
-            {formatSplitCurrencyAmount(totalOwed, singleCur)}
-          </Text>
-        </View>
-        <View style={styles.heroStatBox}>
-          <View style={styles.heroStatLblRow}>
-            <Ionicons name="arrow-up-right-box" size={12} color={prototype.red} />
-            <Text style={styles.heroStatLbl}>You owe</Text>
-          </View>
-          <Text style={[styles.heroStatVal, { color: prototype.red }]}>
-            {formatSplitCurrencyAmount(totalOwing, singleCur)}
-          </Text>
-        </View>
-      </View>
+      <Text style={styles.heroSub}>
+        {isPos ? "overall" : "overall"}
+      </Text>
     </View>
   );
 }
@@ -161,54 +124,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: font.medium,
     color: "#4B5563",
-    marginBottom: 20,
-  },
-  heroSubMulti: {
-    fontSize: 13,
-    fontFamily: font.regular,
-    color: "#6B7280",
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  multiBlock: {
-    marginBottom: 18,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEE8E4",
-  },
-  multiCurrency: {
-    fontSize: 10,
-    fontFamily: font.extrabold,
-    color: "#9AA0A6",
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  multiNet: {
-    fontSize: 28,
-    fontFamily: font.black,
-    letterSpacing: -1,
-    marginBottom: 12,
   },
   heroAmount: {
     fontSize: 44,
     fontFamily: font.black,
     letterSpacing: -2,
     lineHeight: 48,
-    marginBottom: 20,
+    marginBottom: 4,
   },
   heroAmtIn: { color: prototype.green },
   heroAmtOut: { color: prototype.red },
-  heroStatsRow: { flexDirection: "row", gap: 10 },
-  heroStatBox: {
-    flex: 1,
-    backgroundColor: "#F7F3F0",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#E9E2DD",
+  multiLines: {
+    gap: 12,
+    marginTop: 4,
   },
-  heroStatLblRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 3 },
-  heroStatLbl: { fontSize: 10, fontFamily: font.medium, color: "#8A9098" },
-  heroStatVal: { fontSize: 17, fontFamily: font.black, letterSpacing: -0.5 },
+  multiRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+  },
+  multiAmt: {
+    fontSize: 28,
+    fontFamily: font.black,
+    letterSpacing: -1,
+  },
+  multiLabel: {
+    fontSize: 13,
+    fontFamily: font.medium,
+  },
 });

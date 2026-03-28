@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
+import type { Href } from "expo-router";
 import { useRecentActivity, type RecentActivityItem } from "../../hooks/useGroups";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -164,9 +165,21 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
   const { theme } = useTheme();
   const sym = currencySymbol(it.currency);
   const isSettlement = it.direction === "settled";
+
+  const handlePress = () => {
+    if (!isSettlement) {
+      router.push({ pathname: "/(tabs)/shared/transaction", params: { id: it.id } } as Href);
+    }
+  };
+
   return (
     <View>
-      <View style={styles.groupedRow}>
+      <TouchableOpacity
+        style={styles.groupedRow}
+        activeOpacity={isSettlement ? 1 : 0.7}
+        onPress={handlePress}
+        disabled={isSettlement}
+      >
         <View
           style={[
             styles.actDot,
@@ -211,7 +224,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
           )}
           <Text style={styles.actTime}>{it.time}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
       {showSep ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
     </View>
   );
