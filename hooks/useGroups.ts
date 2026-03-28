@@ -255,7 +255,6 @@ export interface TransactionDetail {
   notes: string | null;
   category: string | null;
   receiptUrl: string | null;
-  splitwiseUrl: string | null;
 }
 
 export function useTransactionDetail(id: string | null) {

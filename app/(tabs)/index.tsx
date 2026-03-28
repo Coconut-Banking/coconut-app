@@ -40,9 +40,27 @@ import { DEMO_HOME_DISPLAY_NAME, formatHomeGreetingLine } from "../../lib/home-g
 import {
   buildLiveMatchedStrip,
   demoChargeToStripRow,
+  merchantEmoji,
   type HomeBankStripRow,
 } from "../../lib/home-bank-strip";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
+import { haptic } from "../../components/ui";
+
+/** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean }): HomeBankStripRow {
+  const merchant = tx.merchant || tx.rawDescription || "Purchase";
+  return {
+    stripId: tx.id,
+    merchant,
+    emoji: merchantEmoji(merchant),
+    amount: Math.abs(Number(tx.amount)),
+    cardDetailLine: tx.dateStr || tx.date || "",
+    cardDetailIsReceipt: false,
+    hasMailBadge: false,
+    sheetDateLine: tx.dateStr || tx.date || "",
+    showReceiptBox: false,
+  };
+}
 
 const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -427,7 +445,7 @@ export default function BalancesPrototypeScreen() {
                 renderItem={({ item }) => (
                   <Pressable
                     style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                    onPress={() => setSelectedStrip(item)}
+                    onPress={() => { haptic.selection(); setSelectedStrip(item); }}
                   >
                     <View style={styles.bankTop}>
                       <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -486,16 +504,10 @@ export default function BalancesPrototypeScreen() {
                   renderItem={({ item: tx }) => (
                     <Pressable
                       style={styles.bankCard}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/(tabs)/add-expense",
-                          params: {
-                            prefillDesc: tx.merchant || tx.rawDescription || "Purchase",
-                            prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
-                            prefillNonce: String(Date.now()),
-                          },
-                        })
-                      }
+                      onPress={() => {
+                        haptic.selection();
+                        setSelectedStrip(txToSheetRow(tx));
+                      }}
                     >
                       <View style={styles.bankTop}>
                         <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -729,11 +741,6 @@ export default function BalancesPrototypeScreen() {
                       total={itemizedReceipt?.total ?? selectedStrip.amount}
                     />
                   </>
-                ) : selectedStrip.showReceiptBox && !selectedStrip.receiptId ? (
-                  <Text style={styles.receiptIdHint}>
-                    Line items appear when each transaction includes a receipt id from your backend (same id as web
-                    receipt split).
-                  </Text>
                 ) : null}
                 <TouchableOpacity
                   style={styles.splitBtn}
@@ -808,14 +815,8 @@ export default function BalancesPrototypeScreen() {
                         activeOpacity={0.75}
                         onPress={() => {
                           setShowAllBank(false);
-                          router.push({
-                            pathname: "/(tabs)/add-expense",
-                            params: {
-                              prefillDesc: tx.merchant || tx.rawDescription || "Purchase",
-                              prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
-                              prefillNonce: String(Date.now()),
-                            },
-                          });
+                          haptic.selection();
+                          setSelectedStrip(txToSheetRow(tx));
                         }}
                       >
                         <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -1151,13 +1152,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 8,
-  },
-  receiptIdHint: {
-    fontSize: 13,
-    fontFamily: font.regular,
-    color: "#7A8088",
-    lineHeight: 18,
-    marginBottom: 14,
   },
   sheetClose: { alignItems: "center", paddingVertical: 10 },
   sheetCloseText: { fontSize: 15, fontFamily: font.semibold, color: "#3F464F" },

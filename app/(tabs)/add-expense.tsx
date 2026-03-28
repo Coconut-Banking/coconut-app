@@ -10,7 +10,6 @@ import {
   SafeAreaView,
   DeviceEventEmitter,
   Alert,
-  Linking,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -21,11 +20,13 @@ import { useGroupsSummary } from "../../hooks/useGroups";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme";
+import { useToast } from "../../components/Toast";
+import { haptic } from "../../components/ui";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
 /** People first → amount & description → split → confirm (bank prefills land on amount step). */
-type FlowStep = "amount" | "people" | "review" | "done";
+type FlowStep = "amount" | "people" | "review";
 
 type GroupMember = {
   id: string;
@@ -43,9 +44,9 @@ const SPLITS: { key: SplitMethod; label: string; icon: keyof typeof Ionicons.gly
   { key: "shares", label: "Shares", icon: "layers-outline" },
 ];
 
-const FLOW_ORDER: Exclude<FlowStep, "done">[] = ["people", "amount", "review"];
+const FLOW_ORDER: FlowStep[] = ["people", "amount", "review"];
 
-const STEP_TITLES: Record<Exclude<FlowStep, "done">, string> = {
+const STEP_TITLES: Record<FlowStep, string> = {
   people: "Who was there?",
   amount: "Add expense",
   review: "Summary",
@@ -59,7 +60,7 @@ function FlowHandle() {
   );
 }
 
-function ProgressDots({ active }: { active: Exclude<FlowStep, "done"> }) {
+function ProgressDots({ active }: { active: FlowStep }) {
   const idx = FLOW_ORDER.indexOf(active);
   return (
     <View style={{ flexDirection: "row", justifyContent: "center", gap: 6, marginBottom: 6 }}>
@@ -137,6 +138,7 @@ export default function AddExpenseScreen() {
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
+  const toast = useToast();
   const { summary: realSummary, loading } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
 
@@ -442,6 +444,7 @@ export default function AddExpenseScreen() {
   };
 
   const toggle = useCallback((t: Target) => {
+    haptic.selection();
     setTargets((prev) => {
       if (prev.some((x) => x.key === t.key)) return prev.filter((x) => x.key !== t.key);
       return [...prev, t];
@@ -536,6 +539,7 @@ export default function AddExpenseScreen() {
       }
     }
     setDupWarning(warn);
+    if (warn) haptic.warning();
     setStep("review");
   };
 
@@ -551,7 +555,11 @@ export default function AddExpenseScreen() {
 
     if (isDemoOn) {
       demo.addExpense(total, desc, t.key, t.type);
-      setStep("done");
+      haptic.success();
+      toast.show(`Expense saved · $${total.toFixed(2)} with ${t.name}`);
+      DeviceEventEmitter.emit("expense-added");
+      DeviceEventEmitter.emit("groups-updated");
+      nav.replace("/(tabs)");
       return;
     }
 
@@ -577,8 +585,11 @@ export default function AddExpenseScreen() {
       const res = await apiFetch("/api/manual-expense", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        haptic.success();
+        toast.show(`Expense saved · $${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
         DeviceEventEmitter.emit("expense-added");
-        setStep("done");
+        DeviceEventEmitter.emit("groups-updated");
+        nav.replace("/(tabs)");
       } else {
         setError(data?.error || "Failed to save");
       }
@@ -589,52 +600,6 @@ export default function AddExpenseScreen() {
     }
   };
 
-  const venmoOther = useMemo(() => {
-    return groupMembers.find((m) => m.id !== myMemberId && m.venmo_username);
-  }, [groupMembers, myMemberId]);
-
-  const openVenmo = () => {
-    const u = venmoOther?.venmo_username?.replace(/^@/, "");
-    if (!u) {
-      Alert.alert("No Venmo on file", "Ask them to add Venmo in group settings.");
-      return;
-    }
-    const note = encodeURIComponent(description.trim() || "Coconut split");
-    const amt = total.toFixed(2);
-    Linking.openURL(`https://venmo.com/${u}?amount=${amt}&note=${note}`).catch(() => {
-      Alert.alert("Could not open Venmo");
-    });
-  };
-
-  const tapToPaySuggestion = useMemo(() => {
-    const effPayer = paidByMe ? (myMemberId ?? payerMemberId) : payerMemberId;
-    if (!effPayer || !resolvedGroupId || groupMembers.length < 2) return null;
-    const receiverMemberId = effPayer;
-    const payerShare = shares.find((s) => s.key !== effPayer && s.share > 0.001);
-    if (!payerShare) return null;
-    const amountOwed = Math.round(payerShare.share * 100) / 100;
-    if (amountOwed <= 0) return null;
-    return {
-      amount: amountOwed,
-      groupId: resolvedGroupId,
-      payerMemberId: payerShare.key,
-      receiverMemberId,
-    };
-  }, [paidByMe, myMemberId, payerMemberId, resolvedGroupId, groupMembers.length, shares]);
-
-  const goTapToPay = () => {
-    const amountToCharge = tapToPaySuggestion?.amount ?? total;
-    nav.push({
-      pathname: "/(tabs)/pay",
-      params: {
-        amount: amountToCharge.toFixed(2),
-        groupId: tapToPaySuggestion?.groupId ?? (resolvedGroupId ?? ""),
-        payerMemberId: tapToPaySuggestion?.payerMemberId ?? "",
-        receiverMemberId: tapToPaySuggestion?.receiverMemberId ?? "",
-      },
-    });
-  };
-
   if (loading && !summary) {
     return (
       <View style={s.center}>
@@ -643,67 +608,6 @@ export default function AddExpenseScreen() {
     );
   }
 
-  // ── Done: settle / pay options ──
-  if (step === "done") {
-    return (
-      <SafeAreaView style={s.root}>
-        <View style={s.doneWrap}>
-          <View style={s.doneIcon}>
-            <Ionicons name="checkmark-circle" size={56} color={colors.primary} />
-          </View>
-          <Text style={s.doneTitle}>Expense saved</Text>
-          <Text style={s.doneSub}>
-            ${total.toFixed(2)} · {description || "Expense"} · {targets[0]?.name}
-          </Text>
-          <Text style={s.doneHint}>
-            Collect or record payment
-            {tapToPaySuggestion ? ` · Tap to Pay charges $${tapToPaySuggestion.amount.toFixed(2)}` : ""}
-          </Text>
-
-          <TouchableOpacity style={s.primaryBtn} onPress={goTapToPay} activeOpacity={0.9}>
-            <Ionicons name="phone-portrait-outline" size={20} color="#fff" />
-            <Text style={s.primaryBtnText}>Tap to Pay</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[s.secondaryBtn, !venmoOther && { opacity: 0.45 }]}
-            onPress={openVenmo}
-            disabled={!venmoOther}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="logo-usd" size={18} color={darkUI.label} />
-            <Text style={s.secondaryBtnText}>{venmoOther ? "Request with Venmo" : "Venmo not linked"}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={s.ghostBtn}
-            onPress={() => {
-              nav.replace("/(tabs)/shared");
-            }}
-          >
-            <Ionicons name="people" size={18} color={darkUI.labelSecondary} />
-            <Text style={s.ghostBtnText}>View in Shared</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => {
-              setStep("people");
-              setTargets([]);
-              setAmount("");
-              setDescription("");
-              setResolvedGroupId(null);
-              setGroupMembers([]);
-              setDupWarning(false);
-              setError(null);
-            }}
-            style={{ marginTop: 16 }}
-          >
-            <Text style={s.linkText}>Add another expense</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   // ── Review (prototype Summary) ──
   if (step === "review") {
@@ -1320,29 +1224,6 @@ const s = StyleSheet.create({
     borderRadius: radii.lg,
   },
   primaryBtnText: { fontFamily: font.bold, fontSize: 16, color: "#fff" },
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 12,
-    paddingVertical: 14,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: darkUI.stroke,
-    backgroundColor: darkUI.card,
-  },
-  secondaryBtnText: { fontFamily: font.bold, fontSize: 15, color: darkUI.label },
-  ghostBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12, paddingVertical: 12 },
-  ghostBtnText: { fontFamily: font.semibold, fontSize: 15, color: darkUI.labelSecondary },
-  linkText: { fontFamily: font.semibold, fontSize: 14, color: colors.primary, textAlign: "center" },
-
-  doneWrap: { flex: 1, justifyContent: "center", paddingHorizontal: 28 },
-  doneIcon: { alignItems: "center", marginBottom: 16 },
-  doneTitle: { fontFamily: font.black, fontSize: 24, color: darkUI.label, textAlign: "center" },
-  doneSub: { fontFamily: font.regular, fontSize: 15, color: darkUI.labelSecondary, textAlign: "center", marginTop: 8, lineHeight: 22 },
-  doneHint: { fontFamily: font.semibold, fontSize: 12, color: darkUI.labelMuted, textAlign: "center", marginTop: 20, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.6 },
-
   padScroll: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 8 },
   err: { fontFamily: font.medium, fontSize: 13, color: darkUI.moneyOut, marginTop: 8, textAlign: "center" },
 

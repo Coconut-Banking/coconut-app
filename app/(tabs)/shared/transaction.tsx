@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -189,17 +188,6 @@ export default function TransactionScreen() {
           </>
         ) : null}
 
-        {/* View on Splitwise */}
-        {detail.splitwiseUrl ? (
-          <TouchableOpacity
-            style={s.splitwiseLink}
-            onPress={() => Linking.openURL(detail.splitwiseUrl!)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="open-outline" size={16} color={colors.primary} />
-            <Text style={s.splitwiseLinkText}>View on Splitwise</Text>
-          </TouchableOpacity>
-        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -264,17 +252,6 @@ const s = StyleSheet.create({
   notesText: { fontSize: 14, fontFamily: font.regular, color: "#4B5563", padding: 14, lineHeight: 20 },
 
   receiptImage: { width: "100%", height: 300, borderRadius: 12 },
-
-  splitwiseLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  splitwiseLinkText: { fontSize: 14, fontFamily: font.semibold, color: colors.primary },
 
   avatar: {
     alignItems: "center",

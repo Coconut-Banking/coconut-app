@@ -7,6 +7,7 @@ import { tokenCache } from "@clerk/expo/token-cache";
 import { AuthHandoffHandler } from "../components/AuthHandoffHandler";
 import { ThemeProvider, useTheme } from "../lib/theme-context";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ToastProvider } from "../components/Toast";
 import { DemoModeProvider, useDemoMode } from "../lib/demo-mode-context";
 import { DemoProvider } from "../lib/demo-context";
 import {
@@ -136,9 +137,11 @@ export default function RootLayout() {
         <DemoModeProvider>
           <DemoProvider>
             <ErrorBoundary>
-              <StatusBarFromTheme />
-              <AuthHandoffHandler />
-              <AuthSwitch />
+              <ToastProvider>
+                <StatusBarFromTheme />
+                <AuthHandoffHandler />
+                <AuthSwitch />
+              </ToastProvider>
             </ErrorBoundary>
           </DemoProvider>
         </DemoModeProvider>
