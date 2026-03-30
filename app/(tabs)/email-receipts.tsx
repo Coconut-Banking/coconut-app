@@ -450,10 +450,9 @@ const sheet = StyleSheet.create({
     backgroundColor: darkUI.bg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "85%",
+    height: "75%",
     paddingHorizontal: 16,
     paddingTop: 10,
-    flexShrink: 1,
   },
   handle: {
     width: 40,
