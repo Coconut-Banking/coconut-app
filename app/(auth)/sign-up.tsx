@@ -9,9 +9,26 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useSignUp } from "@clerk/expo";
 import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
+
+const SIGN_UP_TIMEOUT_MS = 20000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -35,9 +52,17 @@ export default function SignUpScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
+      const { createdSessionId, setActive } = await withTimeout(
+        startGoogleAuthenticationFlow(),
+        SIGN_UP_TIMEOUT_MS,
+        "Google auth flow"
+      );
       if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+        await withTimeout(
+          setActive({ session: createdSessionId }),
+          SIGN_UP_TIMEOUT_MS,
+          "Google setActive"
+        );
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
@@ -98,10 +123,11 @@ export default function SignUpScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
       <Text style={styles.title}>Coconut</Text>
       <Text style={styles.subtitle}>Create an account</Text>
       {(Platform.OS === "ios" || Platform.OS === "android") && (
@@ -178,7 +204,8 @@ export default function SignUpScreen() {
           Already have an account? Sign in
         </Text>
       </TouchableOpacity>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
