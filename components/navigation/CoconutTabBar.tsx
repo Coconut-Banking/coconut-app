@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
 import { useState } from "react";
 import { useTheme } from "../../lib/theme-context";
+import { getExpensePrefillTarget } from "../../lib/add-expense-prefill";
+import { sfx } from "../../lib/sounds";
 
 export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
@@ -27,30 +29,38 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   };
 
   const goIndex = () => {
+    sfx.tabTap();
     navigation.navigate("index" as never);
   };
   const goActivity = () => {
+    sfx.tabTap();
     navigation.navigate("activity" as never);
   };
   const goFriends = () => {
+    sfx.tabTap();
     navigation.navigate("shared" as never);
   };
   const goAccount = () => {
+    sfx.tabTap();
     navigation.navigate("settings" as never);
   };
   const goAdd = () => {
-    triggerMediumHaptic();
+    sfx.fabPress();
+    const prefill = getExpensePrefillTarget();
     router.push({
       pathname: "/(tabs)/add-expense",
       params: {
         prefillNonce: String(Date.now()),
         prefillDesc: "",
         prefillAmount: "",
+        ...(prefill
+          ? { prefillPersonKey: prefill.key, prefillPersonName: prefill.name, prefillPersonType: prefill.type }
+          : {}),
       },
     });
   };
   const openAddMenu = () => {
-    triggerMediumHaptic();
+    sfx.fabPress();
     setFabMenuOpen(true);
   };
 
@@ -189,7 +199,7 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
               style={[styles.fabMenuRow, { borderColor: theme.border }]}
               onPress={() => {
                 setFabMenuOpen(false);
-                triggerMediumHaptic();
+                sfx.pop();
                 router.push("/(tabs)/receipt");
               }}
               activeOpacity={0.75}

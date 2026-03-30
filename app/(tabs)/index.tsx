@@ -2,7 +2,7 @@
  * Home tab — UI matches `Create design prototype (1)/src/app/pages/MobileAppPage.tsx` HomeScreen.
  * No legacy transaction list / NL search / insights on this screen.
  */
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -16,11 +16,13 @@ import {
   ActivityIndicator,
   TextInput,
   DeviceEventEmitter,
+  AppState,
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useAuth, useUser } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
@@ -46,6 +48,7 @@ import {
 } from "../../lib/home-bank-strip";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 import { haptic } from "../../components/ui";
+import { sfx } from "../../lib/sounds";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
 function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean }): HomeBankStripRow {
@@ -281,10 +284,27 @@ export default function BalancesPrototypeScreen() {
     }
   }, [isDemoOn, refetch, runFullSync]);
 
+  const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
+  useEffect(() => {
+    if (isFocused && !prevFocused.current && !isDemoOn) void refetch();
+    prevFocused.current = isFocused;
+  }, [isFocused, isDemoOn, refetch]);
+
   useEffect(() => {
     if (isDemoOn) return;
-    const sub = DeviceEventEmitter.addListener("groups-updated", () => {
-      void refetch();
+    const subs = [
+      DeviceEventEmitter.addListener("groups-updated", () => void refetch()),
+      DeviceEventEmitter.addListener("expense-added", () => void refetch()),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [isDemoOn, refetch]);
+
+  useEffect(() => {
+    if (isDemoOn) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
@@ -447,7 +467,7 @@ export default function BalancesPrototypeScreen() {
                 renderItem={({ item }) => (
                   <Pressable
                     style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                    onPress={() => { haptic.selection(); setSelectedStrip(item); }}
+                    onPress={() => { sfx.pop(); setSelectedStrip(item); }}
                   >
                     <View style={styles.bankTop}>
                       <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -507,7 +527,7 @@ export default function BalancesPrototypeScreen() {
                     <Pressable
                       style={styles.bankCard}
                       onPress={() => {
-                        haptic.selection();
+                        sfx.pop();
                         setSelectedStrip(txToSheetRow(tx));
                       }}
                     >
@@ -971,7 +991,7 @@ export default function BalancesPrototypeScreen() {
                         activeOpacity={0.75}
                         onPress={() => {
                           setShowAllBank(false);
-                          haptic.selection();
+                          sfx.pop();
                           setSelectedStrip(txToSheetRow(tx));
                         }}
                       >

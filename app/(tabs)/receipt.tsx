@@ -25,6 +25,7 @@ import { useTheme } from "../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
+import { sfx } from "../../lib/sounds";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -350,7 +351,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
         </TouchableOpacity>
         <TouchableOpacity
           style={[st.btn, { backgroundColor: theme.primary }, (rs.saving || rs.editItems.length === 0) && st.btnOff]}
-          onPress={() => { rs.confirmItems(); }}
+          onPress={() => { sfx.pop(); rs.confirmItems(); }}
           disabled={rs.saving || rs.editItems.length === 0}
         >
           {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -660,7 +661,7 @@ function AssignStep({
           )}
           <TouchableOpacity
             style={[st.btn, { backgroundColor: theme.primary }, (!allAssigned || rs.people.length === 0 || rs.saving) && st.btnOff]}
-            onPress={async () => { await rs.saveAssignments(); rs.computeSummary(); }}
+            onPress={async () => { sfx.success(); await rs.saveAssignments(); rs.computeSummary(); }}
             disabled={!allAssigned || rs.people.length === 0 || rs.saving}
           >
             {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -874,6 +875,7 @@ function SummaryStep({
       } catch { /* still mark as tabbed locally */ }
     }
     setTabbedPeople(prev => new Set(prev).add(key));
+    sfx.pop();
     showToast(`Added $${person.totalOwed.toFixed(2)} to ${person.name}'s tab`);
   };
 
@@ -891,6 +893,7 @@ function SummaryStep({
       }
       setTabbedPeople(prev => new Set(prev).add(key));
     }
+    sfx.coin();
     showToast(`Added to everyone's tab`);
   };
 
@@ -969,7 +972,7 @@ function SummaryStep({
             <View style={smst.personActions}>
               <TouchableOpacity
                 style={[smst.settleBtn, { backgroundColor: theme.text }]}
-                onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), groupId: resolvedGroupId ?? "" } })}
+                onPress={() => { sfx.paymentTap(); router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), groupId: resolvedGroupId ?? "" } }); }}
                 activeOpacity={0.8}
               >
                 <Ionicons name="wifi" size={14} color={theme.surface} style={{ transform: [{ rotate: "90deg" }] }} />

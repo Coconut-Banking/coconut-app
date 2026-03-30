@@ -28,6 +28,7 @@ import { useDemoData } from "../../lib/demo-context";
 import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme";
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
+import { sfx } from "../../lib/sounds";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -476,7 +477,7 @@ export default function AddExpenseScreen() {
   };
 
   const selectTarget = useCallback((t: Target) => {
-    haptic.selection();
+    sfx.pop();
     setTargets([t]);
     setQuery("");
     setSearchFocused(false);
@@ -493,6 +494,7 @@ export default function AddExpenseScreen() {
 
   const pickSplit = useCallback(
     (m: SplitMethod) => {
+      sfx.toggle();
       setSplitMethod(m);
       if (m === "equal") { setCustomSplits({}); return; }
       const init: Record<string, string> = {};
@@ -540,7 +542,7 @@ export default function AddExpenseScreen() {
     }
     if (warn) {
       setDupWarning(true);
-      haptic.warning();
+      sfx.warning();
       return;
     }
 
@@ -556,7 +558,7 @@ export default function AddExpenseScreen() {
 
     if (isDemoOn) {
       demo.addExpense(total, desc, t.key, t.type);
-      haptic.success();
+      sfx.coin();
       toast.show(`Expense saved · $${total.toFixed(2)} with ${t.name}`);
       DeviceEventEmitter.emit("expense-added");
       DeviceEventEmitter.emit("groups-updated");
@@ -581,7 +583,7 @@ export default function AddExpenseScreen() {
       const res = await apiFetch("/api/manual-expense", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        haptic.success();
+        sfx.coin();
         toast.show(`Expense saved · $${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
         DeviceEventEmitter.emit("expense-added");
         DeviceEventEmitter.emit("groups-updated");
@@ -597,6 +599,7 @@ export default function AddExpenseScreen() {
   };
 
   const goTapToPay = () => {
+    sfx.paymentTap();
     const amountToCharge = tapToPaySuggestion?.amount ?? total;
     setShowSettlement(false);
     nav.push({

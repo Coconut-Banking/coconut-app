@@ -301,6 +301,7 @@ export interface RecentActivityItem {
   amount: number;
   currency?: string;
   time: string;
+  receiptUrl?: string | null;
 }
 
 export function useRecentActivity(enabled = true) {

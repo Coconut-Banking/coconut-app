@@ -616,6 +616,7 @@ export default function SettingsScreen() {
         return;
       }
       setSplitwiseResult(data as typeof splitwiseResult);
+      DeviceEventEmitter.emit("groups-updated");
     } catch (e) {
       if (__DEV__) console.warn("[splitwise] import exception", e);
       setSplitwiseResult({

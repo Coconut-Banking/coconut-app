@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Share,
   RefreshControl,
   DeviceEventEmitter,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,6 +24,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
+import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -59,6 +61,13 @@ export default function GroupScreen() {
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (detail && id) {
+      setExpensePrefillTarget({ key: id, name: detail.name, type: "group" });
+    }
+    return () => setExpensePrefillTarget(null);
+  }, [id, detail?.name]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -195,13 +204,17 @@ export default function GroupScreen() {
                 activeOpacity={0.7}
                 onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
               >
-                <MerchantLogo
-                  merchantName={a.merchant}
-                  size={36}
-                  backgroundColor={theme.surfaceTertiary}
-                  borderColor={theme.borderLight}
-                  style={{ marginRight: 12 }}
-                />
+                {a.receiptUrl ? (
+                  <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
+                ) : (
+                  <MerchantLogo
+                    merchantName={a.merchant}
+                    size={36}
+                    backgroundColor={theme.surfaceTertiary}
+                    borderColor={theme.borderLight}
+                    style={{ marginRight: 12 }}
+                  />
+                )}
                 <View style={s.txInfo}>
                   <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
                   <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
@@ -357,6 +370,7 @@ const s = StyleSheet.create({
   section: { fontSize: 13, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
   card: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
   txRow: { flexDirection: "row", alignItems: "center", padding: 14 },
+  txThumb: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F7F3F0", marginRight: 12 },
   txBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
   txInfo: { flex: 1 },
   txMerchant: { fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.text },

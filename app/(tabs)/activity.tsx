@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput, DeviceEventEmitter, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
@@ -70,6 +70,15 @@ export default function ActivityTabScreen() {
     if (isFocused && !prevFocused.current && !isDemoOn) refetch();
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
+
+  useEffect(() => {
+    if (isDemoOn) return;
+    const subs = [
+      DeviceEventEmitter.addListener("groups-updated", () => refetch()),
+      DeviceEventEmitter.addListener("expense-added", () => refetch()),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [isDemoOn, refetch]);
 
   if (!isDemoOn && loading && activity.length === 0) {
     return (
@@ -180,31 +189,35 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
         onPress={handlePress}
         disabled={isSettlement}
       >
-        <View
-          style={[
-            styles.actDot,
-            {
-              backgroundColor:
+        {it.receiptUrl ? (
+          <Image source={{ uri: it.receiptUrl }} style={styles.actThumb} />
+        ) : (
+          <View
+            style={[
+              styles.actDot,
+              {
+                backgroundColor:
+                  it.direction === "get_back"
+                    ? prototype.greenBg
+                    : it.direction === "owe"
+                      ? prototype.redBg
+                      : theme.surfaceSecondary,
+              },
+            ]}
+          >
+            <Ionicons
+              name={isSettlement ? "checkmark" : it.direction === "get_back" ? "arrow-down" : "arrow-up"}
+              size={14}
+              color={
                 it.direction === "get_back"
-                  ? prototype.greenBg
+                  ? prototype.green
                   : it.direction === "owe"
-                    ? prototype.redBg
-                    : theme.surfaceSecondary,
-            },
-          ]}
-        >
-          <Ionicons
-            name={isSettlement ? "checkmark" : it.direction === "get_back" ? "arrow-down" : "arrow-up"}
-            size={14}
-            color={
-              it.direction === "get_back"
-                ? prototype.green
-                : it.direction === "owe"
-                  ? prototype.red
-                  : "#8A9098"
-            }
-          />
-        </View>
+                    ? prototype.red
+                    : "#8A9098"
+              }
+            />
+          </View>
+        )}
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.actWho, { color: theme.text }]} numberOfLines={2}>
             <Text style={{ fontFamily: font.bold }}>{it.who}</Text> {it.action}
@@ -301,6 +314,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 12 },
   emptySub: { fontSize: 13, fontFamily: font.regular, color: "#7A8088", marginTop: 4, textAlign: "center" },
   actDot: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  actThumb: { width: 38, height: 38, borderRadius: 10, backgroundColor: "#F7F3F0" },
   actWho: { fontSize: 14, fontFamily: font.regular, color: "#1F2328", lineHeight: 20 },
   actIn: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   actAmt: { fontSize: 14, fontFamily: font.extrabold },

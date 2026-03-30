@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Alert,
   Share,
   RefreshControl,
+  Modal,
+  Pressable,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,9 +21,11 @@ import { usePersonDetail } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
+import { sfx } from "../../../lib/sounds";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
+import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -56,6 +61,14 @@ export default function PersonScreen() {
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [settleSheetOpen, setSettleSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (detail && key) {
+      setExpensePrefillTarget({ key, name: detail.displayName, type: "friend" });
+    }
+    return () => setExpensePrefillTarget(null);
+  }, [key, detail?.displayName]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -130,7 +143,7 @@ export default function PersonScreen() {
   const handleMarkPaid = () => {
     if ((detail.settlements ?? []).length === 0) return;
     if (isDemoOn && key) {
-      haptic.success();
+      sfx.coin();
       demo.settlePerson(key);
       router.back();
       return;
@@ -266,29 +279,18 @@ export default function PersonScreen() {
 
         {!settled && (
           <View style={s.actions}>
-            {singleOwedYou && (
-              <>
-                <TouchableOpacity style={s.btnPrimary} onPress={handleRequest} disabled={requestingPayment} activeOpacity={0.7}>
-                  {requestingPayment ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="send" size={16} color="#fff" />
-                      <Text style={s.btnText}>Request</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity style={s.btnBlue} onPress={handleTapToPay} activeOpacity={0.7}>
-                  <Ionicons name="phone-portrait-outline" size={16} color="#fff" />
-                  <Text style={s.btnText}>Tap to Pay</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            <TouchableOpacity style={s.btnGhost} onPress={handleMarkPaid} disabled={recordingSettlement} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={s.settleUpBtn}
+              onPress={() => { sfx.sheetOpen(); setSettleSheetOpen(true); }}
+              activeOpacity={0.8}
+            >
               {recordingSettlement ? (
-                <ActivityIndicator size="small" color="#4B5563" />
+                <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={s.btnGhostText}>Mark paid</Text>
+                <>
+                  <Ionicons name="checkmark-done" size={18} color="#fff" />
+                  <Text style={s.settleUpBtnText}>Settle up</Text>
+                </>
               )}
             </TouchableOpacity>
           </View>
@@ -313,7 +315,11 @@ export default function PersonScreen() {
                   activeOpacity={0.7}
                   onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
                 >
-                  <MerchantLogo merchantName={a.merchant} size={38} backgroundColor="#F7F3F0" borderColor="transparent" />
+                  {a.receiptUrl ? (
+                    <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
+                  ) : (
+                    <MerchantLogo merchantName={a.merchant} size={38} backgroundColor="#F7F3F0" borderColor="transparent" />
+                  )}
                   <View style={s.txInfo}>
                     <Text style={s.txMerchant}>{a.merchant}</Text>
                     <Text style={s.txGroup}>{a.groupName}</Text>
@@ -343,6 +349,80 @@ export default function PersonScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={settleSheetOpen} transparent animationType="slide" onRequestClose={() => setSettleSheetOpen(false)}>
+        <Pressable style={s.sheetOverlay} onPress={() => setSettleSheetOpen(false)}>
+          <Pressable style={s.sheetCard} onPress={(e) => e.stopPropagation()}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Settle up</Text>
+            <Text style={s.sheetSub}>
+              {balLines.map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(", ")} with {detail.displayName.split(" ")[0]}
+            </Text>
+
+            {singleOwedYou && canStripeUsd && (
+              <TouchableOpacity
+                style={s.sheetBtnAccent}
+                onPress={() => { setSettleSheetOpen(false); handleTapToPay(); }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="phone-portrait-outline" size={20} color="#fff" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnAccentText}>Tap to Pay</Text>
+                  <Text style={s.sheetBtnAccentSub}>Collect in person with NFC</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {singleOwedYou && canStripeUsd && (
+              <TouchableOpacity
+                style={s.sheetBtnOutline}
+                onPress={() => { setSettleSheetOpen(false); handleRequest(); }}
+                disabled={requestingPayment}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="send-outline" size={18} color="#1F2328" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>Request</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Send a payment link</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={[s.sheetBtnOutline, { opacity: 0.45 }]} disabled activeOpacity={0.8}>
+              <Ionicons name="logo-venmo" size={18} color="#1F2328" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.sheetBtnOutlineText}>Venmo</Text>
+                <Text style={s.sheetBtnOutlineSub}>Coming soon</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[s.sheetBtnOutline, { opacity: 0.45 }]} disabled activeOpacity={0.8}>
+              <Ionicons name="logo-paypal" size={18} color="#1F2328" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.sheetBtnOutlineText}>PayPal</Text>
+                <Text style={s.sheetBtnOutlineSub}>Coming soon</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.sheetBtnOutline}
+              onPress={() => { setSettleSheetOpen(false); handleMarkPaid(); }}
+              disabled={recordingSettlement}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cash-outline" size={18} color="#1F2328" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.sheetBtnOutlineText}>Cash / Other</Text>
+                <Text style={s.sheetBtnOutlineSub}>Record as settled manually</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.sheetDone} onPress={() => setSettleSheetOpen(false)}>
+              <Text style={s.sheetDoneText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -374,39 +454,17 @@ const s = StyleSheet.create({
   },
   balanceAmt: { fontSize: 30, fontFamily: font.black, letterSpacing: -1 },
   balanceLbl: { fontSize: 12, marginTop: 4, opacity: 0.85, fontFamily: font.medium },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
-  btnPrimary: {
+  actions: { marginBottom: 24 },
+  settleUpBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderRadius: radii.md,
-    backgroundColor: colors.primary,
+    backgroundColor: prototype.green,
   },
-  btnBlue: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: radii.md,
-    backgroundColor: "#1F2328",
-  },
-  btnGhost: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: "#E3DBD8",
-    backgroundColor: "transparent",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "600", fontFamily: font.semibold, fontSize: 14 },
-  btnGhostText: { color: "#4B5563", fontFamily: font.semibold, fontSize: 14 },
+  settleUpBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 16 },
   settledBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -436,6 +494,7 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   txRow: { flexDirection: "row", alignItems: "center", paddingVertical: 13, paddingHorizontal: 16 },
+  txThumb: { width: 38, height: 38, borderRadius: 10, backgroundColor: "#F7F3F0" },
   rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 66 },
   txEmoji: {
     width: 38,
@@ -451,4 +510,43 @@ const s = StyleSheet.create({
   txRight: { alignItems: "flex-end" },
   txAmt: { fontSize: 15, fontFamily: font.bold },
   txTotal: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  sheetCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+  },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E3DBD8", alignSelf: "center", marginTop: 10, marginBottom: 16 },
+  sheetTitle: { fontFamily: font.black, fontSize: 20, color: "#1F2328", marginBottom: 4 },
+  sheetSub: { fontFamily: font.regular, fontSize: 14, color: "#7A8088", marginBottom: 20 },
+  sheetBtnAccent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: prototype.green,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: radii.md,
+    marginBottom: 10,
+  },
+  sheetBtnAccentText: { fontFamily: font.bold, fontSize: 15, color: "#fff" },
+  sheetBtnAccentSub: { fontFamily: font.regular, fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 1 },
+  sheetBtnOutline: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    backgroundColor: "#FFFFFF",
+    marginBottom: 10,
+  },
+  sheetBtnOutlineText: { fontFamily: font.semibold, fontSize: 15, color: "#1F2328" },
+  sheetBtnOutlineSub: { fontFamily: font.regular, fontSize: 12, color: "#7A8088", marginTop: 1 },
+  sheetDone: { alignItems: "center", marginTop: 8, paddingVertical: 12 },
+  sheetDoneText: { fontFamily: font.semibold, fontSize: 15, color: "#7A8088" },
 });
