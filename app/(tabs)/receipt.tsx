@@ -854,96 +854,161 @@ function SummaryStep({
     } catch { Alert.alert("Error", "Could not record"); }
   };
 
+  const [toast, setToast] = useState<string | null>(null);
+  const [tabbedPeople, setTabbedPeople] = useState<Set<string>>(new Set());
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  const handleTabPerson = async (person: typeof rs.personShares[0]) => {
+    const key = person.name.toLowerCase();
+    if (tabbedPeople.has(key)) return;
+    if (!isDemoOn && resolvedGroupId) {
+      try {
+        await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
+          method: "POST",
+          body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
+        });
+      } catch { /* still mark as tabbed locally */ }
+    }
+    setTabbedPeople(prev => new Set(prev).add(key));
+    showToast(`Added $${person.totalOwed.toFixed(2)} to ${person.name}'s tab`);
+  };
+
+  const handleTabAll = async () => {
+    for (const person of rs.personShares) {
+      const key = person.name.toLowerCase();
+      if (tabbedPeople.has(key)) continue;
+      if (!isDemoOn && resolvedGroupId) {
+        try {
+          await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
+            method: "POST",
+            body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
+          });
+        } catch { /* continue */ }
+      }
+      setTabbedPeople(prev => new Set(prev).add(key));
+    }
+    showToast(`Added to everyone's tab`);
+  };
+
   if (finishing) {
     return (
       <View style={st.center}>
         <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[st.centerText, { color: theme.textTertiary }]}>Saving to {detectedGroupName || "group"}...</Text>
+        <Text style={[st.centerText, { color: theme.textTertiary }]}>Saving...</Text>
       </View>
     );
   }
 
+  const allTabbed = rs.personShares.every(p => tabbedPeople.has(p.name.toLowerCase()));
+
   return (
     <View style={{ gap: 20 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Text style={[st.summaryTitle, { color: theme.textTertiary }]}>
-          {rs.editMerchant ? <Text style={{ fontWeight: "700", color: theme.text }}>{rs.editMerchant}</Text> : null}
-          {rs.editMerchant ? " — " : ""}${grandTotal.toFixed(2)} total
-        </Text>
-        <TouchableOpacity
-          onPress={handleShareSplit}
-          style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.md, backgroundColor: theme.surfaceTertiary }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="share-outline" size={16} color={theme.primary} />
-          <Text style={{ fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: theme.primary }}>Share</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Per-person shares */}
-      {rs.personShares.map((person, idx) => (
-        <View key={person.name} style={[st.shareCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-          <View style={[st.shareHeader, { backgroundColor: theme.surfaceSecondary }]}>
-            <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
-              <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
-            </View>
-            <Text style={[st.shareName, { color: theme.text }]}>{person.name}</Text>
-            <Text style={[st.shareTotal, { color: theme.text }]}>${person.totalOwed.toFixed(2)}</Text>
-          </View>
-          <View style={st.shareItems}>
-            {person.items.map((item, i) => (
-              <View key={i} style={st.shareItemRow}>
-                <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
-                <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-
-      {/* Saved confirmation + settlements */}
-      {finished && (
-        <View style={{ gap: 16 }}>
-          {resolvedGroupId && (
-            <View style={[st.successCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}>
-              <Ionicons name="checkmark-circle" size={22} color={theme.success} />
-              <Text style={[st.successText, { color: theme.positive }]}>Saved to {groupName || (detectedGroupName ?? "group")}</Text>
-            </View>
-          )}
-          {suggestions.filter(s => !recordedSettlements.has(`${s.fromMemberId}-${s.toMemberId}`)).map((s, i) => (
-            <View key={i} style={[st.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-              <Text style={[st.suggText, { color: theme.textSecondary }]}><Text style={{ fontWeight: "700" }}>{s.fromName}</Text> → <Text style={{ fontWeight: "700" }}>{s.toName}</Text> <Text style={{ color: theme.positive, fontWeight: "700" }}>${s.amount.toFixed(2)}</Text></Text>
-              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                <TouchableOpacity style={[st.suggBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => handleCash(s)}><Text style={[st.suggBtnText, { color: theme.textTertiary }]}>Paid</Text></TouchableOpacity>
-                <TouchableOpacity style={[st.suggBtn, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]} onPress={() => handleRequest(s)} disabled={requestingPayment !== null}>
-                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color={theme.primary} /> : <><Ionicons name="send" size={12} color={theme.primary} /><Text style={[st.suggBtnGreenText, { color: theme.primary }]}>Request</Text></>}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[st.suggBtn, st.suggBtnTap]}
-                  onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: s.amount.toFixed(2), groupId: resolvedGroupId ?? "", payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } })}
-                >
-                  <Ionicons name="phone-portrait-outline" size={12} color="#4A6CF7" />
-                  <Text style={st.suggBtnTapText}>Tap to Pay</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary, flex: 1 }]} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
-            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary, flex: 1 }]} onPress={rs.reset}><Text style={[st.btnOutlineText, { color: theme.primary }]}>New receipt</Text></TouchableOpacity>
+      {/* Toast */}
+      {toast && (
+        <View style={{ position: "absolute", top: -50, left: 0, right: 0, zIndex: 99, alignItems: "center" }}>
+          <View style={{ backgroundColor: "#1a1a1a", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
+            <Text style={{ color: "#fff", fontSize: 13, fontFamily: font.semibold, fontWeight: "600" }}>{toast}</Text>
           </View>
         </View>
       )}
 
-      {/* Nav */}
-      <View style={st.nav}>
-        <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("assign")} disabled={finishing || finished}>
-          <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={st.navBack} onPress={rs.reset} disabled={finishing}>
-          <Ionicons name="refresh" size={16} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>New</Text>
-        </TouchableOpacity>
+      {/* Receipt summary card */}
+      <View style={[smst.receiptCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
+        <Text style={[smst.receiptMeta, { color: theme.textTertiary }]}>
+          {rs.editMerchant || "Receipt"} · {rs.editItems.length} line{rs.editItems.length !== 1 ? "s" : ""}
+        </Text>
+        <Text style={[smst.receiptTotal, { color: theme.text }]}>${grandTotal.toFixed(2)}</Text>
+        <Text style={[smst.receiptPaid, { color: theme.textQuaternary }]}>
+          Paid by You · {rs.personShares.length} {rs.personShares.length === 1 ? "person" : "people"}
+        </Text>
       </View>
+
+      {/* They owe you */}
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>They owe you</Text>
+          {rs.personShares.length > 1 && !allTabbed && (
+            <TouchableOpacity onPress={handleTabAll} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.md, backgroundColor: theme.surfaceTertiary }}>
+              <Ionicons name="layers-outline" size={14} color={theme.primary} />
+              <Text style={{ fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: theme.primary }}>Tab all</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {rs.personShares.map((person, idx) => {
+        const isTabbed = tabbedPeople.has(person.name.toLowerCase());
+        return (
+          <View key={person.name} style={[smst.personCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <View style={smst.personHeader}>
+              <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
+                <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[smst.personName, { color: theme.text }]}>{person.name}</Text>
+                <Text style={[smst.personSub, { color: theme.textQuaternary }]}>their share</Text>
+              </View>
+              <Text style={[smst.personAmount, { color: theme.positive }]}>${person.totalOwed.toFixed(2)}</Text>
+            </View>
+
+            {/* Item breakdown */}
+            <View style={smst.personItems}>
+              {person.items.map((item, i) => (
+                <View key={i} style={st.shareItemRow}>
+                  <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
+                  <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Action buttons */}
+            <View style={smst.personActions}>
+              <TouchableOpacity
+                style={[smst.settleBtn, { backgroundColor: theme.text }]}
+                onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), groupId: resolvedGroupId ?? "" } })}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="wifi" size={14} color={theme.surface} style={{ transform: [{ rotate: "90deg" }] }} />
+                <Text style={[smst.settleBtnText, { color: theme.surface }]}>Settle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
+                onPress={() => handleTabPerson(person)}
+                disabled={isTabbed}
+                activeOpacity={0.7}
+              >
+                {isTabbed ? (
+                  <><Ionicons name="checkmark" size={14} color={theme.success} /><Text style={[smst.tabBtnText, { color: theme.success }]}>Tabbed</Text></>
+                ) : (
+                  <Text style={[smst.tabBtnText, { color: theme.textSecondary }]}>Tab it</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Export */}
+      <TouchableOpacity onPress={handleShareSplit} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7}>
+        <Ionicons name="share-social-outline" size={16} color={theme.textTertiary} />
+        <Text style={[smst.exportBtnText, { color: theme.textTertiary }]}>Export summary</Text>
+      </TouchableOpacity>
+
+      {/* Done */}
+      <TouchableOpacity style={[smst.doneBtn, { backgroundColor: theme.text }]} onPress={rs.reset} activeOpacity={0.8}>
+        <Text style={[smst.doneBtnText, { color: theme.surface }]}>Done</Text>
+      </TouchableOpacity>
+
+      {/* Edit link */}
+      <TouchableOpacity style={{ alignSelf: "center", paddingVertical: 8 }} onPress={() => rs.setStep("assign")} disabled={finished}>
+        <Text style={{ fontSize: 14, fontFamily: font.medium, fontWeight: "500", color: theme.textTertiary }}>
+          <Ionicons name="chevron-back" size={12} color={theme.textTertiary} /> Edit assignments
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1100,4 +1165,26 @@ const st = StyleSheet.create({
   nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 12 },
   navBack: { flexDirection: "row", alignItems: "center", gap: 4 },
   navBackText: { fontSize: 14, fontFamily: font.medium, color: colors.textTertiary, fontWeight: "500" },
+});
+
+const smst = StyleSheet.create({
+  receiptCard: { borderRadius: radii.lg, padding: 18, borderWidth: 1, gap: 4 },
+  receiptMeta: { fontSize: 13, fontFamily: font.regular },
+  receiptTotal: { fontSize: 32, fontFamily: font.black, fontWeight: "900", letterSpacing: -1 },
+  receiptPaid: { fontSize: 13, fontFamily: font.regular },
+  personCard: { borderRadius: radii.lg, padding: 16, borderWidth: 1, gap: 12, ...shadow.md },
+  personHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  personName: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
+  personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
+  personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
+  personItems: { paddingLeft: 44, gap: 2 },
+  personActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  settleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flex: 1, paddingVertical: 12, borderRadius: radii.xl },
+  settleBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
+  tabBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flex: 1, paddingVertical: 12, borderRadius: radii.xl, borderWidth: 1.5 },
+  tabBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
+  exportBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: radii.lg, borderWidth: 1 },
+  exportBtnText: { fontSize: 14, fontFamily: font.medium, fontWeight: "500" },
+  doneBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: radii.xl },
+  doneBtnText: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
 });
