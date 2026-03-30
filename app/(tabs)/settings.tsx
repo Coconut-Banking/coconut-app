@@ -341,8 +341,11 @@ export default function SettingsScreen() {
     const days = daysBack ?? (isFirstScan ? 90 : 7);
     try {
       const body = { daysBack: days };
+      console.log("[gmail:scan] starting — daysBack:", days, "body:", JSON.stringify(body));
       const res = await apiFetch("/api/gmail/scan", { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
+      console.log("[gmail:scan] response status:", res.status);
+      const data = await res.json().catch((e) => { console.warn("[gmail:scan] json parse error:", e); return {}; });
+      console.log("[gmail:scan] response body:", JSON.stringify(data));
       if (!res.ok) {
         if (res.status === 403 && (data as { authError?: boolean }).authError) {
           setGmailStatus((prev) => prev ? { ...prev, connected: false } : null);
@@ -352,10 +355,12 @@ export default function SettingsScreen() {
         }
       } else {
         const d = data as { emailsFetched?: number; inserted?: number; matched?: number };
+        console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched);
         setGmailScanResult({ ok: true, emailsFetched: d.emailsFetched, inserted: d.inserted ?? 0, matched: d.matched ?? 0, isFirstScan });
         void fetchGmailStatus();
       }
-    } catch {
+    } catch (e) {
+      console.error("[gmail:scan] exception:", e instanceof Error ? e.message : e);
       setGmailScanResult({ ok: false, error: "Scan failed. Check your connection." });
     } finally {
       setGmailScanning(false);
