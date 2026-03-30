@@ -407,9 +407,13 @@ export default function SettingsScreen() {
           setGmailScanResult({ ok: false, error: (data as { error?: string }).error ?? "Scan failed. Try again." });
         }
       } else {
-        const d = data as { emailsFetched?: number; inserted?: number; matched?: number };
-        console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched);
-        setGmailScanResult({ ok: true, emailsFetched: d.emailsFetched, inserted: d.inserted ?? 0, matched: d.matched ?? 0, isFirstScan });
+        const d = data as { emailsFetched?: number; inserted?: number; matched?: number; error?: string };
+        console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched, "error:", d.error);
+        if (d.error) {
+          setGmailScanResult({ ok: false, error: d.error });
+        } else {
+          setGmailScanResult({ ok: true, emailsFetched: d.emailsFetched, inserted: d.inserted ?? 0, matched: d.matched ?? 0, isFirstScan });
+        }
         void fetchGmailStatus();
       }
     } catch (e) {
@@ -464,8 +468,11 @@ export default function SettingsScreen() {
     if (gmailConnectedHandled.current) return;
     if (splitwiseParams?.connected === "true") {
       gmailConnectedHandled.current = true;
-      void fetchGmailStatus();
       router.replace("/(tabs)/settings");
+      // Fetch status first, then auto-scan with 90 days on first connect
+      fetchGmailStatus().then(() => {
+        void scanGmail(90);
+      });
     } else if (splitwiseParams?.error === "auth_failed") {
       gmailConnectedHandled.current = true;
       Alert.alert("Gmail", "Could not connect Gmail. Please try again.");
@@ -1277,6 +1284,13 @@ export default function SettingsScreen() {
                   </Text>
                 </TouchableOpacity>
               ) : null}
+              <TouchableOpacity
+                style={styles.linkRow}
+                onPress={() => router.push("/(tabs)/email-receipts")}
+              >
+                <Ionicons name="mail-outline" size={16} color={theme.primary} />
+                <Text style={[styles.linkInline, { color: theme.primary }]}>View all receipts</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
                 onPress={disconnectGmail}
