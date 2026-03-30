@@ -493,7 +493,7 @@ function AssignStep({
   }, [contacts, search]);
 
   const addFromContact = (c: Contact) => {
-    rs.addPerson(c.displayName, { memberId: c.memberId, email: c.email, hasAccount: c.hasAccount });
+    rs.addPerson(c.displayName, { memberId: c.memberId, email: c.email, hasAccount: c.hasAccount, groupId: c.groupId, groupName: c.groupName });
     setSearch("");
   };
 
@@ -675,6 +675,21 @@ function AssignStep({
 
 /* ═══════════════════ Step 4: Summary ═══════════════════ */
 
+function buildShareText(merchant: string, personShares: Array<{ name: string; totalOwed: number; items: Array<{ itemName: string; shareAmount: number }> }>, grandTotal: number) {
+  const lines: string[] = [];
+  lines.push(`${merchant || "Receipt"} Split — $${grandTotal.toFixed(2)} total`);
+  lines.push("");
+  for (const p of personShares) {
+    lines.push(`${p.name}: $${p.totalOwed.toFixed(2)}`);
+    for (const item of p.items) {
+      lines.push(`  ${item.itemName} — $${item.shareAmount.toFixed(2)}`);
+    }
+    lines.push("");
+  }
+  lines.push("Sent via Coconut");
+  return lines.join("\n");
+}
+
 function SummaryStep({
   rs,
   apiFetch,
@@ -688,102 +703,107 @@ function SummaryStep({
 }) {
   const { theme } = useTheme();
   const grandTotal = rs.personShares.reduce((s, p) => s + p.totalOwed, 0);
-  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [finishing, setFinishing] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [groupBalances, setGroupBalances] = useState<Array<{ memberId: string; name: string; total: number }>>([]);
+  const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ fromMemberId: string; toMemberId: string; fromName: string; toName: string; amount: number }>>([]);
   const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
   const [requestingPayment, setRequestingPayment] = useState<string | null>(null);
   const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (isDemoOn) {
-      const demoGroups = demo.summary?.groups ?? [];
-      setGroups(demoGroups.map((g) => ({ id: g.id, name: g.name })));
-      if (demoGroups.length > 0) setSelectedGroupId(demoGroups[0].id);
-      return;
-    }
-    apiFetch("/api/groups")
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : data.groups ?? [];
-        setGroups(list);
-        if (list.length > 0) setSelectedGroupId(list[0].id);
-      })
-      .catch(() => {});
-  }, [apiFetch, isDemoOn, demo.summary]);
+  const detectedGroupId = useMemo(() => {
+    const ids = rs.people.map(p => p.groupId).filter(Boolean) as string[];
+    if (ids.length === 0) return null;
+    const unique = [...new Set(ids)];
+    return unique.length === 1 ? unique[0] : null;
+  }, [rs.people]);
 
-  const handleFinish = async (opts?: { stayForSettle?: boolean; groupId?: string }) => {
-    const gid = opts?.groupId ?? selectedGroupId;
-    if (!gid || !rs.receiptId) return;
+  const detectedGroupName = useMemo(() => {
+    if (!detectedGroupId) return null;
+    return rs.people.find(p => p.groupId === detectedGroupId)?.groupName ?? null;
+  }, [rs.people, detectedGroupId]);
+
+  const autoSave = useCallback(async () => {
+    if (!rs.receiptId || finishing || finished) return;
     setFinishing(true);
 
+    let gid = detectedGroupId;
+
     if (isDemoOn) {
-      const group = demo.groupDetails?.[gid];
-      if (!group) {
-        Alert.alert("Error", "Group not found");
+      if (!gid) {
+        setFinished(true);
         setFinishing(false);
         return;
       }
+      const group = demo.groupDetails?.[gid];
+      if (!group) { setFinished(true); setFinishing(false); return; }
 
       const groupMembers = group.members ?? [];
       const payer = groupMembers.find((m) => m.user_id === "me") ?? groupMembers[0];
-      if (!payer?.id) {
-        Alert.alert("Error", "Missing payer");
-        setFinishing(false);
-        return;
-      }
+      if (!payer?.id) { setFinished(true); setFinishing(false); return; }
 
       const owedRows = rs.personShares
         .filter((p) => !!p.memberId)
         .map((p) => ({ member_id: p.memberId as string, amount: p.totalOwed }));
-
       const paidRows = [{ member_id: payer.id, amount: grandTotal }];
       const balances = computeBalancesDemo(paidRows, owedRows);
       const demoSuggestions = getSuggestedSettlementsDemo(balances);
-
       const memberMap = new Map(groupMembers.map((m) => [m.id, m.display_name]));
-      const membersForUi = groupMembers.map((m) => ({ id: m.id, displayName: m.display_name, email: m.email ?? null }));
 
       setFinished(true);
-      setGroupBalances([]);
-      setSuggestions(
-        demoSuggestions.map((s) => ({
-          fromMemberId: s.fromMemberId,
-          toMemberId: s.toMemberId,
-          fromName: memberMap.get(s.fromMemberId) ?? "Unknown",
-          toName: memberMap.get(s.toMemberId) ?? "Unknown",
-          amount: s.amount,
-        }))
-      );
+      setResolvedGroupId(gid);
+      setSuggestions(demoSuggestions.map((s) => ({
+        fromMemberId: s.fromMemberId, toMemberId: s.toMemberId,
+        fromName: memberMap.get(s.fromMemberId) ?? "Unknown",
+        toName: memberMap.get(s.toMemberId) ?? "Unknown",
+        amount: s.amount,
+      })));
       setGroupName(group.name ?? "");
-      setMembers(membersForUi);
+      setMembers(groupMembers.map((m) => ({ id: m.id, displayName: m.display_name, email: m.email ?? null })));
       setFinishing(false);
       return;
     }
 
     try {
-      const res = await apiFetch(`/api/receipt/${rs.receiptId}/finish`, { method: "POST", body: { groupId: gid, people: rs.people.map(p => ({ name: p.name, email: p.email })) } });
-      const data = await res.json();
-      if (res.ok) { setFinished(true); setGroupBalances(data.balances || []); setSuggestions(data.suggestions || []); setGroupName(data.groupName || ""); setMembers(data.members || []); }
-      else { Alert.alert("Error", data.error || "Failed"); setFinishing(false); }
-    } catch { Alert.alert("Error", "Failed"); setFinishing(false); }
-  };
+      if (!gid) {
+        const res = await apiFetch("/api/groups", {
+          method: "POST",
+          body: { name: rs.editMerchant ? `${rs.editMerchant} split` : "Receipt split", ownerDisplayName: "You" },
+        });
+        const gd = await res.json();
+        if (res.ok && gd.id) gid = gd.id;
+        else { setFinished(true); setFinishing(false); return; }
+      }
 
-  const handleSettleNoGroup = async () => {
-    if (!rs.receiptId) return;
-    setFinishing(true);
+      setResolvedGroupId(gid);
+      const res = await apiFetch(`/api/receipt/${rs.receiptId}/finish`, {
+        method: "POST",
+        body: { groupId: gid, people: rs.people.map(p => ({ name: p.name, email: p.email })) },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFinished(true);
+        setSuggestions(data.suggestions || []);
+        setGroupName(data.groupName || "");
+        setMembers(data.members || []);
+      } else {
+        setFinished(true);
+      }
+    } catch {
+      setFinished(true);
+    } finally {
+      setFinishing(false);
+    }
+  }, [rs.receiptId, rs.people, rs.personShares, rs.editMerchant, detectedGroupId, isDemoOn, demo, apiFetch, finishing, finished, grandTotal]);
+
+  useEffect(() => { autoSave(); }, []);
+
+  const handleShareSplit = async () => {
+    const text = buildShareText(rs.editMerchant, rs.personShares, grandTotal);
     try {
-      const res = await apiFetch("/api/groups", { method: "POST", body: { name: rs.editMerchant ? `${rs.editMerchant} split` : "New group", ownerDisplayName: "You" } });
-      const gd = await res.json();
-      if (!res.ok || !gd.id) { Alert.alert("Error", gd.error ?? "Failed"); setFinishing(false); return; }
-      setGroups(prev => [...prev, { id: gd.id, name: gd.name || "New group" }]);
-      setSelectedGroupId(gd.id);
-      await handleFinish({ stayForSettle: true, groupId: gd.id });
-    } catch { Alert.alert("Error", "Failed"); setFinishing(false); }
+      await Share.share({ message: text, title: `${rs.editMerchant || "Receipt"} Split` });
+    } catch { /* cancelled */ }
   };
 
   const handleRequest = async (s: (typeof suggestions)[0]) => {
@@ -803,15 +823,13 @@ function SummaryStep({
         } else {
           Alert.alert("No email", "Add their email to send a request.");
         }
-      } finally {
-        setRequestingPayment(null);
-      }
+      } finally { setRequestingPayment(null); }
       return;
     }
     const key = `${s.fromMemberId}-${s.toMemberId}`;
     setRequestingPayment(key);
     try {
-      const res = await apiFetch("/api/stripe/create-payment-link", { method: "POST", body: { amount: s.amount, description: `${rs.editMerchant || "Receipt"} split`, recipientName: s.fromName, groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } });
+      const res = await apiFetch("/api/stripe/create-payment-link", { method: "POST", body: { amount: s.amount, description: `${rs.editMerchant || "Receipt"} split`, recipientName: s.fromName, groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } });
       const data = await res.json();
       if (res.ok && data.url) {
         await Share.share({ message: `You owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}. Pay here: ${data.url}`, url: data.url, title: "Payment request" });
@@ -825,24 +843,42 @@ function SummaryStep({
 
   const handleCash = async (s: (typeof suggestions)[0]) => {
     if (isDemoOn) {
-      const key = `${s.fromMemberId}-${s.toMemberId}`;
-      setRecordedSettlements((prev) => new Set(prev).add(key));
+      setRecordedSettlements((prev) => new Set(prev).add(`${s.fromMemberId}-${s.toMemberId}`));
       return;
     }
     const key = `${s.fromMemberId}-${s.toMemberId}`;
     try {
-      const res = await apiFetch("/api/settlements", { method: "POST", body: { groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId, amount: s.amount, method: "in_person" } });
+      const res = await apiFetch("/api/settlements", { method: "POST", body: { groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId, amount: s.amount, method: "in_person" } });
       if (res.ok) setRecordedSettlements(prev => new Set(prev).add(key));
       else Alert.alert("Error", "Could not record");
     } catch { Alert.alert("Error", "Could not record"); }
   };
 
+  if (finishing) {
+    return (
+      <View style={st.center}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[st.centerText, { color: theme.textTertiary }]}>Saving to {detectedGroupName || "group"}...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={{ gap: 20 }}>
-      <Text style={[st.summaryTitle, { color: theme.textTertiary }]}>
-        {rs.editMerchant ? <Text style={{ fontWeight: "700", color: theme.text }}>{rs.editMerchant}</Text> : null}
-        {rs.editMerchant ? " — " : ""}${grandTotal.toFixed(2)} total
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Text style={[st.summaryTitle, { color: theme.textTertiary }]}>
+          {rs.editMerchant ? <Text style={{ fontWeight: "700", color: theme.text }}>{rs.editMerchant}</Text> : null}
+          {rs.editMerchant ? " — " : ""}${grandTotal.toFixed(2)} total
+        </Text>
+        <TouchableOpacity
+          onPress={handleShareSplit}
+          style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.md, backgroundColor: theme.surfaceTertiary }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="share-outline" size={16} color={theme.primary} />
+          <Text style={{ fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: theme.primary }}>Share</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Per-person shares */}
       {rs.personShares.map((person, idx) => (
@@ -865,51 +901,26 @@ function SummaryStep({
         </View>
       ))}
 
-      {/* Actions */}
-      {!finished && (
-        <View style={{ gap: 12 }}>
-          <Text style={[st.label, { color: theme.textTertiary }]}>What next?</Text>
-          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            <Text style={[st.actionTitle, { color: theme.text }]}>Settle now</Text>
-            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>{groups.length > 0 ? "Save to a group and share payment links." : "Create a group and settle."}</Text>
-            {groups.length > 1 && (
-              <View style={st.groupPicker}>
-                {groups.map(g => (
-                  <TouchableOpacity key={g.id} style={[st.groupChip, { backgroundColor: theme.surfaceTertiary }, selectedGroupId === g.id && { backgroundColor: theme.primaryLight }]} onPress={() => setSelectedGroupId(g.id)}>
-                    <Text style={[st.groupChipText, { color: theme.textTertiary }, selectedGroupId === g.id && { color: theme.primary, fontWeight: "700" }]}>{g.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }, finishing && st.btnOff]} onPress={() => groups.length > 0 ? handleFinish({ stayForSettle: true }) : handleSettleNoGroup()} disabled={finishing}>
-              {finishing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="checkmark-circle" size={18} color="#fff" /><Text style={st.btnText}>Save & settle</Text></>}
-            </TouchableOpacity>
-          </View>
-          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            <Text style={[st.actionTitle, { color: theme.text }]}>Track for later</Text>
-            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>Add to shared expenses, settle whenever.</Text>
-            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }, (!selectedGroupId || finishing) && st.btnOff]} onPress={() => handleFinish()} disabled={!selectedGroupId || finishing}>
-              <Ionicons name="people" size={18} color={theme.primary} /><Text style={[st.btnOutlineText, { color: theme.primary }]}>Add to group</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Post-save */}
+      {/* Saved confirmation + settlements */}
       {finished && (
         <View style={{ gap: 16 }}>
-          <View style={[st.successCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}><Ionicons name="checkmark-circle" size={22} color={theme.success} /><Text style={[st.successText, { color: theme.positive }]}>Saved to group!</Text></View>
+          {resolvedGroupId && (
+            <View style={[st.successCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}>
+              <Ionicons name="checkmark-circle" size={22} color={theme.success} />
+              <Text style={[st.successText, { color: theme.positive }]}>Saved to {groupName || (detectedGroupName ?? "group")}</Text>
+            </View>
+          )}
           {suggestions.filter(s => !recordedSettlements.has(`${s.fromMemberId}-${s.toMemberId}`)).map((s, i) => (
             <View key={i} style={[st.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
               <Text style={[st.suggText, { color: theme.textSecondary }]}><Text style={{ fontWeight: "700" }}>{s.fromName}</Text> → <Text style={{ fontWeight: "700" }}>{s.toName}</Text> <Text style={{ color: theme.positive, fontWeight: "700" }}>${s.amount.toFixed(2)}</Text></Text>
               <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
                 <TouchableOpacity style={[st.suggBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => handleCash(s)}><Text style={[st.suggBtnText, { color: theme.textTertiary }]}>Paid</Text></TouchableOpacity>
                 <TouchableOpacity style={[st.suggBtn, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]} onPress={() => handleRequest(s)} disabled={requestingPayment !== null}>
-                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color={theme.primary} /> : <><Ionicons name="send" size={12} color={theme.primary} /><Text style={[st.suggBtnGreenText, { color: theme.primary }]}>Share</Text></>}
+                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color={theme.primary} /> : <><Ionicons name="send" size={12} color={theme.primary} /><Text style={[st.suggBtnGreenText, { color: theme.primary }]}>Request</Text></>}
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[st.suggBtn, st.suggBtnTap]}
-                  onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: s.amount.toFixed(2), groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } })}
+                  onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: s.amount.toFixed(2), groupId: resolvedGroupId ?? "", payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } })}
                 >
                   <Ionicons name="phone-portrait-outline" size={12} color="#4A6CF7" />
                   <Text style={st.suggBtnTapText}>Tap to Pay</Text>
@@ -918,8 +929,8 @@ function SummaryStep({
             </View>
           ))}
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }]} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
-            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }]} onPress={rs.reset}><Text style={[st.btnOutlineText, { color: theme.primary }]}>New receipt</Text></TouchableOpacity>
+            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary, flex: 1 }]} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
+            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary, flex: 1 }]} onPress={rs.reset}><Text style={[st.btnOutlineText, { color: theme.primary }]}>New receipt</Text></TouchableOpacity>
           </View>
         </View>
       )}

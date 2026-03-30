@@ -15,6 +15,8 @@ export interface Person {
   memberId: string | null;
   email: string | null;
   hasAccount: boolean;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 type ApiFetch = (
@@ -299,6 +301,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         memberId?: string | null;
         email?: string | null;
         hasAccount?: boolean;
+        groupId?: string | null;
+        groupName?: string | null;
       }
     ) => {
       const trimmed = name.trim();
@@ -312,6 +316,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           memberId: opts?.memberId ?? null,
           email: opts?.email ?? null,
           hasAccount: opts?.hasAccount ?? false,
+          groupId: opts?.groupId ?? null,
+          groupName: opts?.groupName ?? null,
         },
       ]);
     },
