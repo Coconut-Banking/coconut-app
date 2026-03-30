@@ -1065,14 +1065,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   seeAll: { fontSize: 13, fontFamily: font.semibold, color: "#1F2328" },
-  bankSyncHint: {
-    fontSize: 12,
-    fontFamily: font.regular,
-    color: "#7A8088",
-    marginTop: -4,
-    marginBottom: 10,
-    lineHeight: 17,
-  },
   bankCard: {
     width: 168,
     backgroundColor: "#FFFFFF",

@@ -26,6 +26,7 @@ import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { sfx } from "../../lib/sounds";
+import { exportReceiptPdf } from "../../lib/receipt-pdf";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -117,6 +118,7 @@ export default function ReceiptScreen() {
 
   return (
     <SafeAreaView style={[st.safe, { backgroundColor: theme.background }]} edges={["top"]}>
+      {/* Clean top bar: back + title */}
       <View style={st.receiptTopBar}>
         <TouchableOpacity
           onPress={() => {
@@ -127,9 +129,22 @@ export default function ReceiptScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={theme.primary} />
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
+        <Text style={[st.topBarTitle, { color: theme.text }]}>Split Receipt</Text>
+        <View style={{ width: 24 }} />
       </View>
+
+      {/* Minimal progress bar */}
+      <View style={st.progressRow}>
+        {STEPS.map((s, i) => (
+          <View key={s.key} style={st.progressSegWrap}>
+            <View style={[st.progressSeg, { backgroundColor: theme.surfaceTertiary }, i <= stepIdx && { backgroundColor: theme.primary }]} />
+            <Text style={[st.progressSegLabel, { color: theme.textQuaternary }, i === stepIdx && { color: theme.text, fontFamily: font.bold, fontWeight: "700" }]}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+
       <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
         <ScrollView
           ref={scrollRef}
@@ -139,19 +154,6 @@ export default function ReceiptScreen() {
           showsVerticalScrollIndicator={false}
           automaticallyAdjustKeyboardInsets
         >
-
-        {/* Step indicator */}
-        <View style={st.steps}>
-          {STEPS.map((s, i) => (
-            <View key={s.key} style={st.stepWrap}>
-              <View style={[st.stepDot, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }, i === stepIdx && { backgroundColor: theme.primary }, i > stepIdx && { backgroundColor: theme.surfaceTertiary }]}>
-                {i < stepIdx ? <Ionicons name="checkmark" size={11} color="#fff" /> : <Text style={[st.stepNum, i === stepIdx && { color: "#fff" }]}>{i + 1}</Text>}
-              </View>
-              <Text style={[st.stepLabel, { color: theme.primary }, i === stepIdx && { color: theme.text, fontWeight: "700" }, i > stepIdx && { color: theme.textQuaternary }]}>{s.label}</Text>
-              {i < STEPS.length - 1 && <View style={[st.stepLine, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }]} />}
-            </View>
-          ))}
-        </View>
 
         {rs.step === "upload" && <UploadStep rs={rs} />}
         {rs.step === "review" && <ReviewStep rs={rs} />}
@@ -234,16 +236,22 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
         </TouchableOpacity>
       )}
       <TouchableOpacity style={[st.uploadArea, { borderColor: theme.inputBorder, backgroundColor: theme.surface }]} onPress={() => pick(false)} activeOpacity={0.8}>
-        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="camera" size={28} color={theme.primary} /></View>
-        <Text style={[st.uploadTitle, { color: theme.text }]}>{hasSavedReceipt ? "Scan a different receipt" : "Take or pick a photo"}</Text>
+        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}>
+          <Ionicons name="cloud-upload-outline" size={26} color={theme.primary} />
+        </View>
+        <Text style={[st.uploadTitle, { color: theme.text }]}>
+          {hasSavedReceipt ? "Scan a different receipt" : "Tap to scan or pick a photo"}
+        </Text>
         <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>PNG, JPG, or PDF</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: "row", gap: 10 }}>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => pick(true)}>
-          <Ionicons name="camera" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>Camera</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.primary }]} onPress={() => pick(true)} activeOpacity={0.8}>
+          <Ionicons name="camera" size={16} color="#fff" />
+          <Text style={[st.uploadBtnText, { color: "#fff" }]}>Camera</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf}>
-          <Ionicons name="document-text" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>PDF</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf} activeOpacity={0.8}>
+          <Ionicons name="document-text-outline" size={16} color={theme.text} />
+          <Text style={[st.uploadBtnText, { color: theme.text }]}>PDF</Text>
         </TouchableOpacity>
       </View>
       {rs.imageUri && !rs.isPdf && <Image source={{ uri: rs.imageUri }} style={st.preview} resizeMode="contain" />}
@@ -800,11 +808,24 @@ function SummaryStep({
 
   useEffect(() => { autoSave(); }, []);
 
-  const handleShareSplit = async () => {
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const handleShareText = async () => {
     const text = buildShareText(rs.editMerchant, rs.personShares, grandTotal);
     try {
       await Share.share({ message: text, title: `${rs.editMerchant || "Receipt"} Split` });
     } catch { /* cancelled */ }
+  };
+
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      await exportReceiptPdf(apiFetch, rs.editMerchant, rs.personShares);
+    } catch (e) {
+      Alert.alert("PDF Export", "Could not generate PDF. Try sharing as text instead.");
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const handleRequest = async (s: (typeof suggestions)[0]) => {
@@ -995,11 +1016,21 @@ function SummaryStep({
         );
       })}
 
-      {/* Export */}
-      <TouchableOpacity onPress={handleShareSplit} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7}>
-        <Ionicons name="share-social-outline" size={16} color={theme.textTertiary} />
-        <Text style={[smst.exportBtnText, { color: theme.textTertiary }]}>Export summary</Text>
-      </TouchableOpacity>
+      {/* Export row */}
+      <View style={smst.exportRow}>
+        <TouchableOpacity onPress={handleShareText} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7}>
+          <Ionicons name="share-social-outline" size={15} color={theme.text} />
+          <Text style={[smst.exportBtnText, { color: theme.text }]}>Share text</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleExportPdf} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7} disabled={exportingPdf}>
+          {exportingPdf ? (
+            <ActivityIndicator size="small" color={theme.text} />
+          ) : (
+            <Ionicons name="document-outline" size={15} color={theme.text} />
+          )}
+          <Text style={[smst.exportBtnText, { color: theme.text }]}>Export PDF</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Done */}
       <TouchableOpacity style={[smst.doneBtn, { backgroundColor: theme.text }]} onPress={rs.reset} activeOpacity={0.8}>
@@ -1023,23 +1054,18 @@ const st = StyleSheet.create({
   receiptTopBar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
+  topBarTitle: { fontSize: 17, fontFamily: font.bold, fontWeight: "700", letterSpacing: -0.3 },
+  progressRow: { flexDirection: "row", gap: 6, paddingHorizontal: 20, paddingBottom: 14 },
+  progressSegWrap: { flex: 1, gap: 4 },
+  progressSeg: { height: 3, borderRadius: 2, backgroundColor: colors.borderLight },
+  progressSegLabel: { fontSize: 10, fontFamily: font.medium, fontWeight: "500", textAlign: "center", color: colors.textMuted },
   kv: { flex: 1 },
   scroll: { flex: 1, backgroundColor: colors.bg },
   scrollContent: { padding: 20, paddingBottom: 60 },
-
-  steps: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
-  stepWrap: { flex: 1, flexDirection: "row", alignItems: "center" },
-  stepDot: { width: 24, height: 24, borderRadius: radii.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.border },
-  stepDone: { backgroundColor: colors.primary },
-  stepActive: { backgroundColor: colors.primary },
-  stepPending: { backgroundColor: colors.borderLight },
-  stepNum: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: colors.textMuted },
-  stepLabel: { fontSize: 11, fontFamily: font.semibold, fontWeight: "600", color: colors.primary, marginLeft: 4 },
-  stepLabelActive: { color: colors.text, fontFamily: font.bold, fontWeight: "700" },
-  stepLine: { flex: 1, height: 2, backgroundColor: colors.border, marginHorizontal: 4 },
 
   center: { alignItems: "center", paddingVertical: 48 },
   centerText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
@@ -1048,12 +1074,12 @@ const st = StyleSheet.create({
   savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
   savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
   savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
-  uploadArea: { borderWidth: 2, borderStyle: "dashed", borderColor: colors.border, borderRadius: radii.xl, padding: 28, alignItems: "center", backgroundColor: colors.surface },
-  uploadIcon: { width: 56, height: 56, borderRadius: radii.lg, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  uploadTitle: { fontSize: 16, fontFamily: font.bold, fontWeight: "700", color: colors.text },
-  uploadSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted, marginTop: 4 },
-  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border },
-  uploadBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
+  uploadArea: { borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.border, borderRadius: 20, paddingVertical: 40, paddingHorizontal: 24, alignItems: "center", backgroundColor: colors.surface },
+  uploadIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  uploadTitle: { fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, textAlign: "center" },
+  uploadSub: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 4 },
+  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
+  uploadBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
   preview: { width: "100%", height: 180, borderRadius: radii.md, backgroundColor: colors.borderLight },
   pdfPreview: { height: 120, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", gap: 8 },
   pdfText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
@@ -1186,8 +1212,9 @@ const smst = StyleSheet.create({
   settleBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
   tabBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flex: 1, paddingVertical: 12, borderRadius: radii.xl, borderWidth: 1.5 },
   tabBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
-  exportBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: radii.lg, borderWidth: 1 },
-  exportBtnText: { fontSize: 14, fontFamily: font.medium, fontWeight: "500" },
+  exportRow: { flexDirection: "row", gap: 10 },
+  exportBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 13, borderRadius: 12, borderWidth: 1 },
+  exportBtnText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },
   doneBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: radii.xl },
   doneBtnText: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
 });

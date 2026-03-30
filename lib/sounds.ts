@@ -11,7 +11,7 @@ try {
   Haptics = require("expo-haptics");
 } catch {}
 
-let Audio: typeof import("expo-av").Audio | null = null;
+let Audio: { playFromPositionAsync?: unknown } | null = null;
 try {
   const av = require("expo-av");
   Audio = av.Audio;
