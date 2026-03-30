@@ -53,7 +53,8 @@ const MERCHANT_DOMAINS: Record<string, string> = {
   wealthsimple: "wealthsimple.com",
 };
 
-export function getMerchantLogoDomain(merchantName: string): string | null {
+export function getMerchantLogoDomain(merchantName: string | null | undefined): string | null {
+  if (!merchantName) return null;
   const normalized = merchantName.toLowerCase().replace(/\s+/g, "");
   for (const [key, domain] of Object.entries(MERCHANT_DOMAINS)) {
     if (normalized.includes(key)) return domain;
@@ -62,7 +63,7 @@ export function getMerchantLogoDomain(merchantName: string): string | null {
 }
 
 /** Google favicon URL for a domain; sz=64 works well for list items. */
-export function getMerchantLogoUrl(merchantName: string, size: number = 64): string | null {
+export function getMerchantLogoUrl(merchantName: string | null | undefined, size: number = 64): string | null {
   const domain = getMerchantLogoDomain(merchantName);
   if (!domain) return null;
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;

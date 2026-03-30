@@ -122,6 +122,8 @@ function PayScreenInner() {
   const [readerPrepVisible, setReaderPrepVisible] = useState(false);
   const [readerPrepMessage, setReaderPrepMessage] = useState("Preparing Tap to Pay…");
   const [ttpSoftwareUpdate, setTtpSoftwareUpdate] = useState(false);
+  const [lastDirectPayout, setLastDirectPayout] = useState<boolean | null>(null);
+  const [receiverPayoutsEnabled, setReceiverPayoutsEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     readersRef.current = discoveredReaders;
@@ -202,6 +204,27 @@ function PayScreenInner() {
   useEffect(() => {
     if (params.amount) setAmount(params.amount);
   }, [params.amount]);
+
+  // Check if the receiver has Stripe Connect set up (for the payout note)
+  useEffect(() => {
+    if (!params.receiverMemberId) { setReceiverPayoutsEnabled(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `/api/stripe/connect/receiver-status?receiverMemberId=${params.receiverMemberId}`
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          setReceiverPayoutsEnabled((data as { payoutsEnabled?: boolean }).payoutsEnabled ?? false);
+        }
+      } catch {
+        // Non-critical — don't block the payment
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [params.receiverMemberId, apiFetch]);
 
   const lockedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
   const hasPrefilledCheckout = Boolean(params.amount) && lockedAmount > 0;
@@ -424,9 +447,12 @@ function PayScreenInner() {
       }
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
+      const directPayout = piData.directPayout === true;
+      setLastDirectPayout(directPayout);
       if (__DEV__ && piData.paymentIntentId) {
         console.log("[Pay] PaymentIntent created (search in Stripe Dashboard → Payments):", piData.paymentIntentId);
       }
+      if (__DEV__) console.log("[Pay] directPayout:", directPayout);
 
       if (!clientSecret) {
         Alert.alert("Error", piData.error ?? "Failed to create payment intent");
@@ -578,7 +604,11 @@ function PayScreenInner() {
         logPaymentIntentStep("after process (success)", processResult.paymentIntent);
         setPaymentOutcome("approved");
         setLastOutcomeAmount(amt);
-        setLastPayment(`Paid $${amt.toFixed(2)} successfully`);
+        setLastPayment(
+          directPayout
+            ? `Paid $${amt.toFixed(2)} — depositing to recipient's bank`
+            : `Paid $${amt.toFixed(2)} successfully`
+        );
         setAmount("");
       }
     } catch (e) {
@@ -694,6 +724,11 @@ function PayScreenInner() {
               </View>
             )}
           </TouchableOpacity>
+          {isConnected && receiverPayoutsEnabled === false && hasPrefilledCheckout ? (
+            <Text style={[styles.payoutNote, { color: theme.textQuaternary }]}>
+              Recipient hasn't set up payments yet — balance will be recorded but funds won't transfer to their bank.
+            </Text>
+          ) : null}
           {isConnected ? (
             <TouchableOpacity style={styles.checkoutLink} onPress={disconnect}>
               <Text style={[styles.checkoutLinkText, { color: theme.textTertiary }]}>Disconnect reader</Text>
@@ -959,6 +994,14 @@ const styles = StyleSheet.create({
     fontFamily: font.medium,
     textAlign: "center",
     marginBottom: 16,
+  },
+  payoutNote: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 17,
+    marginTop: 8,
+    paddingHorizontal: 8,
   },
   checkoutLink: {
     alignItems: "center",

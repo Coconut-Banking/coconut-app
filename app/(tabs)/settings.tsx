@@ -162,6 +162,7 @@ export default function SettingsScreen() {
     splitwise_error?: string;
     connected?: string;
     error?: string;
+    stripe_connect?: string;
   }>();
   const splitwiseErrorAlertShown = useRef(false);
 
@@ -186,6 +187,16 @@ export default function SettingsScreen() {
   } | null>(null);
   const gmailConnectedHandled = useRef(false);
 
+  const [connectStatus, setConnectStatus] = useState<{
+    hasAccount: boolean;
+    onboardingComplete: boolean;
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+  } | null>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectActionLoading, setConnectActionLoading] = useState(false);
+  const connectReturnHandled = useRef(false);
+
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsLoading(true);
     setAccountsError(null);
@@ -207,6 +218,47 @@ export default function SettingsScreen() {
       setAccounts([]);
     } finally {
       setAccountsLoading(false);
+    }
+  };
+
+  const fetchConnectStatus = useCallback(async () => {
+    if (!user) return;
+    setConnectLoading(true);
+    try {
+      const res = await apiFetch("/api/stripe/connect/status");
+      if (!res.ok) { setConnectStatus(null); return; }
+      const data = await res.json();
+      setConnectStatus(data as typeof connectStatus);
+    } catch {
+      setConnectStatus(null);
+    } finally {
+      setConnectLoading(false);
+    }
+  }, [user, apiFetch]);
+
+  const startConnectOnboarding = async () => {
+    setConnectActionLoading(true);
+    try {
+      const endpoint = connectStatus?.hasAccount
+        ? "/api/stripe/connect/onboarding-link"
+        : "/api/stripe/connect/create-account";
+      const res = await apiFetch(endpoint, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", (data as { error?: string }).error ?? "Could not start setup");
+        return;
+      }
+      const data = await res.json();
+      const url = (data as { url?: string }).url;
+      if (!url) {
+        Alert.alert("Error", "Could not get onboarding URL");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Error", "Could not start payment setup. Check your connection.");
+    } finally {
+      setConnectActionLoading(false);
     }
   };
 
@@ -305,7 +357,8 @@ export default function SettingsScreen() {
     if (!isFocused) return;
     void fetchSplitwiseStatus({ showLoading: true });
     void fetchGmailStatus();
-  }, [isFocused, user, fetchSplitwiseStatus]);
+    void fetchConnectStatus();
+  }, [isFocused, user, fetchSplitwiseStatus, fetchConnectStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
   useEffect(() => {
@@ -419,6 +472,22 @@ export default function SettingsScreen() {
       router.replace("/(tabs)/settings");
     }
   }, [splitwiseParams?.connected, splitwiseParams?.error, user]);
+
+  // Handle return from Stripe Connect onboarding
+  useEffect(() => {
+    if (!user) return;
+    if (connectReturnHandled.current) return;
+    const sc = splitwiseParams?.stripe_connect;
+    if (sc === "complete") {
+      connectReturnHandled.current = true;
+      void fetchConnectStatus();
+      router.replace("/(tabs)/settings");
+    } else if (sc === "refresh") {
+      connectReturnHandled.current = true;
+      void startConnectOnboarding();
+      router.replace("/(tabs)/settings");
+    }
+  }, [splitwiseParams?.stripe_connect, user]);
 
   useEffect(() => {
     const err = splitwiseParams?.splitwise_error;
@@ -817,6 +886,65 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Payments (Stripe Connect) */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Payments</Text>
+          <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
+            Set up payments to receive Tap to Pay funds directly in your bank account.
+          </Text>
+
+          {connectLoading && connectStatus === null ? (
+            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
+          ) : connectStatus?.onboardingComplete ? (
+            <View style={[styles.resultBox, { backgroundColor: "#EEF7F2", borderColor: "#C3E0D3" }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
+                <Text style={[styles.resultTitle, { color: theme.text }]}>Payments enabled</Text>
+              </View>
+              <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                Tap to Pay funds will be deposited directly to your bank account.
+              </Text>
+            </View>
+          ) : connectStatus?.hasAccount ? (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <View style={[styles.resultBox, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="time-outline" size={20} color="#F59E0B" />
+                  <Text style={[styles.resultTitle, { color: theme.text }]}>Setup incomplete</Text>
+                </View>
+                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                  Finish setting up your account to receive payments.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
+                onPress={startConnectOnboarding}
+                disabled={connectActionLoading}
+              >
+                {connectActionLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Continue setup</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
+                onPress={startConnectOnboarding}
+                disabled={connectActionLoading}
+              >
+                {connectActionLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Set up payments</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Connected banks */}

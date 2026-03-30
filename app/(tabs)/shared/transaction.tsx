@@ -106,8 +106,8 @@ export default function TransactionScreen() {
       >
         {/* Hero */}
         <View style={s.hero}>
-          <MerchantLogo merchantName={detail.description} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
-          <Text style={s.heroTitle}>{detail.description}</Text>
+          <MerchantLogo merchantName={detail.description ?? "Expense"} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
+          <Text style={s.heroTitle}>{detail.description ?? "Expense"}</Text>
           <Text style={s.heroAmount}>{formatSplitCurrencyAmount(totalAmount, currency)}</Text>
           {detail.groupName ? (
             <Text style={s.heroGroup}>{detail.groupName}</Text>
