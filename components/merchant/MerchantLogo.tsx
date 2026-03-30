@@ -44,8 +44,10 @@ export function MerchantLogo({
   const bg = backgroundColor ?? "rgba(31,35,40,0.08)";
   const ring = borderColor ?? "rgba(31,35,40,0.14)";
 
+  const hasLogo = Boolean(logoUrl);
+
   return (
-    <View style={[s.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderColor: ring }, style]}>
+    <View style={[s.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: hasLogo ? "transparent" : bg, borderColor: hasLogo ? "transparent" : ring, borderWidth: hasLogo ? 0 : 1 }, style]}>
       {logoUrl ? (
         <Image
           source={{ uri: logoUrl }}
@@ -64,7 +66,6 @@ const s = StyleSheet.create({
   circle: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
     overflow: "hidden",
   },
   logoImg: {
