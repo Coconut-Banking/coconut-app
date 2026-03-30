@@ -333,13 +333,14 @@ export default function SettingsScreen() {
     }
   };
 
-  const scanGmail = async () => {
+  const scanGmail = async (daysBack?: number) => {
     setGmailScanning(true);
     setGmailScanResult(null);
-    // First-time scan: go back 90 days to catch historical receipts
     const isFirstScan = !gmailStatus?.lastScanAt;
+    // Always use at least 90 days on first scan, or when explicitly requested
+    const days = daysBack ?? (isFirstScan ? 90 : 7);
     try {
-      const body = isFirstScan ? { daysBack: 90 } : {};
+      const body = { daysBack: days };
       const res = await apiFetch("/api/gmail/scan", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1118,22 +1119,31 @@ export default function SettingsScreen() {
               </View>
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }, gmailScanning && styles.disabled]}
-                onPress={scanGmail}
+                onPress={() => scanGmail()}
                 disabled={gmailScanning || gmailDisconnecting}
               >
                 {gmailScanning ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.primaryBtnText}>
-                      {!gmailStatus.lastScanAt ? "Scanning 90 days…" : "Scanning…"}
-                    </Text>
+                    <Text style={styles.primaryBtnText}>Scanning…</Text>
                   </View>
                 ) : (
                   <Text style={styles.primaryBtnText}>
-                    {!gmailStatus.lastScanAt ? "Scan receipts (last 90 days)" : "Scan for receipts"}
+                    {!gmailStatus.lastScanAt ? "Scan receipts (last 90 days)" : "Scan new receipts"}
                   </Text>
                 )}
               </TouchableOpacity>
+              {gmailStatus.lastScanAt ? (
+                <TouchableOpacity
+                  style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                  onPress={() => scanGmail(90)}
+                  disabled={gmailScanning || gmailDisconnecting}
+                >
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
+                    Scan last 90 days
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
                 onPress={disconnectGmail}
