@@ -31,8 +31,7 @@ export default {
         projectId: "d1b6394a-093c-413c-bf89-ac740a528dbb",
       },
       EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:
-        process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-        "pk_test_YWJzb2x1dGUtbGVtdXItNjguY2xlcmsuYWNjb3VudHMuZGV2JA",
+        process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
       EXPO_PUBLIC_API_URL:
         process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev",
       EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID:

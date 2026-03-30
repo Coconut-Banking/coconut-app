@@ -53,7 +53,6 @@ export function useTransactions() {
   const lastPlaidPushAtRef = useRef(Date.now());
 
   const fetchData = useCallback((silent = false): Promise<void> => {
-    let cancelled = false;
     const isFirstLoad = !hasShownInitialLoad.current;
     if (__DEV__) console.log("[pipeline:tx] 1. start", { silent, isFirstLoad });
     setStatus("ok");
@@ -63,14 +62,13 @@ export function useTransactions() {
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
         clearTimeout(timeout);
-        if (cancelled) return null;
         if (__DEV__) console.log("[pipeline:tx] 2. plaid/status", r.status);
         if (r.status === 425) {
           if (transientRetryCount.current < 14) {
             transientRetryCount.current += 1;
             if (__DEV__) console.log("[pipeline:tx] 2b. 425 retry", transientRetryCount.current, "/14");
             setTimeout(() => {
-              if (!cancelled) fetchData(true);
+              fetchData(true);
             }, 600);
             return null;
           }
@@ -103,7 +101,7 @@ export function useTransactions() {
         return r.json();
       })
       .then((data) => {
-        if (cancelled || !data) return null;
+        if (!data) return null;
         if (!data.linked) {
           if (__DEV__) console.log("[pipeline:tx] 3. not linked → stop");
           linkedRef.current = false;
@@ -119,11 +117,10 @@ export function useTransactions() {
         return apiFetch("/api/plaid/transactions");
       })
       .then((r) => {
-        if (cancelled || !r || !r.ok) return null;
+        if (!r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
-        if (cancelled) return;
         if (Array.isArray(data)) {
           setTransactions(
             (data as unknown[]).map((raw) => {
@@ -138,15 +135,13 @@ export function useTransactions() {
         }
       })
       .finally(() => {
-        if (!cancelled) {
-          clearTimeout(timeout);
-          hasShownInitialLoad.current = true;
-          setLoading(false);
-        }
+        clearTimeout(timeout);
+        hasShownInitialLoad.current = true;
+        setLoading(false);
       })
       .catch(() => {
         clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       });
   }, [apiFetch]);
 

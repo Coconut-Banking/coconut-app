@@ -136,12 +136,15 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           method: "POST",
           body: formData,
         });
-        if (!res.ok) {
-          let errMsg = "Parse failed";
-          try { const errData = await res.json(); errMsg = errData.error ?? errMsg; } catch {}
-          throw new Error(errMsg);
+        // Parse body once; non-JSON error bodies (413/504) must not throw SyntaxError.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Server error (${res.status})`);
         }
-        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -216,8 +219,14 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
             merchant_name: editMerchant,
           },
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Save failed");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Server error (${res.status})`);
+        }
+        if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
 
         const serverItems = (data.receipt_items ?? [])
           .sort(
@@ -424,9 +433,12 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           body: { assignments: payload },
         });
         if (!res.ok) {
-          let msg = "Failed to save assignments";
-          try { const d = await res.json(); msg = d.error ?? msg; } catch {}
-          throw new Error(msg);
+          let errMsg = "Failed to save assignments";
+          try {
+            const d = await res.json();
+            errMsg = (d as { error?: string }).error ?? errMsg;
+          } catch {}
+          throw new Error(errMsg);
         }
       } finally {
         setSaving(false);

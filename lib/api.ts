@@ -90,7 +90,8 @@ export function useApiFetch() {
 
       const token = await getTokenWithRetry(gt);
       if (!token) {
-        if (loaded && !signedIn) return unauthResponse();
+        const { isLoaded: loadedNow, isSignedIn: signedInNow } = ref.current;
+        if (loadedNow && !signedInNow) return unauthResponse();
         return new Response(
           JSON.stringify({ error: "Session token unavailable" }),
           { status: 425, headers: { "Content-Type": "application/json", "X-Coconut-Auth": "token-missing" } }
@@ -175,6 +176,6 @@ export function useApiFetch() {
         );
       }
     },
-    [isSignedIn]
+    [getToken, isLoaded, isSignedIn]
   );
 }
