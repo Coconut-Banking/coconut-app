@@ -825,10 +825,17 @@ export default function SettingsScreen() {
               const res = await apiFetch("/api/groups/clear-all", { method: "POST" });
               if (res.ok) {
                 const data = await res.json();
-                Alert.alert("Done", `Deleted ${data.deletedGroups} group(s) and all associated data.`);
+                const details = [
+                  `${data.deletedGroups} group(s) deleted`,
+                  data.foreignMembershipsRemoved > 0
+                    ? `${data.foreignMembershipsRemoved} foreign link(s) removed`
+                    : null,
+                ].filter(Boolean).join("\n");
+                Alert.alert("All data cleared", details || "Everything wiped.");
                 DeviceEventEmitter.emit("groups-updated");
               } else {
-                Alert.alert("Error", "Could not clear data.");
+                const errData = await res.json().catch(() => null);
+                Alert.alert("Error", errData?.error ?? "Could not clear data.");
               }
             } catch {
               Alert.alert("Error", "Network error.");
