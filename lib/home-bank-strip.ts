@@ -61,6 +61,7 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
   const amount = Math.abs(amt);
   const receiptSnippet = (tx.receiptMatchLine?.trim() ?? "") || "";
   const hasReceiptSnippet = Boolean(tx.hasReceipt && receiptSnippet);
+  const hasReceipt = Boolean(tx.hasReceipt || tx.receiptId);
   const dateLine = tx.dateStr || tx.date || "";
 
   return {
@@ -69,10 +70,10 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
     emoji: merchantEmoji(tx.merchant || ""),
     amount,
     cardDetailLine: hasReceiptSnippet ? receiptSnippet : dateLine,
-    cardDetailIsReceipt: hasReceiptSnippet,
-    hasMailBadge: Boolean(tx.hasReceipt),
+    cardDetailIsReceipt: hasReceipt,
+    hasMailBadge: hasReceipt,
     sheetDateLine: dateLine,
-    showReceiptBox: hasReceiptSnippet,
+    showReceiptBox: hasReceipt,
     receiptBoxText: hasReceiptSnippet ? receiptSnippet : undefined,
     receiptId: tx.receiptId ?? null,
   };

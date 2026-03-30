@@ -51,18 +51,20 @@ import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
-function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean }): HomeBankStripRow {
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
+  const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
   return {
     stripId: tx.id,
     merchant,
     emoji: merchantEmoji(merchant),
     amount: Math.abs(Number(tx.amount)),
     cardDetailLine: tx.dateStr || tx.date || "",
-    cardDetailIsReceipt: false,
-    hasMailBadge: false,
+    cardDetailIsReceipt: hasReceipt,
+    hasMailBadge: hasReceipt,
     sheetDateLine: tx.dateStr || tx.date || "",
-    showReceiptBox: false,
+    showReceiptBox: hasReceipt,
+    receiptId: tx.receiptId ?? null,
   };
 }
 
@@ -735,7 +737,7 @@ export default function BalancesPrototypeScreen() {
                     </View>
                   </View>
                 ) : null}
-                {selectedStrip.cardDetailIsReceipt && selectedStrip.receiptId ? (
+                {selectedStrip.receiptId ? (
                   itemizedReceipt?.merchantType === "rideshare" ? (
                     <>
                       <Text style={styles.itemizedSectionTitle}>Trip details</Text>
