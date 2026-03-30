@@ -211,11 +211,30 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
     );
   }
 
+  const hasSavedReceipt = Boolean(rs.receiptId && rs.editItems.length > 0);
+
   return (
     <View style={{ gap: 16 }}>
+      {hasSavedReceipt && (
+        <TouchableOpacity
+          style={[st.savedReceiptBanner, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}
+          onPress={() => rs.setStep("review")}
+          activeOpacity={0.7}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[st.savedReceiptTitle, { color: theme.primary }]}>
+              {rs.editMerchant || "Receipt"} · {rs.editItems.length} item{rs.editItems.length !== 1 ? "s" : ""}
+            </Text>
+            <Text style={[st.savedReceiptSub, { color: theme.primary }]}>
+              Tap to continue where you left off
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+        </TouchableOpacity>
+      )}
       <TouchableOpacity style={[st.uploadArea, { borderColor: theme.inputBorder, backgroundColor: theme.surface }]} onPress={() => pick(false)} activeOpacity={0.8}>
         <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="camera" size={28} color={theme.primary} /></View>
-        <Text style={[st.uploadTitle, { color: theme.text }]}>Take or pick a photo</Text>
+        <Text style={[st.uploadTitle, { color: theme.text }]}>{hasSavedReceipt ? "Scan a different receipt" : "Take or pick a photo"}</Text>
         <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>PNG, JPG, or PDF</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: "row", gap: 10 }}>
@@ -947,6 +966,9 @@ const st = StyleSheet.create({
   centerText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
   errorText: { fontSize: 14, fontFamily: font.regular, color: colors.red, marginBottom: 16 },
 
+  savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
+  savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
+  savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
   uploadArea: { borderWidth: 2, borderStyle: "dashed", borderColor: colors.border, borderRadius: radii.xl, padding: 28, alignItems: "center", backgroundColor: colors.surface },
   uploadIcon: { width: 56, height: 56, borderRadius: radii.lg, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 10 },
   uploadTitle: { fontSize: 16, fontFamily: font.bold, fontWeight: "700", color: colors.text },
