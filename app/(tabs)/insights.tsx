@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTransactions } from "../../hooks/useTransactions";
@@ -61,7 +62,7 @@ export default function InsightsScreen() {
 
   if (!linked) {
     return (
-      <View style={[styles.container, styles.center]}>
+      <SafeAreaView style={[styles.container, styles.center]} edges={["top"]}>
         <Ionicons name="analytics-outline" size={48} color="#9CA3AF" />
         <Text style={styles.emptyTitle}>Connect your bank</Text>
         <Text style={styles.emptySubtitle}>
@@ -73,16 +74,16 @@ export default function InsightsScreen() {
         >
           <Text style={styles.connectButtonText}>Connect in web app</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
+      <SafeAreaView style={[styles.container, styles.center]} edges={["top"]}>
         <ActivityIndicator size="large" color="#3D8E62" />
         <Text style={styles.loadingText}>Loading insights...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
