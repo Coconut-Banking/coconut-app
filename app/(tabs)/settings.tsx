@@ -186,6 +186,8 @@ export default function SettingsScreen() {
     isFirstScan?: boolean;
     error?: string;
   } | null>(null);
+  const [rematching, setRematching] = useState(false);
+  const [rematchResult, setRematchResult] = useState<string | null>(null);
   const gmailConnectedHandled = useRef(false);
 
   const [connectStatus, setConnectStatus] = useState<{
@@ -422,6 +424,26 @@ export default function SettingsScreen() {
       setGmailScanResult({ ok: false, error: "Scan failed. Check your connection." });
     } finally {
       setGmailScanning(false);
+    }
+  };
+
+  const rematchReceipts = async () => {
+    setRematching(true);
+    setRematchResult(null);
+    try {
+      const res = await apiFetch("/api/email-receipts/rematch", { method: "POST" });
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (res.ok) {
+        const cleared = data.cleared ?? 0;
+        const matched = data.matched ?? 0;
+        setRematchResult(`✓ ${matched} matched · ${cleared} wrong matches cleared`);
+      } else {
+        setRematchResult(`Error: ${(data as { error?: string }).error ?? res.status}`);
+      }
+    } catch {
+      setRematchResult("Failed — check connection");
+    } finally {
+      setRematching(false);
     }
   };
 
@@ -1322,6 +1344,24 @@ export default function SettingsScreen() {
                     Scan last 90 days
                   </Text>
                 </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={rematchReceipts}
+                disabled={rematching || gmailScanning}
+              >
+                {rematching ? (
+                  <ActivityIndicator size="small" color={theme.textSecondary} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
+                    Re-match receipts to transactions
+                  </Text>
+                )}
+              </TouchableOpacity>
+              {rematchResult ? (
+                <Text style={[styles.muted, { color: theme.textTertiary, fontSize: 12, textAlign: "center" }]}>
+                  {rematchResult}
+                </Text>
               ) : null}
               <TouchableOpacity
                 style={styles.linkRow}
