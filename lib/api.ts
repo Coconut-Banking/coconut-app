@@ -120,12 +120,17 @@ export function useApiFetch() {
           ? 180_000
           : path.includes("receipt/parse")
             ? 60_000
-            : 20_000;
+            : path.includes("gmail/auth") || path.includes("gmail/scan")
+              ? 0
+              : 20_000;
 
       const doFetch = async (authToken: string) => {
+        const reqHeaders = { ...headers, Authorization: `Bearer ${authToken}` };
+        if (!timeoutMs) {
+          return fetch(url, { ...opts, headers: reqHeaders, body });
+        }
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const reqHeaders = { ...headers, Authorization: `Bearer ${authToken}` };
         try {
           const response = await fetch(url, { ...opts, headers: reqHeaders, body, signal: controller.signal });
           clearTimeout(timer);
