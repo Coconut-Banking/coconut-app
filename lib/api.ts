@@ -138,7 +138,12 @@ export function useApiFetch() {
 
       try {
         const response = await doFetch(token);
-        if (__DEV__) console.log(`[api] ← ${path} ${response.status}`);
+        if (__DEV__) {
+          console.log(`[api] ← ${path} ${response.status}`);
+          if (!response.ok) {
+            response.clone().text().then((t) => console.warn(`[api] error body: ${t.slice(0, 300)}`)).catch(() => {});
+          }
+        }
 
         if (response.status === 401) {
           _lastGoodToken = null;

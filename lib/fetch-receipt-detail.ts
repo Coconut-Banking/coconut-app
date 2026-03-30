@@ -81,13 +81,15 @@ export async function fetchReceiptDetailForTransaction(
     console.log("[fetchReceiptDetail] trying:", path);
     const res = await apiFetch(path, { method: "GET" });
     console.log("[fetchReceiptDetail] status:", res.status, "for", path);
-    if (res.status === 404) { console.log("[fetchReceiptDetail] 404, skipping"); continue; }
-    if (!res.ok) { console.log("[fetchReceiptDetail] not ok:", res.status, "skipping"); continue; }
-    const data = (await res.json()) as ReceiptDetailPayload;
-    console.log("[fetchReceiptDetail] raw data keys:", Object.keys(data));
+    if (res.status === 404) { console.log("[fetchReceiptDetail] 404 →", path); continue; }
+    if (!res.ok) { console.log("[fetchReceiptDetail] non-ok", res.status, "→", path); continue; }
+    const rawText = await res.text();
+    console.log("[fetchReceiptDetail] raw response:", rawText.slice(0, 800));
+    const data = JSON.parse(rawText) as ReceiptDetailPayload;
+    console.log("[fetchReceiptDetail] keys:", Object.keys(data));
     console.log("[fetchReceiptDetail] merchant_type:", data.merchant_type);
     console.log("[fetchReceiptDetail] merchant_details:", JSON.stringify(data.merchant_details));
-    console.log("[fetchReceiptDetail] rideshare:", JSON.stringify(data.rideshare));
+    console.log("[fetchReceiptDetail] rideshare:", JSON.stringify((data as Record<string, unknown>).rideshare ?? "(none)"));
     const items = mapItems(data);
     const subFromItems = items.reduce((s, i) => s + i.totalPrice, 0);
     const subtotal = Number(data.subtotal ?? subFromItems);
