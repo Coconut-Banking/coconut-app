@@ -15,6 +15,8 @@ export interface Person {
   memberId: string | null;
   email: string | null;
   hasAccount: boolean;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 type ApiFetch = (
@@ -134,9 +136,12 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           method: "POST",
           body: formData,
         });
+        if (!res.ok) {
+          let errMsg = "Parse failed";
+          try { const errData = await res.json(); errMsg = errData.error ?? errMsg; } catch {}
+          throw new Error(errMsg);
+        }
         const data = await res.json();
-
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -245,8 +250,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Failed to save items. Please try again.");
       } finally {
         setSaving(false);
       }
@@ -299,6 +304,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         memberId?: string | null;
         email?: string | null;
         hasAccount?: boolean;
+        groupId?: string | null;
+        groupName?: string | null;
       }
     ) => {
       const trimmed = name.trim();
@@ -312,6 +319,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           memberId: opts?.memberId ?? null,
           email: opts?.email ?? null,
           hasAccount: opts?.hasAccount ?? false,
+          groupId: opts?.groupId ?? null,
+          groupName: opts?.groupName ?? null,
         },
       ]);
     },
@@ -410,10 +419,15 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
+        if (!res.ok) {
+          let msg = "Failed to save assignments";
+          try { const d = await res.json(); msg = d.error ?? msg; } catch {}
+          throw new Error(msg);
+        }
       } finally {
         setSaving(false);
       }

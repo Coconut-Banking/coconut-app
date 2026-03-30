@@ -99,7 +99,6 @@ export function useApiFetch() {
 
       const headers: Record<string, string> = {
         ...(opts.headers as Record<string, string>),
-        Authorization: `Bearer ${token}`,
       };
       if (opts.body && typeof opts.body === "object" && !(opts.body instanceof FormData)) {
         headers["Content-Type"] = "application/json";
@@ -115,21 +114,58 @@ export function useApiFetch() {
 
       if (__DEV__) console.log(`[api] → ${(opts.method ?? "GET").toUpperCase()} ${path}`);
 
-      const controller = new AbortController();
       const timeoutMs = path.includes("plaid/transactions")
         ? 45_000
         : path.includes("splitwise/import")
           ? 180_000
-          : 20_000;
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+          : path.includes("receipt/parse")
+            ? 60_000
+            : path.includes("gmail/auth") || path.includes("gmail/scan")
+              ? 0
+              : 20_000;
+
+      const doFetch = async (authToken: string) => {
+        const reqHeaders = { ...headers, Authorization: `Bearer ${authToken}` };
+        if (!timeoutMs) {
+          return fetch(url, { ...opts, headers: reqHeaders, body });
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetch(url, { ...opts, headers: reqHeaders, body, signal: controller.signal });
+          clearTimeout(timer);
+          return response;
+        } catch (e) {
+          clearTimeout(timer);
+          throw e;
+        }
+      };
 
       try {
-        const response = await fetch(url, { ...opts, headers, body, signal: controller.signal });
-        clearTimeout(timer);
-        if (__DEV__) console.log(`[api] ← ${path} ${response.status}`);
+        const response = await doFetch(token);
+        if (__DEV__) {
+          console.log(`[api] ← ${path} ${response.status}`);
+          if (!response.ok) {
+            response.clone().text().then((t) => console.warn(`[api] error body: ${t.slice(0, 300)}`)).catch(() => {});
+          }
+        }
+
+        if (response.status === 401) {
+          _lastGoodToken = null;
+          _tokenPromise = null;
+          let freshToken: string | null = null;
+          try { freshToken = await gt({ skipCache: true }); } catch { /* ignore */ }
+          if (freshToken) _lastGoodToken = freshToken;
+          if (freshToken && freshToken !== token) {
+            if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
+            const retry = await doFetch(freshToken);
+            if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+            return retry;
+          }
+        }
+
         return response;
       } catch (e) {
-        clearTimeout(timer);
         const isAbort = e instanceof DOMException && e.name === "AbortError";
         const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
         if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
@@ -139,6 +175,6 @@ export function useApiFetch() {
         );
       }
     },
-    []
+    [isSignedIn]
   );
 }

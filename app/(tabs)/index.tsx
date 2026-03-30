@@ -2,7 +2,7 @@
  * Home tab — UI matches `Create design prototype (1)/src/app/pages/MobileAppPage.tsx` HomeScreen.
  * No legacy transaction list / NL search / insights on this screen.
  */
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -16,10 +16,13 @@ import {
   ActivityIndicator,
   TextInput,
   DeviceEventEmitter,
+  AppState,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useAuth, useUser } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
@@ -46,21 +49,24 @@ import {
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
-import { haptic } from "../../components/ui";
+import { sfx } from "../../lib/sounds";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
-function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean }): HomeBankStripRow {
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
+  const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
   return {
     stripId: tx.id,
     merchant,
     emoji: merchantEmoji(merchant),
     amount: Math.abs(Number(tx.amount)),
     cardDetailLine: tx.dateStr || tx.date || "",
-    cardDetailIsReceipt: false,
-    hasMailBadge: false,
+    cardDetailIsReceipt: hasReceipt,
+    hasMailBadge: hasReceipt,
     sheetDateLine: tx.dateStr || tx.date || "",
-    showReceiptBox: false,
+    showReceiptBox: hasReceipt,
+    receiptId: tx.receiptId ?? null,
+    logoUrl: tx.logoUrl ?? null,
   };
 }
 
@@ -179,6 +185,7 @@ export default function BalancesPrototypeScreen() {
     merchantName: string;
     merchantType: string | null;
     merchantDetails: Record<string, unknown> | null;
+    rideshare?: import("../../lib/fetch-receipt-detail").ReceiptDetailPayload["rideshare"];
     subtotal: number;
     tax: number;
     tip: number;
@@ -304,10 +311,27 @@ export default function BalancesPrototypeScreen() {
     }
   }, [isDemoOn, refetch, runFullSync]);
 
+  const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
+  useEffect(() => {
+    if (isFocused && !prevFocused.current && !isDemoOn) void refetch();
+    prevFocused.current = isFocused;
+  }, [isFocused, isDemoOn, refetch]);
+
   useEffect(() => {
     if (isDemoOn) return;
-    const sub = DeviceEventEmitter.addListener("groups-updated", () => {
-      void refetch();
+    const subs = [
+      DeviceEventEmitter.addListener("groups-updated", () => void refetch()),
+      DeviceEventEmitter.addListener("expense-added", () => void refetch()),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [isDemoOn, refetch]);
+
+  useEffect(() => {
+    if (isDemoOn) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
@@ -391,6 +415,7 @@ export default function BalancesPrototypeScreen() {
                         merchantName={item.merchant}
                         size={22}
                         fallbackText={item.emoji}
+                        logoUrl={item.logoUrl}
                         backgroundColor="transparent"
                         borderColor="transparent"
                       />
@@ -437,11 +462,7 @@ export default function BalancesPrototypeScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
-            {linked && txStatus === "ok" ? (
-              <Text style={styles.bankSyncHint}>
-                Pull down on Home to sync new charges from your bank (often ~15–30s). Updates also arrive in the background when your bank notifies Plaid.
-              </Text>
-            ) : null}
+            {null}
             {txStatus === "api_unreachable" ? (
               <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
@@ -470,7 +491,7 @@ export default function BalancesPrototypeScreen() {
                 renderItem={({ item }) => (
                   <Pressable
                     style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                    onPress={() => { haptic.selection(); setSelectedStrip(item); }}
+                    onPress={() => { sfx.pop(); setSelectedStrip(item); }}
                   >
                     <View style={styles.bankTop}>
                       <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -478,6 +499,7 @@ export default function BalancesPrototypeScreen() {
                           merchantName={item.merchant}
                           size={22}
                           fallbackText={item.emoji}
+                          logoUrl={item.logoUrl}
                           backgroundColor="transparent"
                           borderColor="transparent"
                         />
@@ -530,7 +552,7 @@ export default function BalancesPrototypeScreen() {
                     <Pressable
                       style={styles.bankCard}
                       onPress={() => {
-                        haptic.selection();
+                        sfx.pop();
                         setSelectedStrip(txToSheetRow(tx));
                       }}
                     >
@@ -540,6 +562,7 @@ export default function BalancesPrototypeScreen() {
                             merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                             size={22}
                             fallbackText="💳"
+                            logoUrl={tx.logoUrl}
                             backgroundColor="transparent"
                             borderColor="transparent"
                           />
@@ -720,6 +743,7 @@ export default function BalancesPrototypeScreen() {
                       merchantName={selectedStrip.merchant}
                       size={32}
                       fallbackText={selectedStrip.emoji}
+                      logoUrl={selectedStrip.logoUrl}
                       backgroundColor="transparent"
                       borderColor="transparent"
                     />
@@ -738,34 +762,188 @@ export default function BalancesPrototypeScreen() {
                     </View>
                   </View>
                 ) : null}
-                {itemizedReceipt?.merchantType && itemizedReceipt.merchantDetails ? (
-                  <>
-                    <MerchantEnrichmentCard
-                      merchantType={itemizedReceipt.merchantType}
-                      merchantDetails={itemizedReceipt.merchantDetails}
-                    />
-                    {itemizedReceipt.merchantType === "ecommerce" && itemizedReceipt.items.length > 0 ? (
-                      <MerchantItemsList
+                {selectedStrip.receiptId ? (
+                  itemizedReceipt?.merchantType === "rideshare" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Trip details</Text>
+                      {itemizedReceipt.rideshare?.map_url ? (
+                        <Image
+                          source={{ uri: itemizedReceipt.rideshare.map_url }}
+                          style={styles.rideshareMap}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      <View style={styles.rideshareRoute}>
+                        <View style={styles.rideshareRouteDots}>
+                          <View style={[styles.routeDot, { backgroundColor: "#22c55e" }]} />
+                          <View style={styles.routeLine} />
+                          <View style={[styles.routeDot, { backgroundColor: "#ef4444" }]} />
+                        </View>
+                        <View style={{ flex: 1, gap: 12 }}>
+                          <View>
+                            <Text style={styles.rideshareLabel}>Pickup</Text>
+                            <Text style={styles.rideshareAddr}>{itemizedReceipt.rideshare?.pickup ?? "—"}</Text>
+                          </View>
+                          <View>
+                            <Text style={styles.rideshareLabel}>Dropoff</Text>
+                            <Text style={styles.rideshareAddr}>{itemizedReceipt.rideshare?.dropoff ?? "—"}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      {(itemizedReceipt.rideshare?.distance || itemizedReceipt.rideshare?.duration || itemizedReceipt.rideshare?.driver_name || itemizedReceipt.rideshare?.vehicle) ? (
+                        <Text style={styles.rideshareMeta}>
+                          {[
+                            itemizedReceipt.rideshare?.distance,
+                            itemizedReceipt.rideshare?.duration,
+                            itemizedReceipt.rideshare?.driver_name ? `Driver: ${itemizedReceipt.rideshare.driver_name}` : undefined,
+                            itemizedReceipt.rideshare?.vehicle,
+                          ].filter(Boolean).join(" · ")}
+                        </Text>
+                      ) : null}
+                      {itemizedReceipt.rideshare?.fare_breakdown ? (
+                        <View style={styles.rideshareBreakdown}>
+                          {Object.entries(itemizedReceipt.rideshare.fare_breakdown).map(([key, val]) => (
+                            <View key={key} style={styles.rideshareBreakdownRow}>
+                              <Text style={styles.rideshareBreakdownLabel}>
+                                {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                              </Text>
+                              <Text style={styles.rideshareBreakdownAmt}>${Number(val).toFixed(2)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                      <View style={styles.rideshareTotals}>
+                        {itemizedReceipt.subtotal > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Subtotal</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.subtotal.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        {itemizedReceipt.tax > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Tax</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.tax.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        {itemizedReceipt.tip > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Tip</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.tip.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        <View style={[styles.rideshareBreakdownRow, styles.rideshareTotalRow]}>
+                          <Text style={styles.rideshareTotalLabel}>Total</Text>
+                          <Text style={styles.rideshareTotalAmt}>${itemizedReceipt.total.toFixed(2)}</Text>
+                        </View>
+                      </View>
+                    </>
+                  ) : itemizedReceipt?.merchantType === "food_delivery" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>
+                        {(itemizedReceipt.merchantDetails as Record<string, unknown>)?.restaurant_name
+                          ? String((itemizedReceipt.merchantDetails as Record<string, unknown>).restaurant_name)
+                          : "Order details"}
+                      </Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="food_delivery" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
                         items={itemizedReceipt.items}
-                        estimatedDelivery={(itemizedReceipt.merchantDetails as Record<string, unknown>).estimated_delivery as string | undefined}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
                       />
-                    ) : null}
-                  </>
-                ) : selectedStrip.cardDetailIsReceipt && selectedStrip.receiptId ? (
-                  <>
-                    <Text style={styles.itemizedSectionTitle}>Itemized receipt</Text>
-                    <ItemizedReceiptPreview
-                      loading={itemizedLoading}
-                      error={itemizedError}
-                      merchantName={itemizedReceipt?.merchantName ?? ""}
-                      items={itemizedReceipt?.items ?? []}
-                      subtotal={itemizedReceipt?.subtotal ?? 0}
-                      tax={itemizedReceipt?.tax ?? 0}
-                      tip={itemizedReceipt?.tip ?? 0}
-                      extras={itemizedReceipt?.extras ?? []}
-                      total={itemizedReceipt?.total ?? selectedStrip.amount}
-                    />
-                  </>
+                    </>
+                  ) : itemizedReceipt?.merchantType === "saas" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Subscription</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="saas" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      {itemizedReceipt.items.length > 0 ? (
+                        <ItemizedReceiptPreview
+                          loading={itemizedLoading}
+                          error={itemizedError}
+                          merchantName={itemizedReceipt.merchantName}
+                          items={itemizedReceipt.items}
+                          subtotal={itemizedReceipt.subtotal}
+                          tax={itemizedReceipt.tax}
+                          tip={itemizedReceipt.tip}
+                          extras={itemizedReceipt.extras}
+                          total={itemizedReceipt.total}
+                        />
+                      ) : (
+                        <View style={styles.saasTotal}>
+                          {itemizedReceipt.tax > 0 ? (
+                            <View style={styles.saasTotalRow}>
+                              <Text style={styles.saasTotalLabel}>Tax</Text>
+                              <Text style={styles.saasTotalAmt}>${itemizedReceipt.tax.toFixed(2)}</Text>
+                            </View>
+                          ) : null}
+                          <View style={[styles.saasTotalRow, styles.saasTotalFinal]}>
+                            <Text style={styles.saasTotalLabelBold}>Total</Text>
+                            <Text style={styles.saasTotalAmtBold}>${itemizedReceipt.total.toFixed(2)}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </>
+                  ) : itemizedReceipt?.merchantType === "retail" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Receipt</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="retail" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedReceipt?.merchantType === "ecommerce" && itemizedReceipt.merchantDetails ? (
+                    <>
+                      <MerchantEnrichmentCard
+                        merchantType="ecommerce"
+                        merchantDetails={itemizedReceipt.merchantDetails}
+                      />
+                      {itemizedReceipt.items.length > 0 ? (
+                        <MerchantItemsList
+                          items={itemizedReceipt.items}
+                          estimatedDelivery={(itemizedReceipt.merchantDetails as Record<string, unknown>).estimated_delivery as string | undefined}
+                        />
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Itemized receipt</Text>
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt?.merchantName ?? ""}
+                        items={itemizedReceipt?.items ?? []}
+                        subtotal={itemizedReceipt?.subtotal ?? 0}
+                        tax={itemizedReceipt?.tax ?? 0}
+                        tip={itemizedReceipt?.tip ?? 0}
+                        extras={itemizedReceipt?.extras ?? []}
+                        total={itemizedReceipt?.total ?? selectedStrip.amount}
+                      />
+                    </>
+                  )
+                ) : selectedStrip.showReceiptBox && !selectedStrip.receiptId ? (
+                  <Text style={styles.receiptIdHint}>
+                    Line items appear when each transaction includes a receipt id from your backend (same id as web
+                    receipt split).
+                  </Text>
                 ) : null}
                 <TouchableOpacity
                   style={styles.splitBtn}
@@ -911,7 +1089,6 @@ export default function BalancesPrototypeScreen() {
 
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
               {searchMode === "keyword" ? (
-                /* Keyword search: local filtered transactions */
                 filteredAllBankRows.length === 0 ? (
                   <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No charges found.</Text>
@@ -925,7 +1102,7 @@ export default function BalancesPrototypeScreen() {
                           activeOpacity={0.75}
                           onPress={() => {
                             setShowAllBank(false);
-                            haptic.selection();
+                            sfx.pop();
                             setSelectedStrip(txToSheetRow(tx));
                           }}
                         >
@@ -934,6 +1111,7 @@ export default function BalancesPrototypeScreen() {
                               merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                               size={22}
                               fallbackText="💳"
+                              logoUrl={tx.logoUrl}
                               backgroundColor="transparent"
                               borderColor="transparent"
                             />
@@ -1048,14 +1226,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   seeAll: { fontSize: 13, fontFamily: font.semibold, color: "#1F2328" },
-  bankSyncHint: {
-    fontSize: 12,
-    fontFamily: font.regular,
-    color: "#7A8088",
-    marginTop: -4,
-    marginBottom: 10,
-    lineHeight: 17,
-  },
   bankCard: {
     width: 168,
     backgroundColor: "#FFFFFF",
@@ -1315,6 +1485,127 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 8,
+  },
+  saasTotal: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 4,
+    paddingTop: 8,
+    gap: 4,
+  },
+  saasTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  saasTotalFinal: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+  },
+  saasTotalLabel: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalAmt: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalLabelBold: { fontSize: 15, fontFamily: font.semibold, color: "#1f2937" },
+  saasTotalAmtBold: { fontSize: 15, fontFamily: font.bold, color: "#1f2937" },
+  receiptIdHint: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: "#7A8088",
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  rideshareMap: {
+    width: "100%",
+    height: 160,
+    borderRadius: radii.md,
+    marginBottom: 12,
+    backgroundColor: "#f0f0f0",
+  },
+  rideshareRoute: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 8,
+  },
+  rideshareRouteDots: {
+    alignItems: "center",
+    paddingTop: 4,
+    gap: 0,
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  routeLine: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#d1d5db",
+  },
+  rideshareLabel: {
+    fontSize: 11,
+    fontFamily: font.medium,
+    color: "#9ca3af",
+    marginBottom: 2,
+  },
+  rideshareAddr: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: "#1f2937",
+    lineHeight: 18,
+  },
+  rideshareMeta: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  rideshareBreakdown: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 8,
+    paddingTop: 8,
+    gap: 4,
+  },
+  rideshareBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  rideshareBreakdownLabel: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+  },
+  rideshareBreakdownAmt: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+  },
+  rideshareTotals: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 8,
+    paddingTop: 8,
+    gap: 4,
+  },
+  rideshareTotalRow: {
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+  },
+  rideshareTotalLabel: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#1f2937",
+  },
+  rideshareTotalAmt: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#1f2937",
   },
   sheetClose: { alignItems: "center", paddingVertical: 10 },
   sheetCloseText: { fontSize: 15, fontFamily: font.semibold, color: "#3F464F" },

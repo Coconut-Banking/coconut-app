@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
@@ -27,6 +28,7 @@ import { useDemoData } from "../../lib/demo-context";
 import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme";
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
+import { sfx } from "../../lib/sounds";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -112,10 +114,13 @@ function dedupeMembers(members: GroupMember[]): GroupMember[] {
 
 export default function AddExpenseScreen() {
   const nav = useRouter();
-  const { prefillDesc, prefillAmount, prefillNonce } = useLocalSearchParams<{
+  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType } = useLocalSearchParams<{
     prefillDesc?: string;
     prefillAmount?: string;
     prefillNonce?: string;
+    prefillPersonKey?: string;
+    prefillPersonName?: string;
+    prefillPersonType?: string;
   }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
@@ -156,13 +161,41 @@ export default function AddExpenseScreen() {
   const lastPrefillNonce = useRef<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const descInputRef = useRef<TextInput>(null);
+  const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
+  const resetForm = useCallback(() => {
+    setTargets([]);
+    setQuery("");
+    setResolvedGroupId(null);
+    setGroupMembers([]);
+    setCustomSplits({});
+    setDupWarning(false);
+    setError(null);
+    setPaidByMe(true);
+    setPayerMemberId(null);
+    setSplitMethod("equal");
+    setSplitExpanded(false);
+    setAmount("");
+    setDescription("");
+    setShowSettlement(false);
+  }, []);
+
+  // Reset form when screen gains focus without fresh prefill params
+  useEffect(() => {
+    if (isFocused && !prevFocused.current) {
+      if (!prefillNonce || prefillNonce === lastPrefillNonce.current) {
+        resetForm();
+      }
+    }
+    prevFocused.current = isFocused;
+  }, [isFocused, prefillNonce, resetForm]);
 
   // ── Prefill reset ──
   useEffect(() => {
     if (prefillNonce != null && prefillNonce !== "") {
       if (lastPrefillNonce.current !== prefillNonce) {
         lastPrefillNonce.current = prefillNonce;
-        setTargets([]);
         setQuery("");
         setResolvedGroupId(null);
         setGroupMembers([]);
@@ -173,6 +206,13 @@ export default function AddExpenseScreen() {
         setPayerMemberId(null);
         setSplitMethod("equal");
         setSplitExpanded(false);
+
+        if (prefillPersonKey && prefillPersonName) {
+          const type = (prefillPersonType === "group" ? "group" : "friend") as "group" | "friend";
+          setTargets([{ type, key: prefillPersonKey, name: prefillPersonName }]);
+        } else {
+          setTargets([]);
+        }
       }
     }
     if (prefillDesc !== undefined) {
@@ -186,7 +226,7 @@ export default function AddExpenseScreen() {
         setAmount("");
       }
     }
-  }, [prefillNonce, prefillDesc, prefillAmount]);
+  }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
 
   // ── Fallback groups fetch ──
   useEffect(() => {
@@ -437,7 +477,7 @@ export default function AddExpenseScreen() {
   };
 
   const selectTarget = useCallback((t: Target) => {
-    haptic.selection();
+    sfx.pop();
     setTargets([t]);
     setQuery("");
     setSearchFocused(false);
@@ -454,6 +494,7 @@ export default function AddExpenseScreen() {
 
   const pickSplit = useCallback(
     (m: SplitMethod) => {
+      sfx.toggle();
       setSplitMethod(m);
       if (m === "equal") { setCustomSplits({}); return; }
       const init: Record<string, string> = {};
@@ -501,7 +542,7 @@ export default function AddExpenseScreen() {
     }
     if (warn) {
       setDupWarning(true);
-      haptic.warning();
+      sfx.warning();
       return;
     }
 
@@ -517,7 +558,7 @@ export default function AddExpenseScreen() {
 
     if (isDemoOn) {
       demo.addExpense(total, desc, t.key, t.type);
-      haptic.success();
+      sfx.coin();
       toast.show(`Expense saved · $${total.toFixed(2)} with ${t.name}`);
       DeviceEventEmitter.emit("expense-added");
       DeviceEventEmitter.emit("groups-updated");
@@ -542,7 +583,7 @@ export default function AddExpenseScreen() {
       const res = await apiFetch("/api/manual-expense", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        haptic.success();
+        sfx.coin();
         toast.show(`Expense saved · $${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
         DeviceEventEmitter.emit("expense-added");
         DeviceEventEmitter.emit("groups-updated");
@@ -558,6 +599,7 @@ export default function AddExpenseScreen() {
   };
 
   const goTapToPay = () => {
+    sfx.paymentTap();
     const amountToCharge = tapToPaySuggestion?.amount ?? total;
     setShowSettlement(false);
     nav.push({
@@ -580,7 +622,7 @@ export default function AddExpenseScreen() {
   };
 
   const dismissSettlement = () => {
-    setShowSettlement(false);
+    resetForm();
     nav.replace("/(tabs)");
   };
 

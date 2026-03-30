@@ -1,7 +1,8 @@
+const QUIKRTURN_TOKEN = "qt_163af8c5g5I4W5doHqWqi8p9aB9lA6aDiYUc942S";
+
 /**
- * Allowlist of known merchants → domain for favicon.
- * Keep in sync with coconut/lib/merchant-logos.ts.
- * Only these show actual logos; others use letter avatars.
+ * Known merchants → domain for logo lookup.
+ * Used with Quikrturn API for high-quality CDN-backed logos.
  */
 const MERCHANT_DOMAINS: Record<string, string> = {
   lyft: "lyft.com",
@@ -51,19 +52,80 @@ const MERCHANT_DOMAINS: Record<string, string> = {
   bp: "bp.com",
   fandango: "fandango.com",
   wealthsimple: "wealthsimple.com",
+  turo: "turo.com",
+  denny: "dennys.com",
+  chick: "chick-fil-a.com",
+  wendys: "wendys.com",
+  "burger king": "bk.com",
+  subway: "subway.com",
+  dominos: "dominos.com",
+  "papa john": "papajohns.com",
+  panera: "panerabread.com",
+  popeyes: "popeyes.com",
+  "taco bell": "tacobell.com",
+  kfc: "kfc.com",
+  sonic: "sonicdrivein.com",
+  safeway: "safeway.com",
+  albertsons: "albertsons.com",
+  cvs: "cvs.com",
+  walgreens: "walgreens.com",
+  "rite aid": "riteaid.com",
+  sephora: "sephora.com",
+  nordstrom: "nordstrom.com",
+  macys: "macys.com",
+  ikea: "ikea.com",
+  nike: "nike.com",
+  adidas: "adidas.com",
+  gap: "gap.com",
+  "old navy": "oldnavy.com",
+  zara: "zara.com",
+  uniqlo: "uniqlo.com",
+  hulu: "hulu.com",
+  disney: "disneyplus.com",
+  hbo: "max.com",
+  paramount: "paramountplus.com",
+  openai: "openai.com",
+  chatgpt: "openai.com",
+  cursor: "cursor.com",
+  github: "github.com",
+  microsoft: "microsoft.com",
+  notion: "notion.so",
+  slack: "slack.com",
+  zoom: "zoom.us",
+  dropbox: "dropbox.com",
+  vercel: "vercel.com",
+  heroku: "heroku.com",
+  aws: "aws.amazon.com",
+  stripe: "stripe.com",
+  square: "squareup.com",
+  robinhood: "robinhood.com",
+  coinbase: "coinbase.com",
+  etrade: "etrade.com",
+  fidelity: "fidelity.com",
+  schwab: "schwab.com",
+  vanguard: "vanguard.com",
+  "t-mobile": "t-mobile.com",
+  tmobile: "t-mobile.com",
+  verizon: "verizon.com",
+  "at&t": "att.com",
+  att: "att.com",
+  comcast: "xfinity.com",
+  xfinity: "xfinity.com",
+  spectrum: "spectrum.com",
 };
 
-export function getMerchantLogoDomain(merchantName: string): string | null {
+export function getMerchantLogoDomain(merchantName: string | null | undefined): string | null {
+  if (!merchantName) return null;
   const normalized = merchantName.toLowerCase().replace(/\s+/g, "");
   for (const [key, domain] of Object.entries(MERCHANT_DOMAINS)) {
-    if (normalized.includes(key)) return domain;
+    if (normalized.includes(key.replace(/\s+/g, ""))) return domain;
   }
   return null;
 }
 
-/** Google favicon URL for a domain; sz=64 works well for list items. */
-export function getMerchantLogoUrl(merchantName: string, size: number = 64): string | null {
+/** Quikrturn CDN logo URL for a merchant. Returns null if no domain match. */
+export function getMerchantLogoUrl(merchantName: string | null | undefined, size: number = 64): string | null {
   const domain = getMerchantLogoDomain(merchantName);
   if (!domain) return null;
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;
+  return `https://logos.getquikturn.io/${domain}?token=${QUIKRTURN_TOKEN}&size=${size}`;
 }

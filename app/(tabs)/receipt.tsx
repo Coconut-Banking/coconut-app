@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -25,6 +25,8 @@ import { useTheme } from "../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
+import { sfx } from "../../lib/sounds";
+import { exportReceiptPdf } from "../../lib/receipt-pdf";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -112,9 +114,11 @@ export default function ReceiptScreen() {
   const demo = useDemoData();
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
+  const scrollRef = useRef<ScrollView>(null);
 
   return (
     <SafeAreaView style={[st.safe, { backgroundColor: theme.background }]} edges={["top"]}>
+      {/* Clean top bar: back + title */}
       <View style={st.receiptTopBar}>
         <TouchableOpacity
           onPress={() => {
@@ -125,32 +129,31 @@ export default function ReceiptScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={theme.primary} />
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
+        <Text style={[st.topBarTitle, { color: theme.text }]}>Split Receipt</Text>
+        <View style={{ width: 24 }} />
       </View>
-      <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView style={[st.scroll, { backgroundColor: theme.background }]} contentContainerStyle={st.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={st.header}>
-          <View style={[st.headerIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="receipt-outline" size={22} color={theme.primary} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={[st.headerTitle, { color: theme.text }]}>Split Receipt</Text>
-            <Text style={[st.headerSub, { color: theme.textQuaternary }]}>Scan a receipt and split items with friends</Text>
-          </View>
-        </View>
 
-        {/* Step indicator */}
-        <View style={st.steps}>
-          {STEPS.map((s, i) => (
-            <View key={s.key} style={st.stepWrap}>
-              <View style={[st.stepDot, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }, i === stepIdx && { backgroundColor: theme.primary }, i > stepIdx && { backgroundColor: theme.surfaceTertiary }]}>
-                {i < stepIdx ? <Ionicons name="checkmark" size={11} color="#fff" /> : <Text style={[st.stepNum, i === stepIdx && { color: "#fff" }]}>{i + 1}</Text>}
-              </View>
-              <Text style={[st.stepLabel, { color: theme.primary }, i === stepIdx && { color: theme.text, fontWeight: "700" }, i > stepIdx && { color: theme.textQuaternary }]}>{s.label}</Text>
-              {i < STEPS.length - 1 && <View style={[st.stepLine, { backgroundColor: theme.border }, i < stepIdx && { backgroundColor: theme.primary }]} />}
-            </View>
-          ))}
-        </View>
+      {/* Minimal progress bar */}
+      <View style={st.progressRow}>
+        {STEPS.map((s, i) => (
+          <View key={s.key} style={st.progressSegWrap}>
+            <View style={[st.progressSeg, { backgroundColor: theme.surfaceTertiary }, i <= stepIdx && { backgroundColor: theme.primary }]} />
+            <Text style={[st.progressSegLabel, { color: theme.textQuaternary }, i === stepIdx && { color: theme.text, fontFamily: font.bold, fontWeight: "700" }]}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
+        <ScrollView
+          ref={scrollRef}
+          style={[st.scroll, { backgroundColor: theme.background }]}
+          contentContainerStyle={st.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
+        >
 
         {rs.step === "upload" && <UploadStep rs={rs} />}
         {rs.step === "review" && <ReviewStep rs={rs} />}
@@ -171,12 +174,21 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
     const { status: cam } = await ImagePicker.requestCameraPermissionsAsync();
     if (camera && cam !== "granted") { Alert.alert("Permission needed", "Allow camera access."); return; }
     if (!camera && lib !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+    const pickerOpts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      quality: 0.85,
+      exif: false,
+    };
     const result = camera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85 });
+      ? await ImagePicker.launchCameraAsync(pickerOpts)
+      : await ImagePicker.launchImageLibraryAsync(pickerOpts);
     if (result.canceled) return;
-    const uri = result.assets[0]?.uri;
-    if (uri) await rs.uploadReceipt(uri);
+    const asset = result.assets[0];
+    if (!asset?.uri) return;
+    const raw = asset.mimeType ?? "image/jpeg";
+    const mimeType = (raw === "image/heic" || raw === "image/heif") ? "image/jpeg" : raw;
+    const ext = mimeType.split("/")[1] ?? "jpg";
+    await rs.uploadReceipt(asset.uri, { mimeType, name: `receipt.${ext}` });
   };
 
   const pickPdf = async () => {
@@ -202,19 +214,44 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
     );
   }
 
+  const hasSavedReceipt = Boolean(rs.receiptId && rs.editItems.length > 0);
+
   return (
     <View style={{ gap: 16 }}>
+      {hasSavedReceipt && (
+        <TouchableOpacity
+          style={[st.savedReceiptBanner, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}
+          onPress={() => rs.setStep("review")}
+          activeOpacity={0.7}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[st.savedReceiptTitle, { color: theme.primary }]}>
+              {rs.editMerchant || "Receipt"} · {rs.editItems.length} item{rs.editItems.length !== 1 ? "s" : ""}
+            </Text>
+            <Text style={[st.savedReceiptSub, { color: theme.primary }]}>
+              Tap to continue where you left off
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+        </TouchableOpacity>
+      )}
       <TouchableOpacity style={[st.uploadArea, { borderColor: theme.inputBorder, backgroundColor: theme.surface }]} onPress={() => pick(false)} activeOpacity={0.8}>
-        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="camera" size={28} color={theme.primary} /></View>
-        <Text style={[st.uploadTitle, { color: theme.text }]}>Take or pick a photo</Text>
+        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}>
+          <Ionicons name="cloud-upload-outline" size={26} color={theme.primary} />
+        </View>
+        <Text style={[st.uploadTitle, { color: theme.text }]}>
+          {hasSavedReceipt ? "Scan a different receipt" : "Tap to scan or pick a photo"}
+        </Text>
         <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>PNG, JPG, or PDF</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: "row", gap: 10 }}>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => pick(true)}>
-          <Ionicons name="camera" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>Camera</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.primary }]} onPress={() => pick(true)} activeOpacity={0.8}>
+          <Ionicons name="camera" size={16} color="#fff" />
+          <Text style={[st.uploadBtnText, { color: "#fff" }]}>Camera</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf}>
-          <Ionicons name="document-text" size={18} color={theme.primary} /><Text style={[st.uploadBtnText, { color: theme.primary }]}>PDF</Text>
+        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf} activeOpacity={0.8}>
+          <Ionicons name="document-text-outline" size={16} color={theme.text} />
+          <Text style={[st.uploadBtnText, { color: theme.text }]}>PDF</Text>
         </TouchableOpacity>
       </View>
       {rs.imageUri && !rs.isPdf && <Image source={{ uri: rs.imageUri }} style={st.preview} resizeMode="contain" />}
@@ -286,15 +323,10 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
               {/* Unit price */}
               <View style={[st.priceWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
                 <Text style={[st.pricePre, { color: theme.textQuaternary }]}>$</Text>
-                <TextInput
+                <DecimalInput
                   style={[st.priceInput, { color: theme.text }]}
-                  value={String(item.unitPrice)}
-                  onChangeText={(v) => {
-                    const n = parseFloat(v) || 0;
-                    rs.updateItem(item.id, { unitPrice: n });
-                  }}
-                  keyboardType="decimal-pad"
-                  selectTextOnFocus
+                  numValue={item.unitPrice}
+                  onValueChange={(n) => rs.updateItem(item.id, { unitPrice: n })}
                 />
               </View>
               <Text style={[st.itemEquals, { color: theme.textQuaternary }]}>=</Text>
@@ -320,14 +352,14 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
         </View>
       </View>
 
-      {/* Nav */}
+        {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("upload")}>
           <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[st.btn, { backgroundColor: theme.primary }, (rs.saving || rs.editItems.length === 0) && st.btnOff]}
-          onPress={rs.confirmItems}
+          onPress={() => { sfx.pop(); rs.confirmItems(); }}
           disabled={rs.saving || rs.editItems.length === 0}
         >
           {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -339,6 +371,39 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
   );
 }
 
+function DecimalInput({ numValue, onValueChange, style }: { numValue: number; onValueChange: (n: number) => void; style?: any }) {
+  const [text, setText] = useState(numValue.toFixed(2));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(numValue.toFixed(2)); }, [numValue, focused]);
+  return (
+    <TextInput
+      style={style}
+      value={text}
+      onChangeText={(v) => {
+        const cleaned = v.replace(/[^0-9.]/g, "");
+        const parts = cleaned.split(".");
+        let capped = parts[0];
+        if (parts.length > 1) {
+          capped += "." + parts[1].slice(0, 2);
+        }
+        setText(capped);
+        const num = parseFloat(capped);
+        if (!isNaN(num)) onValueChange(Math.round(num * 100) / 100);
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        const num = parseFloat(text) || 0;
+        const rounded = Math.round(num * 100) / 100;
+        onValueChange(rounded);
+        setText(rounded.toFixed(2));
+      }}
+      keyboardType="decimal-pad"
+      selectTextOnFocus
+    />
+  );
+}
+
 function TotalRow({ label, value, editable = true, onChange }: { label: string; value: number; editable?: boolean; onChange?: (v: number) => void }) {
   const { theme } = useTheme();
   return (
@@ -347,17 +412,37 @@ function TotalRow({ label, value, editable = true, onChange }: { label: string; 
       {editable && onChange ? (
         <View style={[st.totalInputWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
           <Text style={[st.totalPre, { color: theme.textQuaternary }]}>$</Text>
-          <TextInput
+          <DecimalInput
             style={[st.totalInput, { color: theme.text }]}
-            value={String(value)}
-            onChangeText={(v) => onChange(parseFloat(v) || 0)}
-            keyboardType="decimal-pad"
-            selectTextOnFocus
+            numValue={value}
+            onValueChange={onChange}
           />
         </View>
       ) : (
         <Text style={[st.totalVal, { color: theme.textSecondary }]}>${value.toFixed(2)}</Text>
       )}
+    </View>
+  );
+}
+
+function ItemSearch({ value, onChange, theme }: { value: string; onChange: (v: string) => void; theme: any }) {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 8,
+      backgroundColor: theme.surfaceSecondary, borderRadius: radii.md,
+      borderWidth: 1, borderColor: theme.borderLight,
+      paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
+    }}>
+      <Ionicons name="search" size={16} color={theme.textQuaternary} />
+      <TextInput
+        style={{ flex: 1, fontSize: 14, fontFamily: font.regular, color: theme.text, padding: 0 }}
+        value={value}
+        onChangeText={onChange}
+        placeholder="Search items..."
+        placeholderTextColor={theme.inputPlaceholder}
+        autoCorrect={false}
+        clearButtonMode="while-editing"
+      />
     </View>
   );
 }
@@ -377,7 +462,14 @@ function AssignStep({
 }) {
   const { theme } = useTheme();
   const [search, setSearch] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return rs.itemsWithExtras;
+    return rs.itemsWithExtras.filter(item => item.name.toLowerCase().includes(q));
+  }, [rs.itemsWithExtras, itemSearch]);
 
   useEffect(() => {
     if (isDemoOn) {
@@ -410,7 +502,7 @@ function AssignStep({
   }, [contacts, search]);
 
   const addFromContact = (c: Contact) => {
-    rs.addPerson(c.displayName, { memberId: c.memberId, email: c.email, hasAccount: c.hasAccount });
+    rs.addPerson(c.displayName, { memberId: c.memberId, email: c.email, hasAccount: c.hasAccount, groupId: c.groupId, groupName: c.groupName });
     setSearch("");
   };
 
@@ -478,14 +570,28 @@ function AssignStep({
 
       {/* Items with inline assignment */}
       <View>
-        <Text style={[st.label, { color: theme.textTertiary }]}>Assign items</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>Assign items</Text>
+          {rs.itemsWithExtras.length > 4 && (
+            <Text style={{ fontSize: 12, color: theme.textQuaternary }}>{rs.itemsWithExtras.length} items</Text>
+          )}
+        </View>
+        {rs.itemsWithExtras.length > 5 && (
+          <ItemSearch value={itemSearch} onChange={setItemSearch} theme={theme} />
+        )}
         {rs.people.length === 0 && (
           <View style={st.emptyAssign}>
             <Ionicons name="person-add-outline" size={24} color={theme.border} />
             <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>Add people above to start assigning items</Text>
           </View>
         )}
-        {rs.itemsWithExtras.map((item) => {
+        {filteredItems.length === 0 && itemSearch.trim() && (
+          <View style={st.emptyAssign}>
+            <Ionicons name="search-outline" size={24} color={theme.border} />
+            <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>No items matching "{itemSearch.trim()}"</Text>
+          </View>
+        )}
+        {filteredItems.map((item) => {
           const assigned = rs.assignments.get(item.id) ?? [];
           const isAssigned = assigned.length > 0;
           const isUnassigned = !isAssigned && rs.people.length > 0;
@@ -563,7 +669,7 @@ function AssignStep({
           )}
           <TouchableOpacity
             style={[st.btn, { backgroundColor: theme.primary }, (!allAssigned || rs.people.length === 0 || rs.saving) && st.btnOff]}
-            onPress={async () => { await rs.saveAssignments(); rs.computeSummary(); }}
+            onPress={async () => { sfx.success(); await rs.saveAssignments(); rs.computeSummary(); }}
             disabled={!allAssigned || rs.people.length === 0 || rs.saving}
           >
             {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -578,6 +684,21 @@ function AssignStep({
 
 /* ═══════════════════ Step 4: Summary ═══════════════════ */
 
+function buildShareText(merchant: string, personShares: Array<{ name: string; totalOwed: number; items: Array<{ itemName: string; shareAmount: number }> }>, grandTotal: number) {
+  const lines: string[] = [];
+  lines.push(`${merchant || "Receipt"} Split — $${grandTotal.toFixed(2)} total`);
+  lines.push("");
+  for (const p of personShares) {
+    lines.push(`${p.name}: $${p.totalOwed.toFixed(2)}`);
+    for (const item of p.items) {
+      lines.push(`  ${item.itemName} — $${item.shareAmount.toFixed(2)}`);
+    }
+    lines.push("");
+  }
+  lines.push("Sent via Coconut");
+  return lines.join("\n");
+}
+
 function SummaryStep({
   rs,
   apiFetch,
@@ -591,102 +712,120 @@ function SummaryStep({
 }) {
   const { theme } = useTheme();
   const grandTotal = rs.personShares.reduce((s, p) => s + p.totalOwed, 0);
-  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [finishing, setFinishing] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [groupBalances, setGroupBalances] = useState<Array<{ memberId: string; name: string; total: number }>>([]);
+  const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ fromMemberId: string; toMemberId: string; fromName: string; toName: string; amount: number }>>([]);
   const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
   const [requestingPayment, setRequestingPayment] = useState<string | null>(null);
   const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (isDemoOn) {
-      const demoGroups = demo.summary?.groups ?? [];
-      setGroups(demoGroups.map((g) => ({ id: g.id, name: g.name })));
-      if (demoGroups.length > 0) setSelectedGroupId(demoGroups[0].id);
-      return;
-    }
-    apiFetch("/api/groups")
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : data.groups ?? [];
-        setGroups(list);
-        if (list.length > 0) setSelectedGroupId(list[0].id);
-      })
-      .catch(() => {});
-  }, [apiFetch, isDemoOn, demo.summary]);
+  const detectedGroupId = useMemo(() => {
+    const ids = rs.people.map(p => p.groupId).filter(Boolean) as string[];
+    if (ids.length === 0) return null;
+    const unique = [...new Set(ids)];
+    return unique.length === 1 ? unique[0] : null;
+  }, [rs.people]);
 
-  const handleFinish = async (opts?: { stayForSettle?: boolean; groupId?: string }) => {
-    const gid = opts?.groupId ?? selectedGroupId;
-    if (!gid || !rs.receiptId) return;
+  const detectedGroupName = useMemo(() => {
+    if (!detectedGroupId) return null;
+    return rs.people.find(p => p.groupId === detectedGroupId)?.groupName ?? null;
+  }, [rs.people, detectedGroupId]);
+
+  const autoSave = useCallback(async () => {
+    if (!rs.receiptId || finishing || finished) return;
     setFinishing(true);
 
+    let gid = detectedGroupId;
+
     if (isDemoOn) {
-      const group = demo.groupDetails?.[gid];
-      if (!group) {
-        Alert.alert("Error", "Group not found");
+      if (!gid) {
+        setFinished(true);
         setFinishing(false);
         return;
       }
+      const group = demo.groupDetails?.[gid];
+      if (!group) { setFinished(true); setFinishing(false); return; }
 
       const groupMembers = group.members ?? [];
       const payer = groupMembers.find((m) => m.user_id === "me") ?? groupMembers[0];
-      if (!payer?.id) {
-        Alert.alert("Error", "Missing payer");
-        setFinishing(false);
-        return;
-      }
+      if (!payer?.id) { setFinished(true); setFinishing(false); return; }
 
       const owedRows = rs.personShares
         .filter((p) => !!p.memberId)
         .map((p) => ({ member_id: p.memberId as string, amount: p.totalOwed }));
-
       const paidRows = [{ member_id: payer.id, amount: grandTotal }];
       const balances = computeBalancesDemo(paidRows, owedRows);
       const demoSuggestions = getSuggestedSettlementsDemo(balances);
-
       const memberMap = new Map(groupMembers.map((m) => [m.id, m.display_name]));
-      const membersForUi = groupMembers.map((m) => ({ id: m.id, displayName: m.display_name, email: m.email ?? null }));
 
       setFinished(true);
-      setGroupBalances([]);
-      setSuggestions(
-        demoSuggestions.map((s) => ({
-          fromMemberId: s.fromMemberId,
-          toMemberId: s.toMemberId,
-          fromName: memberMap.get(s.fromMemberId) ?? "Unknown",
-          toName: memberMap.get(s.toMemberId) ?? "Unknown",
-          amount: s.amount,
-        }))
-      );
+      setResolvedGroupId(gid);
+      setSuggestions(demoSuggestions.map((s) => ({
+        fromMemberId: s.fromMemberId, toMemberId: s.toMemberId,
+        fromName: memberMap.get(s.fromMemberId) ?? "Unknown",
+        toName: memberMap.get(s.toMemberId) ?? "Unknown",
+        amount: s.amount,
+      })));
       setGroupName(group.name ?? "");
-      setMembers(membersForUi);
+      setMembers(groupMembers.map((m) => ({ id: m.id, displayName: m.display_name, email: m.email ?? null })));
       setFinishing(false);
       return;
     }
 
     try {
-      const res = await apiFetch(`/api/receipt/${rs.receiptId}/finish`, { method: "POST", body: { groupId: gid, people: rs.people.map(p => ({ name: p.name, email: p.email })) } });
+      if (!gid) {
+        const res = await apiFetch("/api/groups", {
+          method: "POST",
+          body: { name: rs.editMerchant ? `${rs.editMerchant} split` : "Receipt split", ownerDisplayName: "You" },
+        });
+        const gd = await res.json();
+        if (res.ok && gd.id) gid = gd.id;
+        else { setFinished(true); setFinishing(false); return; }
+      }
+
+      setResolvedGroupId(gid);
+      const res = await apiFetch(`/api/receipt/${rs.receiptId}/finish`, {
+        method: "POST",
+        body: { groupId: gid, people: rs.people.map(p => ({ name: p.name, email: p.email })) },
+      });
       const data = await res.json();
-      if (res.ok) { setFinished(true); setGroupBalances(data.balances || []); setSuggestions(data.suggestions || []); setGroupName(data.groupName || ""); setMembers(data.members || []); }
-      else { Alert.alert("Error", data.error || "Failed"); setFinishing(false); }
-    } catch { Alert.alert("Error", "Failed"); setFinishing(false); }
+      if (res.ok) {
+        setFinished(true);
+        setSuggestions(data.suggestions || []);
+        setGroupName(data.groupName || "");
+        setMembers(data.members || []);
+      } else {
+        setFinished(true);
+      }
+    } catch {
+      setFinished(true);
+    } finally {
+      setFinishing(false);
+    }
+  }, [rs.receiptId, rs.people, rs.personShares, rs.editMerchant, detectedGroupId, isDemoOn, demo, apiFetch, finishing, finished, grandTotal]);
+
+  useEffect(() => { autoSave(); }, []);
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const handleShareText = async () => {
+    const text = buildShareText(rs.editMerchant, rs.personShares, grandTotal);
+    try {
+      await Share.share({ message: text, title: `${rs.editMerchant || "Receipt"} Split` });
+    } catch { /* cancelled */ }
   };
 
-  const handleSettleNoGroup = async () => {
-    if (!rs.receiptId) return;
-    setFinishing(true);
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
     try {
-      const res = await apiFetch("/api/groups", { method: "POST", body: { name: rs.editMerchant ? `${rs.editMerchant} split` : "New group", ownerDisplayName: "You" } });
-      const gd = await res.json();
-      if (!res.ok || !gd.id) { Alert.alert("Error", gd.error ?? "Failed"); setFinishing(false); return; }
-      setGroups(prev => [...prev, { id: gd.id, name: gd.name || "New group" }]);
-      setSelectedGroupId(gd.id);
-      await handleFinish({ stayForSettle: true, groupId: gd.id });
-    } catch { Alert.alert("Error", "Failed"); setFinishing(false); }
+      await exportReceiptPdf(apiFetch, rs.editMerchant, rs.personShares);
+    } catch (e) {
+      Alert.alert("PDF Export", "Could not generate PDF. Try sharing as text instead.");
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const handleRequest = async (s: (typeof suggestions)[0]) => {
@@ -706,15 +845,13 @@ function SummaryStep({
         } else {
           Alert.alert("No email", "Add their email to send a request.");
         }
-      } finally {
-        setRequestingPayment(null);
-      }
+      } finally { setRequestingPayment(null); }
       return;
     }
     const key = `${s.fromMemberId}-${s.toMemberId}`;
     setRequestingPayment(key);
     try {
-      const res = await apiFetch("/api/stripe/create-payment-link", { method: "POST", body: { amount: s.amount, description: `${rs.editMerchant || "Receipt"} split`, recipientName: s.fromName, groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } });
+      const res = await apiFetch("/api/stripe/create-payment-link", { method: "POST", body: { amount: s.amount, description: `${rs.editMerchant || "Receipt"} split`, recipientName: s.fromName, groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } });
       const data = await res.json();
       if (res.ok && data.url) {
         await Share.share({ message: `You owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}. Pay here: ${data.url}`, url: data.url, title: "Payment request" });
@@ -728,114 +865,184 @@ function SummaryStep({
 
   const handleCash = async (s: (typeof suggestions)[0]) => {
     if (isDemoOn) {
-      const key = `${s.fromMemberId}-${s.toMemberId}`;
-      setRecordedSettlements((prev) => new Set(prev).add(key));
+      setRecordedSettlements((prev) => new Set(prev).add(`${s.fromMemberId}-${s.toMemberId}`));
       return;
     }
     const key = `${s.fromMemberId}-${s.toMemberId}`;
     try {
-      const res = await apiFetch("/api/settlements", { method: "POST", body: { groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId, amount: s.amount, method: "in_person" } });
+      const res = await apiFetch("/api/settlements", { method: "POST", body: { groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId, amount: s.amount, method: "in_person" } });
       if (res.ok) setRecordedSettlements(prev => new Set(prev).add(key));
       else Alert.alert("Error", "Could not record");
     } catch { Alert.alert("Error", "Could not record"); }
   };
 
+  const [toast, setToast] = useState<string | null>(null);
+  const [tabbedPeople, setTabbedPeople] = useState<Set<string>>(new Set());
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  const handleTabPerson = async (person: typeof rs.personShares[0]) => {
+    const key = person.name.toLowerCase();
+    if (tabbedPeople.has(key)) return;
+    if (!isDemoOn && resolvedGroupId) {
+      try {
+        await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
+          method: "POST",
+          body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
+        });
+      } catch { /* still mark as tabbed locally */ }
+    }
+    setTabbedPeople(prev => new Set(prev).add(key));
+    sfx.pop();
+    showToast(`Added $${person.totalOwed.toFixed(2)} to ${person.name}'s tab`);
+  };
+
+  const handleTabAll = async () => {
+    for (const person of rs.personShares) {
+      const key = person.name.toLowerCase();
+      if (tabbedPeople.has(key)) continue;
+      if (!isDemoOn && resolvedGroupId) {
+        try {
+          await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
+            method: "POST",
+            body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
+          });
+        } catch { /* continue */ }
+      }
+      setTabbedPeople(prev => new Set(prev).add(key));
+    }
+    sfx.coin();
+    showToast(`Added to everyone's tab`);
+  };
+
+  if (finishing) {
+    return (
+      <View style={st.center}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[st.centerText, { color: theme.textTertiary }]}>Saving...</Text>
+      </View>
+    );
+  }
+
+  const allTabbed = rs.personShares.every(p => tabbedPeople.has(p.name.toLowerCase()));
+
   return (
     <View style={{ gap: 20 }}>
-      <Text style={[st.summaryTitle, { color: theme.textTertiary }]}>
-        {rs.editMerchant ? <Text style={{ fontWeight: "700", color: theme.text }}>{rs.editMerchant}</Text> : null}
-        {rs.editMerchant ? " — " : ""}${grandTotal.toFixed(2)} total
-      </Text>
-
-      {/* Per-person shares */}
-      {rs.personShares.map((person, idx) => (
-        <View key={person.name} style={[st.shareCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-          <View style={[st.shareHeader, { backgroundColor: theme.surfaceSecondary }]}>
-            <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
-              <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
-            </View>
-            <Text style={[st.shareName, { color: theme.text }]}>{person.name}</Text>
-            <Text style={[st.shareTotal, { color: theme.text }]}>${person.totalOwed.toFixed(2)}</Text>
-          </View>
-          <View style={st.shareItems}>
-            {person.items.map((item, i) => (
-              <View key={i} style={st.shareItemRow}>
-                <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
-                <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-
-      {/* Actions */}
-      {!finished && (
-        <View style={{ gap: 12 }}>
-          <Text style={[st.label, { color: theme.textTertiary }]}>What next?</Text>
-          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            <Text style={[st.actionTitle, { color: theme.text }]}>Settle now</Text>
-            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>{groups.length > 0 ? "Save to a group and share payment links." : "Create a group and settle."}</Text>
-            {groups.length > 1 && (
-              <View style={st.groupPicker}>
-                {groups.map(g => (
-                  <TouchableOpacity key={g.id} style={[st.groupChip, { backgroundColor: theme.surfaceTertiary }, selectedGroupId === g.id && { backgroundColor: theme.primaryLight }]} onPress={() => setSelectedGroupId(g.id)}>
-                    <Text style={[st.groupChipText, { color: theme.textTertiary }, selectedGroupId === g.id && { color: theme.primary, fontWeight: "700" }]}>{g.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }, finishing && st.btnOff]} onPress={() => groups.length > 0 ? handleFinish({ stayForSettle: true }) : handleSettleNoGroup()} disabled={finishing}>
-              {finishing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="checkmark-circle" size={18} color="#fff" /><Text style={st.btnText}>Save & settle</Text></>}
-            </TouchableOpacity>
-          </View>
-          <View style={[st.actionCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            <Text style={[st.actionTitle, { color: theme.text }]}>Track for later</Text>
-            <Text style={[st.actionSub, { color: theme.textQuaternary }]}>Add to shared expenses, settle whenever.</Text>
-            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }, (!selectedGroupId || finishing) && st.btnOff]} onPress={() => handleFinish()} disabled={!selectedGroupId || finishing}>
-              <Ionicons name="people" size={18} color={theme.primary} /><Text style={[st.btnOutlineText, { color: theme.primary }]}>Add to group</Text>
-            </TouchableOpacity>
+      {/* Toast */}
+      {toast && (
+        <View style={{ position: "absolute", top: -50, left: 0, right: 0, zIndex: 99, alignItems: "center" }}>
+          <View style={{ backgroundColor: "#1a1a1a", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
+            <Text style={{ color: "#fff", fontSize: 13, fontFamily: font.semibold, fontWeight: "600" }}>{toast}</Text>
           </View>
         </View>
       )}
 
-      {/* Post-save */}
-      {finished && (
-        <View style={{ gap: 16 }}>
-          <View style={[st.successCard, { backgroundColor: theme.successLight, borderColor: theme.success }]}><Ionicons name="checkmark-circle" size={22} color={theme.success} /><Text style={[st.successText, { color: theme.positive }]}>Saved to group!</Text></View>
-          {suggestions.filter(s => !recordedSettlements.has(`${s.fromMemberId}-${s.toMemberId}`)).map((s, i) => (
-            <View key={i} style={[st.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-              <Text style={[st.suggText, { color: theme.textSecondary }]}><Text style={{ fontWeight: "700" }}>{s.fromName}</Text> → <Text style={{ fontWeight: "700" }}>{s.toName}</Text> <Text style={{ color: theme.positive, fontWeight: "700" }}>${s.amount.toFixed(2)}</Text></Text>
-              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                <TouchableOpacity style={[st.suggBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => handleCash(s)}><Text style={[st.suggBtnText, { color: theme.textTertiary }]}>Paid</Text></TouchableOpacity>
-                <TouchableOpacity style={[st.suggBtn, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]} onPress={() => handleRequest(s)} disabled={requestingPayment !== null}>
-                  {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? <ActivityIndicator size="small" color={theme.primary} /> : <><Ionicons name="send" size={12} color={theme.primary} /><Text style={[st.suggBtnGreenText, { color: theme.primary }]}>Share</Text></>}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[st.suggBtn, st.suggBtnTap]}
-                  onPress={() => router.push({ pathname: "/(tabs)/pay", params: { amount: s.amount.toFixed(2), groupId: selectedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } })}
-                >
-                  <Ionicons name="phone-portrait-outline" size={12} color="#4A6CF7" />
-                  <Text style={st.suggBtnTapText}>Tap to Pay</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }]} onPress={() => router.replace("/(tabs)/shared")}><Text style={st.btnText}>View expenses</Text></TouchableOpacity>
-            <TouchableOpacity style={[st.btnOutline, { borderColor: theme.primary }]} onPress={rs.reset}><Text style={[st.btnOutlineText, { color: theme.primary }]}>New receipt</Text></TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* Receipt summary card */}
+      <View style={[smst.receiptCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
+        <Text style={[smst.receiptMeta, { color: theme.textTertiary }]}>
+          {rs.editMerchant || "Receipt"} · {rs.editItems.length} line{rs.editItems.length !== 1 ? "s" : ""}
+        </Text>
+        <Text style={[smst.receiptTotal, { color: theme.text }]}>${grandTotal.toFixed(2)}</Text>
+        <Text style={[smst.receiptPaid, { color: theme.textQuaternary }]}>
+          Paid by You · {rs.personShares.length} {rs.personShares.length === 1 ? "person" : "people"}
+        </Text>
+      </View>
 
-      {/* Nav */}
-      <View style={st.nav}>
-        <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("assign")} disabled={finishing || finished}>
-          <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
+      {/* They owe you */}
+      <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>They owe you</Text>
+          {rs.personShares.length > 1 && !allTabbed && (
+            <TouchableOpacity onPress={handleTabAll} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.md, backgroundColor: theme.surfaceTertiary }}>
+              <Ionicons name="layers-outline" size={14} color={theme.primary} />
+              <Text style={{ fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: theme.primary }}>Tab all</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {rs.personShares.map((person, idx) => {
+        const isTabbed = tabbedPeople.has(person.name.toLowerCase());
+        return (
+          <View key={person.name} style={[smst.personCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <View style={smst.personHeader}>
+              <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
+                <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[smst.personName, { color: theme.text }]}>{person.name}</Text>
+                <Text style={[smst.personSub, { color: theme.textQuaternary }]}>their share</Text>
+              </View>
+              <Text style={[smst.personAmount, { color: theme.positive }]}>${person.totalOwed.toFixed(2)}</Text>
+            </View>
+
+            {/* Item breakdown */}
+            <View style={smst.personItems}>
+              {person.items.map((item, i) => (
+                <View key={i} style={st.shareItemRow}>
+                  <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
+                  <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Action buttons */}
+            <View style={smst.personActions}>
+              <TouchableOpacity
+                style={[smst.settleBtn, { backgroundColor: theme.text }]}
+                onPress={() => { sfx.paymentTap(); router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), groupId: resolvedGroupId ?? "" } }); }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="wifi" size={14} color={theme.surface} style={{ transform: [{ rotate: "90deg" }] }} />
+                <Text style={[smst.settleBtnText, { color: theme.surface }]}>Settle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
+                onPress={() => handleTabPerson(person)}
+                disabled={isTabbed}
+                activeOpacity={0.7}
+              >
+                {isTabbed ? (
+                  <><Ionicons name="checkmark" size={14} color={theme.success} /><Text style={[smst.tabBtnText, { color: theme.success }]}>Tabbed</Text></>
+                ) : (
+                  <Text style={[smst.tabBtnText, { color: theme.textSecondary }]}>Tab it</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Export row */}
+      <View style={smst.exportRow}>
+        <TouchableOpacity onPress={handleShareText} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7}>
+          <Ionicons name="share-social-outline" size={15} color={theme.text} />
+          <Text style={[smst.exportBtnText, { color: theme.text }]}>Share text</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={st.navBack} onPress={rs.reset} disabled={finishing}>
-          <Ionicons name="refresh" size={16} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>New</Text>
+        <TouchableOpacity onPress={handleExportPdf} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7} disabled={exportingPdf}>
+          {exportingPdf ? (
+            <ActivityIndicator size="small" color={theme.text} />
+          ) : (
+            <Ionicons name="document-outline" size={15} color={theme.text} />
+          )}
+          <Text style={[smst.exportBtnText, { color: theme.text }]}>Export PDF</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Done */}
+      <TouchableOpacity style={[smst.doneBtn, { backgroundColor: theme.text }]} onPress={rs.reset} activeOpacity={0.8}>
+        <Text style={[smst.doneBtnText, { color: theme.surface }]}>Done</Text>
+      </TouchableOpacity>
+
+      {/* Edit link */}
+      <TouchableOpacity style={{ alignSelf: "center", paddingVertical: 8 }} onPress={() => rs.setStep("assign")} disabled={finished}>
+        <Text style={{ fontSize: 14, fontFamily: font.medium, fontWeight: "500", color: theme.textTertiary }}>
+          <Ionicons name="chevron-back" size={12} color={theme.textTertiary} /> Edit assignments
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -847,39 +1054,32 @@ const st = StyleSheet.create({
   receiptTopBar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
+  topBarTitle: { fontSize: 17, fontFamily: font.bold, fontWeight: "700", letterSpacing: -0.3 },
+  progressRow: { flexDirection: "row", gap: 6, paddingHorizontal: 20, paddingBottom: 14 },
+  progressSegWrap: { flex: 1, gap: 4 },
+  progressSeg: { height: 3, borderRadius: 2, backgroundColor: colors.borderLight },
+  progressSegLabel: { fontSize: 10, fontFamily: font.medium, fontWeight: "500", textAlign: "center", color: colors.textMuted },
   kv: { flex: 1 },
   scroll: { flex: 1, backgroundColor: colors.bg },
   scrollContent: { padding: 20, paddingBottom: 60 },
-
-  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
-  headerIcon: { width: 42, height: 42, borderRadius: radii.md, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
-  headerSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted, marginTop: 2 },
-
-  steps: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
-  stepWrap: { flex: 1, flexDirection: "row", alignItems: "center" },
-  stepDot: { width: 24, height: 24, borderRadius: radii.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.border },
-  stepDone: { backgroundColor: colors.primary },
-  stepActive: { backgroundColor: colors.primary },
-  stepPending: { backgroundColor: colors.borderLight },
-  stepNum: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: colors.textMuted },
-  stepLabel: { fontSize: 11, fontFamily: font.semibold, fontWeight: "600", color: colors.primary, marginLeft: 4 },
-  stepLabelActive: { color: colors.text, fontFamily: font.bold, fontWeight: "700" },
-  stepLine: { flex: 1, height: 2, backgroundColor: colors.border, marginHorizontal: 4 },
 
   center: { alignItems: "center", paddingVertical: 48 },
   centerText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
   errorText: { fontSize: 14, fontFamily: font.regular, color: colors.red, marginBottom: 16 },
 
-  uploadArea: { borderWidth: 2, borderStyle: "dashed", borderColor: colors.border, borderRadius: radii.xl, padding: 28, alignItems: "center", backgroundColor: colors.surface },
-  uploadIcon: { width: 56, height: 56, borderRadius: radii.lg, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  uploadTitle: { fontSize: 16, fontFamily: font.bold, fontWeight: "700", color: colors.text },
-  uploadSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted, marginTop: 4 },
-  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border },
-  uploadBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
+  savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
+  savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
+  savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
+  uploadArea: { borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.border, borderRadius: 20, paddingVertical: 40, paddingHorizontal: 24, alignItems: "center", backgroundColor: colors.surface },
+  uploadIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  uploadTitle: { fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, textAlign: "center" },
+  uploadSub: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 4 },
+  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
+  uploadBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
   preview: { width: "100%", height: 180, borderRadius: radii.md, backgroundColor: colors.borderLight },
   pdfPreview: { height: 120, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", gap: 8 },
   pdfText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
@@ -994,4 +1194,27 @@ const st = StyleSheet.create({
   nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 12 },
   navBack: { flexDirection: "row", alignItems: "center", gap: 4 },
   navBackText: { fontSize: 14, fontFamily: font.medium, color: colors.textTertiary, fontWeight: "500" },
+});
+
+const smst = StyleSheet.create({
+  receiptCard: { borderRadius: radii.lg, padding: 18, borderWidth: 1, gap: 4 },
+  receiptMeta: { fontSize: 13, fontFamily: font.regular },
+  receiptTotal: { fontSize: 32, fontFamily: font.black, fontWeight: "900", letterSpacing: -1 },
+  receiptPaid: { fontSize: 13, fontFamily: font.regular },
+  personCard: { borderRadius: radii.lg, padding: 16, borderWidth: 1, gap: 12, ...shadow.md },
+  personHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  personName: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
+  personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
+  personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
+  personItems: { paddingLeft: 44, gap: 2 },
+  personActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  settleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flex: 1, paddingVertical: 12, borderRadius: radii.xl },
+  settleBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
+  tabBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flex: 1, paddingVertical: 12, borderRadius: radii.xl, borderWidth: 1.5 },
+  tabBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
+  exportRow: { flexDirection: "row", gap: 10 },
+  exportBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 13, borderRadius: 12, borderWidth: 1 },
+  exportBtnText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },
+  doneBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: radii.xl },
+  doneBtnText: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
 });

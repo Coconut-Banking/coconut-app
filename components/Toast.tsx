@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Animated, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { font } from "../lib/theme";
-import { haptic } from "./ui";
+import { sfx } from "../lib/sounds";
 
 type ToastVariant = "success" | "error" | "info";
 
@@ -93,9 +93,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const show = useCallback((message: string, variant: ToastVariant = "success") => {
     keyRef.current += 1;
     setToast({ message, variant, key: keyRef.current });
-    if (variant === "success") haptic.success();
-    else if (variant === "error") haptic.error();
-    else haptic.light();
+    if (variant === "success") sfx.success();
+    else if (variant === "error") sfx.error();
+    else sfx.pop();
     setTimeout(() => setToast(null), AUTO_DISMISS_MS + 400);
   }, []);
 

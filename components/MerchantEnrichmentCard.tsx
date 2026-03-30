@@ -96,6 +96,66 @@ function FoodDeliveryCard({ details }: { details: MerchantDetails }) {
   );
 }
 
+function SaasCard({ details }: { details: MerchantDetails }) {
+  const planName = details.plan_name ? String(details.plan_name) : null;
+  const serviceName = details.service_name ? String(details.service_name) : null;
+  const billingPeriod = details.billing_period ? String(details.billing_period) : null;
+  const nextBillingDate = details.next_billing_date ? String(details.next_billing_date) : null;
+  const seats = details.seats ? Number(details.seats) : null;
+
+  return (
+    <View style={styles.card}>
+      {planName || serviceName ? (
+        <Text style={styles.headerLine}>{planName ?? serviceName}</Text>
+      ) : null}
+      <View style={styles.saasRow}>
+        {billingPeriod ? (
+          <View style={styles.saasChip}>
+            <Ionicons name="refresh-outline" size={12} color={darkUI.labelSecondary} />
+            <Text style={styles.saasChipText}>{billingPeriod.charAt(0).toUpperCase() + billingPeriod.slice(1)}</Text>
+          </View>
+        ) : null}
+        {seats && seats > 1 ? (
+          <View style={styles.saasChip}>
+            <Ionicons name="people-outline" size={12} color={darkUI.labelSecondary} />
+            <Text style={styles.saasChipText}>{seats} seats</Text>
+          </View>
+        ) : null}
+      </View>
+      {nextBillingDate ? (
+        <Text style={styles.metaLine}>Next charge {nextBillingDate}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function RetailCard({ details }: { details: MerchantDetails }) {
+  const storeName = details.store_name ? String(details.store_name) : null;
+  const storeLocation = details.store_location ? String(details.store_location) : null;
+  const paymentMethod = details.payment_method ? String(details.payment_method) : null;
+
+  if (!storeName && !storeLocation && !paymentMethod) return null;
+
+  return (
+    <View style={styles.card}>
+      {storeLocation ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="location-outline" size={14} color={darkUI.labelSecondary} />
+          <Text style={styles.stopText} numberOfLines={2}>{storeLocation}</Text>
+        </View>
+      ) : storeName ? (
+        <Text style={styles.headerLine}>{storeName}</Text>
+      ) : null}
+      {paymentMethod ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="card-outline" size={14} color={darkUI.labelSecondary} />
+          <Text style={styles.metaLine} numberOfLines={1}>{paymentMethod}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function EcommerceItemsCard({ items }: { items: Array<Record<string, unknown>> }) {
   if (items.length === 0) return null;
 
@@ -124,6 +184,10 @@ export function MerchantEnrichmentCard({ merchantType, merchantDetails }: Props)
       return <FoodDeliveryCard details={merchantDetails} />;
     case "ecommerce":
       return <EcommerceCard details={merchantDetails} />;
+    case "saas":
+      return <SaasCard details={merchantDetails} />;
+    case "retail":
+      return <RetailCard details={merchantDetails} />;
     default:
       return null;
   }
@@ -216,6 +280,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: darkUI.labelMuted,
     marginTop: 6,
+  },
+  saasRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  saasChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: darkUI.strokeSoft,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  saasChipText: {
+    fontFamily: font.medium,
+    fontSize: 12,
+    color: darkUI.labelSecondary,
   },
   itemRow: {
     flexDirection: "row",

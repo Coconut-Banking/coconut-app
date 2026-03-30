@@ -140,6 +140,7 @@ export default function SettingsScreen() {
   } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
   const [splitwiseClearing, setSplitwiseClearing] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
   /** True only while the in-focus Settings fetch runs (avoids treating null status as “not configured”). */
   const [splitwiseLoading, setSplitwiseLoading] = useState(false);
   const [splitwiseResult, setSplitwiseResult] = useState<{
@@ -160,12 +161,44 @@ export default function SettingsScreen() {
     splitwise?: string;
     import?: string;
     splitwise_error?: string;
+    connected?: string;
+    error?: string;
+    stripe_connect?: string;
   }>();
   const splitwiseErrorAlertShown = useRef(false);
 
   useEffect(() => {
     splitwiseStatusRef.current = splitwiseStatus;
   }, [splitwiseStatus]);
+
+  const [gmailStatus, setGmailStatus] = useState<{
+    connected: boolean;
+    email: string | null;
+    lastScanAt: string | null;
+  } | null>(null);
+  const [gmailScanning, setGmailScanning] = useState(false);
+  const [gmailDisconnecting, setGmailDisconnecting] = useState(false);
+  const [gmailScanResult, setGmailScanResult] = useState<{
+    ok: boolean;
+    emailsFetched?: number;
+    inserted?: number;
+    matched?: number;
+    isFirstScan?: boolean;
+    error?: string;
+  } | null>(null);
+  const [rematching, setRematching] = useState(false);
+  const [rematchResult, setRematchResult] = useState<string | null>(null);
+  const gmailConnectedHandled = useRef(false);
+
+  const [connectStatus, setConnectStatus] = useState<{
+    hasAccount: boolean;
+    onboardingComplete: boolean;
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+  } | null>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectActionLoading, setConnectActionLoading] = useState(false);
+  const connectReturnHandled = useRef(false);
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsLoading(true);
@@ -188,6 +221,47 @@ export default function SettingsScreen() {
       setAccounts([]);
     } finally {
       setAccountsLoading(false);
+    }
+  };
+
+  const fetchConnectStatus = useCallback(async () => {
+    if (!user) return;
+    setConnectLoading(true);
+    try {
+      const res = await apiFetch("/api/stripe/connect/status");
+      if (!res.ok) { setConnectStatus(null); return; }
+      const data = await res.json();
+      setConnectStatus(data as typeof connectStatus);
+    } catch {
+      setConnectStatus(null);
+    } finally {
+      setConnectLoading(false);
+    }
+  }, [user, apiFetch]);
+
+  const startConnectOnboarding = async () => {
+    setConnectActionLoading(true);
+    try {
+      const endpoint = connectStatus?.hasAccount
+        ? "/api/stripe/connect/onboarding-link"
+        : "/api/stripe/connect/create-account";
+      const res = await apiFetch(endpoint, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", (data as { error?: string }).error ?? "Could not start setup");
+        return;
+      }
+      const data = await res.json();
+      const url = (data as { url?: string }).url;
+      if (!url) {
+        Alert.alert("Error", "Could not get onboarding URL");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Error", "Could not start payment setup. Check your connection.");
+    } finally {
+      setConnectActionLoading(false);
     }
   };
 
@@ -269,11 +343,25 @@ export default function SettingsScreen() {
     [user, apiFetch]
   );
 
+  const fetchGmailStatus = async () => {
+    if (!user) return;
+    try {
+      const res = await apiFetch("/api/gmail/status");
+      if (!res.ok) { setGmailStatus(null); return; }
+      const data = await res.json();
+      setGmailStatus(data as { connected: boolean; email: string | null; lastScanAt: string | null });
+    } catch {
+      setGmailStatus(null);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     if (!isFocused) return;
     void fetchSplitwiseStatus({ showLoading: true });
-  }, [isFocused, user, fetchSplitwiseStatus]);
+    void fetchGmailStatus();
+    void fetchConnectStatus();
+  }, [isFocused, user, fetchSplitwiseStatus, fetchConnectStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
   useEffect(() => {
@@ -285,6 +373,110 @@ export default function SettingsScreen() {
     return () => sub.remove();
   }, [user, isFocused, fetchSplitwiseStatus]);
 
+  const connectGmail = async () => {
+    try {
+      const redirect = "coconut://settings";
+      const res = await apiFetch(`/api/gmail/auth?redirect=${encodeURIComponent(redirect)}`);
+      const data = await res.json().catch(() => ({}));
+      const authUrl = (data as { authUrl?: string }).authUrl;
+      if (authUrl) {
+        void Linking.openURL(authUrl);
+      } else {
+        Alert.alert("Gmail", "Could not start Gmail connection. Try again.");
+      }
+    } catch {
+      Alert.alert("Gmail", "Could not start Gmail connection. Check your connection.");
+    }
+  };
+
+  const scanGmail = async (daysBack?: number) => {
+    setGmailScanning(true);
+    setGmailScanResult(null);
+    const isFirstScan = !gmailStatus?.lastScanAt;
+    // Always use at least 90 days on first scan, or when explicitly requested
+    const days = daysBack ?? (isFirstScan ? 90 : 7);
+    try {
+      const body = { daysBack: days };
+      console.log("[gmail:scan] starting — daysBack:", days, "body:", JSON.stringify(body));
+      const res = await apiFetch("/api/gmail/scan", { method: "POST", body });
+      console.log("[gmail:scan] response status:", res.status);
+      const data = await res.json().catch((e) => { console.warn("[gmail:scan] json parse error:", e); return {}; });
+      console.log("[gmail:scan] response body:", JSON.stringify(data));
+      if (!res.ok) {
+        if (res.status === 403 && (data as { authError?: boolean }).authError) {
+          setGmailStatus((prev) => prev ? { ...prev, connected: false } : null);
+          Alert.alert("Gmail", "Gmail connection expired. Please reconnect.");
+        } else {
+          setGmailScanResult({ ok: false, error: (data as { error?: string }).error ?? "Scan failed. Try again." });
+        }
+      } else {
+        const d = data as { emailsFetched?: number; inserted?: number; matched?: number; error?: string };
+        console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched, "error:", d.error);
+        if (d.error) {
+          setGmailScanResult({ ok: false, error: d.error });
+        } else {
+          setGmailScanResult({ ok: true, emailsFetched: d.emailsFetched, inserted: d.inserted ?? 0, matched: d.matched ?? 0, isFirstScan });
+        }
+        void fetchGmailStatus();
+      }
+    } catch (e) {
+      console.error("[gmail:scan] exception:", e instanceof Error ? e.message : e);
+      setGmailScanResult({ ok: false, error: "Scan failed. Check your connection." });
+    } finally {
+      setGmailScanning(false);
+    }
+  };
+
+  const rematchReceipts = async () => {
+    setRematching(true);
+    setRematchResult(null);
+    try {
+      const res = await apiFetch("/api/email-receipts/rematch", { method: "POST" });
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (res.ok) {
+        const cleared = data.cleared ?? 0;
+        const matched = data.matched ?? 0;
+        setRematchResult(`✓ ${matched} matched · ${cleared} wrong matches cleared`);
+      } else {
+        setRematchResult(`Error: ${(data as { error?: string }).error ?? res.status}`);
+      }
+    } catch {
+      setRematchResult("Failed — check connection");
+    } finally {
+      setRematching(false);
+    }
+  };
+
+  const disconnectGmail = () => {
+    Alert.alert(
+      "Disconnect Gmail?",
+      "Removes your Gmail connection. Matched receipts stay in Coconut.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            setGmailDisconnecting(true);
+            try {
+              const res = await apiFetch("/api/gmail/disconnect", { method: "POST" });
+              if (!res.ok) {
+                Alert.alert("Error", "Could not disconnect. Try again.");
+              } else {
+                setGmailStatus({ connected: false, email: null, lastScanAt: null });
+                setGmailScanResult(null);
+              }
+            } catch {
+              Alert.alert("Error", "Could not disconnect. Check your connection.");
+            } finally {
+              setGmailDisconnecting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
     if (!user) return;
     if (splitwiseAutoImportStarted.current) return;
@@ -293,6 +485,39 @@ export default function SettingsScreen() {
       void startSplitwiseImport();
     }
   }, [splitwiseParams?.splitwise, splitwiseParams?.import, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (gmailConnectedHandled.current) return;
+    if (splitwiseParams?.connected === "true") {
+      gmailConnectedHandled.current = true;
+      router.replace("/(tabs)/settings");
+      // Fetch status first, then auto-scan with 90 days on first connect
+      fetchGmailStatus().then(() => {
+        void scanGmail(90);
+      });
+    } else if (splitwiseParams?.error === "auth_failed") {
+      gmailConnectedHandled.current = true;
+      Alert.alert("Gmail", "Could not connect Gmail. Please try again.");
+      router.replace("/(tabs)/settings");
+    }
+  }, [splitwiseParams?.connected, splitwiseParams?.error, user]);
+
+  // Handle return from Stripe Connect onboarding
+  useEffect(() => {
+    if (!user) return;
+    if (connectReturnHandled.current) return;
+    const sc = splitwiseParams?.stripe_connect;
+    if (sc === "complete") {
+      connectReturnHandled.current = true;
+      void fetchConnectStatus();
+      router.replace("/(tabs)/settings");
+    } else if (sc === "refresh") {
+      connectReturnHandled.current = true;
+      void startConnectOnboarding();
+      router.replace("/(tabs)/settings");
+    }
+  }, [splitwiseParams?.stripe_connect, user]);
 
   useEffect(() => {
     const err = splitwiseParams?.splitwise_error;
@@ -496,6 +721,7 @@ export default function SettingsScreen() {
         return;
       }
       setSplitwiseResult(data as typeof splitwiseResult);
+      DeviceEventEmitter.emit("groups-updated");
     } catch (e) {
       if (__DEV__) console.warn("[splitwise] import exception", e);
       setSplitwiseResult({
@@ -606,6 +832,44 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleClearAll = () => {
+    Alert.alert(
+      "Clear all data?",
+      "This permanently deletes ALL your groups, expenses, settlements, and receipts from Coconut. Your bank connections and account stay intact.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete everything",
+          style: "destructive",
+          onPress: async () => {
+            setClearingAll(true);
+            try {
+              const res = await apiFetch("/api/groups/clear-all", { method: "POST" });
+              if (res.ok) {
+                const data = await res.json();
+                const details = [
+                  `${data.deletedGroups} group(s) deleted`,
+                  data.foreignMembershipsRemoved > 0
+                    ? `${data.foreignMembershipsRemoved} foreign link(s) removed`
+                    : null,
+                ].filter(Boolean).join("\n");
+                Alert.alert("All data cleared", details || "Everything wiped.");
+                DeviceEventEmitter.emit("groups-updated");
+              } else {
+                const errData = await res.json().catch(() => null);
+                Alert.alert("Error", errData?.error ?? "Could not clear data.");
+              }
+            } catch {
+              Alert.alert("Error", "Network error.");
+            } finally {
+              setClearingAll(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSignOut = async () => {
     if (!signOut) return;
     setSigningOut(true);
@@ -690,6 +954,65 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Payments (Stripe Connect) */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Payments</Text>
+          <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
+            Set up payments to receive Tap to Pay funds directly in your bank account.
+          </Text>
+
+          {connectLoading && connectStatus === null ? (
+            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
+          ) : connectStatus?.onboardingComplete ? (
+            <View style={[styles.resultBox, { backgroundColor: "#EEF7F2", borderColor: "#C3E0D3" }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
+                <Text style={[styles.resultTitle, { color: theme.text }]}>Payments enabled</Text>
+              </View>
+              <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                Tap to Pay funds will be deposited directly to your bank account.
+              </Text>
+            </View>
+          ) : connectStatus?.hasAccount ? (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <View style={[styles.resultBox, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="time-outline" size={20} color="#F59E0B" />
+                  <Text style={[styles.resultTitle, { color: theme.text }]}>Setup incomplete</Text>
+                </View>
+                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                  Finish setting up your account to receive payments.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
+                onPress={startConnectOnboarding}
+                disabled={connectActionLoading}
+              >
+                {connectActionLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Continue setup</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
+                onPress={startConnectOnboarding}
+                disabled={connectActionLoading}
+              >
+                {connectActionLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Set up payments</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Connected banks */}
@@ -932,6 +1255,151 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+
+        {/* Email receipts */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Email receipts</Text>
+          <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
+            Connect Gmail to automatically match email receipts to your bank transactions.
+          </Text>
+
+          {gmailScanResult ? (
+            <View
+              style={[
+                styles.resultBox,
+                {
+                  backgroundColor: gmailScanResult.ok ? "#EEF7F2" : "#FEE2E2",
+                  borderColor: gmailScanResult.ok ? "#C3E0D3" : theme.errorLight,
+                },
+              ]}
+            >
+              <Text style={[styles.resultTitle, { color: gmailScanResult.ok ? theme.text : theme.error }]}>
+                {gmailScanResult.ok
+                  ? gmailScanResult.inserted === 0
+                    ? "No new receipts"
+                    : "Scan complete"
+                  : "Scan failed"}
+              </Text>
+              {gmailScanResult.ok ? (
+                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                  {gmailScanResult.emailsFetched != null
+                    ? `${gmailScanResult.emailsFetched} emails scanned · `
+                    : ""}
+                  {gmailScanResult.inserted ?? 0} new receipts · {gmailScanResult.matched ?? 0} matched
+                  {gmailScanResult.isFirstScan ? " (last 90 days)" : ""}
+                </Text>
+              ) : gmailScanResult.error ? (
+                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>{gmailScanResult.error}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {!gmailStatus?.connected ? (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+                onPress={connectGmail}
+                disabled={gmailScanning}
+              >
+                <Text style={styles.primaryBtnText}>Connect Gmail</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                {gmailStatus.email ? (
+                  <Text style={[styles.muted, { color: theme.textTertiary }]}>{gmailStatus.email}</Text>
+                ) : null}
+                {gmailStatus.lastScanAt ? (
+                  <Text style={[styles.muted, { color: theme.textQuaternary, fontSize: 12 }]}>
+                    Last scan {new Date(gmailStatus.lastScanAt).toLocaleDateString()}
+                  </Text>
+                ) : (
+                  <Text style={[styles.muted, { color: theme.textQuaternary, fontSize: 12 }]}>Never scanned</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary }, gmailScanning && styles.disabled]}
+                onPress={() => scanGmail()}
+                disabled={gmailScanning || gmailDisconnecting}
+              >
+                {gmailScanning ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.primaryBtnText}>Scanning…</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.primaryBtnText}>
+                    {!gmailStatus.lastScanAt ? "Scan receipts (last 90 days)" : "Scan new receipts"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              {gmailStatus.lastScanAt ? (
+                <TouchableOpacity
+                  style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                  onPress={() => scanGmail(90)}
+                  disabled={gmailScanning || gmailDisconnecting}
+                >
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
+                    Scan last 90 days
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={rematchReceipts}
+                disabled={rematching || gmailScanning}
+              >
+                {rematching ? (
+                  <ActivityIndicator size="small" color={theme.textSecondary} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
+                    Re-match receipts to transactions
+                  </Text>
+                )}
+              </TouchableOpacity>
+              {rematchResult ? (
+                <Text style={[styles.muted, { color: theme.textTertiary, fontSize: 12, textAlign: "center" }]}>
+                  {rematchResult}
+                </Text>
+              ) : null}
+              <TouchableOpacity
+                style={styles.linkRow}
+                onPress={() => router.push("/(tabs)/email-receipts")}
+              >
+                <Ionicons name="mail-outline" size={16} color={theme.primary} />
+                <Text style={[styles.linkInline, { color: theme.primary }]}>View all receipts</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
+                onPress={disconnectGmail}
+                disabled={gmailDisconnecting || gmailScanning}
+              >
+                {gmailDisconnecting ? (
+                  <ActivityIndicator size="small" color={theme.error} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error }]}>Disconnect Gmail</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.signOutButton,
+            { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
+          ]}
+          onPress={handleClearAll}
+          disabled={clearingAll}
+          activeOpacity={0.85}
+        >
+          {clearingAll ? (
+            <ActivityIndicator size="small" color={theme.error} />
+          ) : (
+            <Text style={[styles.signOutText, { color: theme.error }]}>Clear all data</Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[

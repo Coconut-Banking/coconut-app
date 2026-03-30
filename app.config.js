@@ -36,11 +36,14 @@ export default {
       EXPO_PUBLIC_API_URL:
         process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev",
       EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID:
-        process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID ||
+        "986367405156-5svjgdfn9oorkkconv9s2kmf66de836t.apps.googleusercontent.com",
       EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID:
-        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID ||
+        "986367405156-nhpon6mqrm7s093bbe1lag677ncnbpmi.apps.googleusercontent.com",
       EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME:
-        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
+        process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ||
+        "com.googleusercontent.apps.986367405156-nhpon6mqrm7s093bbe1lag677ncnbpmi",
     },
     slug: "coconut-app",
     version: "1.0.0",

@@ -11,6 +11,7 @@ export function MerchantLogo({
   borderColor,
   style,
   fallbackText,
+  logoUrl: externalLogoUrl,
 }: {
   merchantName: string;
   size?: number;
@@ -18,17 +19,20 @@ export function MerchantLogo({
   borderColor?: string;
   style?: StyleProp<ViewStyle>;
   fallbackText?: string;
+  /** Direct logo URL (e.g. from Plaid). Takes priority over Quikrturn lookup. */
+  logoUrl?: string | null;
 }) {
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     setErrored(false);
-  }, [merchantName]);
+  }, [merchantName, externalLogoUrl]);
 
   const logoUrl = useMemo(() => {
     if (errored) return null;
+    if (externalLogoUrl) return externalLogoUrl;
     return getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
-  }, [merchantName, size, errored]);
+  }, [merchantName, size, errored, externalLogoUrl]);
 
   const initial = (() => {
     const src = (fallbackText?.trim() || merchantName?.trim() || "");
@@ -40,8 +44,10 @@ export function MerchantLogo({
   const bg = backgroundColor ?? "rgba(31,35,40,0.08)";
   const ring = borderColor ?? "rgba(31,35,40,0.14)";
 
+  const hasLogo = Boolean(logoUrl);
+
   return (
-    <View style={[s.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderColor: ring }, style]}>
+    <View style={[s.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: hasLogo ? "transparent" : bg, borderColor: hasLogo ? "transparent" : ring, borderWidth: hasLogo ? 0 : 1 }, style]}>
       {logoUrl ? (
         <Image
           source={{ uri: logoUrl }}
@@ -60,12 +66,11 @@ const s = StyleSheet.create({
   circle: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
     overflow: "hidden",
   },
   logoImg: {
-    width: "70%",
-    height: "70%",
+    width: "100%",
+    height: "100%",
   },
   initial: {
     fontFamily: font.extrabold,

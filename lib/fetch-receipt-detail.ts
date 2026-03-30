@@ -17,6 +17,16 @@ export type ReceiptDetailPayload = {
   tip?: number;
   total?: number;
   extras?: Array<{ name: string; amount: number }>;
+  rideshare?: {
+    map_url?: string;
+    pickup?: string;
+    dropoff?: string;
+    distance?: string;
+    duration?: string;
+    driver_name?: string;
+    vehicle?: string;
+    fare_breakdown?: Record<string, number>;
+  };
   receipt_items?: Array<{
     id: string;
     name: string;
@@ -54,6 +64,7 @@ export async function fetchReceiptDetailForTransaction(
   merchantName: string;
   merchantType: string | null;
   merchantDetails: Record<string, unknown> | null;
+  rideshare?: ReceiptDetailPayload["rideshare"];
   subtotal: number;
   tax: number;
   tip: number;
@@ -67,10 +78,18 @@ export async function fetchReceiptDetailForTransaction(
   ];
 
   for (const path of paths) {
+    console.log("[fetchReceiptDetail] trying:", path);
     const res = await apiFetch(path, { method: "GET" });
-    if (res.status === 404) continue;
-    if (!res.ok) continue;
-    const data = (await res.json()) as ReceiptDetailPayload;
+    console.log("[fetchReceiptDetail] status:", res.status, "for", path);
+    if (res.status === 404) { console.log("[fetchReceiptDetail] 404 →", path); continue; }
+    if (!res.ok) { console.log("[fetchReceiptDetail] non-ok", res.status, "→", path); continue; }
+    const rawText = await res.text();
+    console.log("[fetchReceiptDetail] raw response:", rawText.slice(0, 800));
+    const data = JSON.parse(rawText) as ReceiptDetailPayload;
+    console.log("[fetchReceiptDetail] keys:", Object.keys(data));
+    console.log("[fetchReceiptDetail] merchant_type:", data.merchant_type);
+    console.log("[fetchReceiptDetail] merchant_details:", JSON.stringify(data.merchant_details));
+    console.log("[fetchReceiptDetail] rideshare:", JSON.stringify((data as Record<string, unknown>).rideshare ?? "(none)"));
     const items = mapItems(data);
     const subFromItems = items.reduce((s, i) => s + i.totalPrice, 0);
     const subtotal = Number(data.subtotal ?? subFromItems);
@@ -87,6 +106,7 @@ export async function fetchReceiptDetailForTransaction(
       merchantName: data.merchant_name ?? "",
       merchantType: data.merchant_type ?? null,
       merchantDetails: data.merchant_details ?? null,
+      rideshare: data.rideshare,
       subtotal,
       tax,
       tip,
@@ -94,5 +114,6 @@ export async function fetchReceiptDetailForTransaction(
       extras,
     };
   }
+  console.log("[fetchReceiptDetail] all paths failed, returning null");
   return null;
 }
