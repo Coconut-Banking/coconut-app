@@ -4,6 +4,7 @@
 import { Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { StackActions } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +29,16 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   };
 
+  const popTabToRoot = (tabName: string) => {
+    const route = state.routes.find((r) => r.name === tabName);
+    if (route?.state?.index && route.state.index > 0) {
+      navigation.dispatch({
+        ...StackActions.popToTop(),
+        target: route.state.key,
+      });
+    }
+  };
+
   const goIndex = () => {
     sfx.tabTap();
     navigation.navigate("index" as never);
@@ -39,6 +50,7 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const goFriends = () => {
     sfx.tabTap();
     navigation.navigate("shared" as never);
+    popTabToRoot("shared");
   };
   const goAccount = () => {
     sfx.tabTap();
