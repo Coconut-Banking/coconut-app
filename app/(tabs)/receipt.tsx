@@ -171,12 +171,21 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
     const { status: cam } = await ImagePicker.requestCameraPermissionsAsync();
     if (camera && cam !== "granted") { Alert.alert("Permission needed", "Allow camera access."); return; }
     if (!camera && lib !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+    const pickerOpts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      quality: 0.85,
+      exif: false,
+    };
     const result = camera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.85 });
+      ? await ImagePicker.launchCameraAsync(pickerOpts)
+      : await ImagePicker.launchImageLibraryAsync(pickerOpts);
     if (result.canceled) return;
-    const uri = result.assets[0]?.uri;
-    if (uri) await rs.uploadReceipt(uri);
+    const asset = result.assets[0];
+    if (!asset?.uri) return;
+    const raw = asset.mimeType ?? "image/jpeg";
+    const mimeType = (raw === "image/heic" || raw === "image/heif") ? "image/jpeg" : raw;
+    const ext = mimeType.split("/")[1] ?? "jpg";
+    await rs.uploadReceipt(asset.uri, { mimeType, name: `receipt.${ext}` });
   };
 
   const pickPdf = async () => {
@@ -286,15 +295,10 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
               {/* Unit price */}
               <View style={[st.priceWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
                 <Text style={[st.pricePre, { color: theme.textQuaternary }]}>$</Text>
-                <TextInput
+                <DecimalInput
                   style={[st.priceInput, { color: theme.text }]}
-                  value={String(item.unitPrice)}
-                  onChangeText={(v) => {
-                    const n = parseFloat(v) || 0;
-                    rs.updateItem(item.id, { unitPrice: n });
-                  }}
-                  keyboardType="decimal-pad"
-                  selectTextOnFocus
+                  numValue={item.unitPrice}
+                  onValueChange={(n) => rs.updateItem(item.id, { unitPrice: n })}
                 />
               </View>
               <Text style={[st.itemEquals, { color: theme.textQuaternary }]}>=</Text>
@@ -339,6 +343,33 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
   );
 }
 
+function DecimalInput({ numValue, onValueChange, style }: { numValue: number; onValueChange: (n: number) => void; style?: any }) {
+  const [text, setText] = useState(String(numValue));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(String(numValue)); }, [numValue, focused]);
+  return (
+    <TextInput
+      style={style}
+      value={text}
+      onChangeText={(v) => {
+        const cleaned = v.replace(/[^0-9.]/g, "");
+        setText(cleaned);
+        const num = parseFloat(cleaned);
+        if (!isNaN(num)) onValueChange(num);
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        const num = parseFloat(text) || 0;
+        onValueChange(num);
+        setText(String(num));
+      }}
+      keyboardType="decimal-pad"
+      selectTextOnFocus
+    />
+  );
+}
+
 function TotalRow({ label, value, editable = true, onChange }: { label: string; value: number; editable?: boolean; onChange?: (v: number) => void }) {
   const { theme } = useTheme();
   return (
@@ -347,17 +378,37 @@ function TotalRow({ label, value, editable = true, onChange }: { label: string; 
       {editable && onChange ? (
         <View style={[st.totalInputWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
           <Text style={[st.totalPre, { color: theme.textQuaternary }]}>$</Text>
-          <TextInput
+          <DecimalInput
             style={[st.totalInput, { color: theme.text }]}
-            value={String(value)}
-            onChangeText={(v) => onChange(parseFloat(v) || 0)}
-            keyboardType="decimal-pad"
-            selectTextOnFocus
+            numValue={value}
+            onValueChange={onChange}
           />
         </View>
       ) : (
         <Text style={[st.totalVal, { color: theme.textSecondary }]}>${value.toFixed(2)}</Text>
       )}
+    </View>
+  );
+}
+
+function ItemSearch({ value, onChange, theme }: { value: string; onChange: (v: string) => void; theme: any }) {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 8,
+      backgroundColor: theme.surfaceSecondary, borderRadius: radii.md,
+      borderWidth: 1, borderColor: theme.borderLight,
+      paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
+    }}>
+      <Ionicons name="search" size={16} color={theme.textQuaternary} />
+      <TextInput
+        style={{ flex: 1, fontSize: 14, fontFamily: font.regular, color: theme.text, padding: 0 }}
+        value={value}
+        onChangeText={onChange}
+        placeholder="Search items..."
+        placeholderTextColor={theme.inputPlaceholder}
+        autoCorrect={false}
+        clearButtonMode="while-editing"
+      />
     </View>
   );
 }
@@ -377,7 +428,14 @@ function AssignStep({
 }) {
   const { theme } = useTheme();
   const [search, setSearch] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return rs.itemsWithExtras;
+    return rs.itemsWithExtras.filter(item => item.name.toLowerCase().includes(q));
+  }, [rs.itemsWithExtras, itemSearch]);
 
   useEffect(() => {
     if (isDemoOn) {
@@ -478,14 +536,28 @@ function AssignStep({
 
       {/* Items with inline assignment */}
       <View>
-        <Text style={[st.label, { color: theme.textTertiary }]}>Assign items</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>Assign items</Text>
+          {rs.itemsWithExtras.length > 4 && (
+            <Text style={{ fontSize: 12, color: theme.textQuaternary }}>{rs.itemsWithExtras.length} items</Text>
+          )}
+        </View>
+        {rs.itemsWithExtras.length > 5 && (
+          <ItemSearch value={itemSearch} onChange={setItemSearch} theme={theme} />
+        )}
         {rs.people.length === 0 && (
           <View style={st.emptyAssign}>
             <Ionicons name="person-add-outline" size={24} color={theme.border} />
             <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>Add people above to start assigning items</Text>
           </View>
         )}
-        {rs.itemsWithExtras.map((item) => {
+        {filteredItems.length === 0 && itemSearch.trim() && (
+          <View style={st.emptyAssign}>
+            <Ionicons name="search-outline" size={24} color={theme.border} />
+            <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>No items matching "{itemSearch.trim()}"</Text>
+          </View>
+        )}
+        {filteredItems.map((item) => {
           const assigned = rs.assignments.get(item.id) ?? [];
           const isAssigned = assigned.length > 0;
           const isUnassigned = !isAssigned && rs.people.length > 0;
