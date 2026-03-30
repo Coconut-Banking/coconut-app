@@ -31,6 +31,8 @@ export interface Transaction {
    * Backend may send `receipt_id` or `receiptId`.
    */
   receiptId?: string | null;
+  /** Plaid counterparty logo URL (high-quality, from Plaid CDN). */
+  logoUrl?: string | null;
 }
 
 /** `api_unreachable` = HTTP 404 on /api/plaid/status (usually wrong EXPO_PUBLIC_API_URL, not auth). */

@@ -51,7 +51,7 @@ import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
-function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean }): HomeBankStripRow {
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
   const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
   return {
@@ -65,6 +65,7 @@ function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: stri
     sheetDateLine: tx.dateStr || tx.date || "",
     showReceiptBox: hasReceipt,
     receiptId: tx.receiptId ?? null,
+    logoUrl: tx.logoUrl ?? null,
   };
 }
 
@@ -390,6 +391,7 @@ export default function BalancesPrototypeScreen() {
                         merchantName={item.merchant}
                         size={22}
                         fallbackText={item.emoji}
+                        logoUrl={item.logoUrl}
                         backgroundColor="transparent"
                         borderColor="transparent"
                       />
@@ -477,6 +479,7 @@ export default function BalancesPrototypeScreen() {
                           merchantName={item.merchant}
                           size={22}
                           fallbackText={item.emoji}
+                          logoUrl={item.logoUrl}
                           backgroundColor="transparent"
                           borderColor="transparent"
                         />
@@ -539,6 +542,7 @@ export default function BalancesPrototypeScreen() {
                             merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                             size={22}
                             fallbackText="💳"
+                            logoUrl={tx.logoUrl}
                             backgroundColor="transparent"
                             borderColor="transparent"
                           />
@@ -719,6 +723,7 @@ export default function BalancesPrototypeScreen() {
                       merchantName={selectedStrip.merchant}
                       size={32}
                       fallbackText={selectedStrip.emoji}
+                      logoUrl={selectedStrip.logoUrl}
                       backgroundColor="transparent"
                       borderColor="transparent"
                     />
@@ -1002,6 +1007,7 @@ export default function BalancesPrototypeScreen() {
                             merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                             size={22}
                             fallbackText="💳"
+                            logoUrl={tx.logoUrl}
                             backgroundColor="transparent"
                             borderColor="transparent"
                           />

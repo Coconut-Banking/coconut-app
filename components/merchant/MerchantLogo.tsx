@@ -11,6 +11,7 @@ export function MerchantLogo({
   borderColor,
   style,
   fallbackText,
+  logoUrl: externalLogoUrl,
 }: {
   merchantName: string;
   size?: number;
@@ -18,17 +19,20 @@ export function MerchantLogo({
   borderColor?: string;
   style?: StyleProp<ViewStyle>;
   fallbackText?: string;
+  /** Direct logo URL (e.g. from Plaid). Takes priority over Quikrturn lookup. */
+  logoUrl?: string | null;
 }) {
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     setErrored(false);
-  }, [merchantName]);
+  }, [merchantName, externalLogoUrl]);
 
   const logoUrl = useMemo(() => {
     if (errored) return null;
+    if (externalLogoUrl) return externalLogoUrl;
     return getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
-  }, [merchantName, size, errored]);
+  }, [merchantName, size, errored, externalLogoUrl]);
 
   const initial = (() => {
     const src = (fallbackText?.trim() || merchantName?.trim() || "");

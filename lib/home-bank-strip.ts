@@ -30,6 +30,8 @@ export type HomeBankStripRow = {
   receiptBoxText?: string;
   /** Server receipt uuid for GET /api/receipt/:id (itemized lines). */
   receiptId?: string | null;
+  /** Plaid counterparty logo URL. */
+  logoUrl?: string | null;
 };
 
 export function demoChargeToStripRow(tx: PrototypeBankCharge): HomeBankStripRow {
@@ -76,6 +78,7 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
     showReceiptBox: hasReceipt,
     receiptBoxText: hasReceiptSnippet ? receiptSnippet : undefined,
     receiptId: tx.receiptId ?? null,
+    logoUrl: tx.logoUrl ?? null,
   };
 }
 

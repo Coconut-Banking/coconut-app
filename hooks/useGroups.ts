@@ -59,6 +59,7 @@ export interface GroupDetail {
     paidBy: string;
     splitCount: number;
     createdAt: string;
+    receiptUrl?: string | null;
   }>;
   balances: Array<{
     memberId: string;
@@ -97,6 +98,7 @@ export interface PersonDetail {
     theirShare: number;
     effectOnBalance: number;
     createdAt: string;
+    receiptUrl?: string | null;
   }>;
   email: string | null;
   key: string;
