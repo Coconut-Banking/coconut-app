@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
@@ -112,10 +113,13 @@ function dedupeMembers(members: GroupMember[]): GroupMember[] {
 
 export default function AddExpenseScreen() {
   const nav = useRouter();
-  const { prefillDesc, prefillAmount, prefillNonce } = useLocalSearchParams<{
+  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType } = useLocalSearchParams<{
     prefillDesc?: string;
     prefillAmount?: string;
     prefillNonce?: string;
+    prefillPersonKey?: string;
+    prefillPersonName?: string;
+    prefillPersonType?: string;
   }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
@@ -156,13 +160,41 @@ export default function AddExpenseScreen() {
   const lastPrefillNonce = useRef<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const descInputRef = useRef<TextInput>(null);
+  const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
+  const resetForm = useCallback(() => {
+    setTargets([]);
+    setQuery("");
+    setResolvedGroupId(null);
+    setGroupMembers([]);
+    setCustomSplits({});
+    setDupWarning(false);
+    setError(null);
+    setPaidByMe(true);
+    setPayerMemberId(null);
+    setSplitMethod("equal");
+    setSplitExpanded(false);
+    setAmount("");
+    setDescription("");
+    setShowSettlement(false);
+  }, []);
+
+  // Reset form when screen gains focus without fresh prefill params
+  useEffect(() => {
+    if (isFocused && !prevFocused.current) {
+      if (!prefillNonce || prefillNonce === lastPrefillNonce.current) {
+        resetForm();
+      }
+    }
+    prevFocused.current = isFocused;
+  }, [isFocused, prefillNonce, resetForm]);
 
   // ── Prefill reset ──
   useEffect(() => {
     if (prefillNonce != null && prefillNonce !== "") {
       if (lastPrefillNonce.current !== prefillNonce) {
         lastPrefillNonce.current = prefillNonce;
-        setTargets([]);
         setQuery("");
         setResolvedGroupId(null);
         setGroupMembers([]);
@@ -173,6 +205,13 @@ export default function AddExpenseScreen() {
         setPayerMemberId(null);
         setSplitMethod("equal");
         setSplitExpanded(false);
+
+        if (prefillPersonKey && prefillPersonName) {
+          const type = (prefillPersonType === "group" ? "group" : "friend") as "group" | "friend";
+          setTargets([{ type, key: prefillPersonKey, name: prefillPersonName }]);
+        } else {
+          setTargets([]);
+        }
       }
     }
     if (prefillDesc !== undefined) {
@@ -186,7 +225,7 @@ export default function AddExpenseScreen() {
         setAmount("");
       }
     }
-  }, [prefillNonce, prefillDesc, prefillAmount]);
+  }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
 
   // ── Fallback groups fetch ──
   useEffect(() => {
@@ -580,7 +619,7 @@ export default function AddExpenseScreen() {
   };
 
   const dismissSettlement = () => {
-    setShowSettlement(false);
+    resetForm();
     nav.replace("/(tabs)");
   };
 
