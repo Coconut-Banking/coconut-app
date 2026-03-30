@@ -165,6 +165,6 @@ export function useApiFetch() {
         );
       }
     },
-    []
+    [isSignedIn]
   );
 }
