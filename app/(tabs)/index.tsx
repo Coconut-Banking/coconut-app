@@ -438,11 +438,7 @@ export default function BalancesPrototypeScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
-            {linked && txStatus === "ok" ? (
-              <Text style={styles.bankSyncHint}>
-                Pull down on Home to sync new charges from your bank (often ~15–30s). Updates also arrive in the background when your bank notifies Plaid.
-              </Text>
-            ) : null}
+            {null}
             {txStatus === "api_unreachable" ? (
               <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
