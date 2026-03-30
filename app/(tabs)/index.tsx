@@ -46,8 +46,9 @@ import {
   merchantEmoji,
   type HomeBankStripRow,
 } from "../../lib/home-bank-strip";
+import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
+import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
-import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
@@ -171,6 +172,12 @@ export default function BalancesPrototypeScreen() {
   const [showAllBank, setShowAllBank] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
+  const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
+  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom">("all");
+  const [customDateStart, setCustomDateStart] = useState<Date | null>(null);
+  const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } = useSearch();
   const [refreshing, setRefreshing] = useState(false);
   const apiFetch = useApiFetch();
   const [itemizedReceipt, setItemizedReceipt] = useState<{
@@ -266,15 +273,32 @@ export default function BalancesPrototypeScreen() {
       .slice(0, 120);
   }, [bankVisibleTransactions, linked]);
 
+  const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
+    if (datePreset === "all") return null;
+    if (datePreset === "custom" && customDateStart && customDateEnd) {
+      return { start: customDateStart, end: customDateEnd };
+    }
+    const end = new Date();
+    const start = new Date();
+    if (datePreset === "week") start.setDate(start.getDate() - 7);
+    else if (datePreset === "month") start.setDate(start.getDate() - 30);
+    else return null;
+    return { start, end };
+  }, [datePreset, customDateStart, customDateEnd]);
+
   const filteredAllBankRows = useMemo(() => {
     const q = bankSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
+      if (dateFilterRange) {
+        const txDate = new Date(tx.dateStr || tx.date || "");
+        if (!Number.isNaN(txDate.getTime()) && (txDate < dateFilterRange.start || txDate > dateFilterRange.end)) return false;
+      }
       if (!q) return true;
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, bankFilter, bankSearch]);
+  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -947,91 +971,228 @@ export default function BalancesPrototypeScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => setShowAllBank(false)}>
-        <Pressable style={styles.sheetOverlay} onPress={() => setShowAllBank(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+        <Pressable style={styles.sheetOverlay} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+          <Pressable style={[styles.sheet, { maxHeight: "92%" }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
             <View style={styles.allBankHead}>
               <Text style={styles.sheetMerchant}>Bank charges</Text>
-              <TouchableOpacity onPress={() => setShowAllBank(false)} hitSlop={8}>
+              <TouchableOpacity onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} hitSlop={8}>
                 <Ionicons name="close" size={18} color={darkUI.labelMuted} />
               </TouchableOpacity>
             </View>
-            <View style={styles.sheetSearchWrap}>
-              <Ionicons name="search" size={16} color={darkUI.labelMuted} />
-              <TextInput
-                value={bankSearch}
-                onChangeText={setBankSearch}
-                placeholder='Search "food", "Uber", "$80"...'
-                placeholderTextColor={darkUI.labelMuted}
-                style={styles.sheetSearchInput}
-              />
-            </View>
-            <View style={styles.sheetFilterRow}>
-              {(["all", "unsplit"] as const).map((f) => (
+
+            {/* Search / Ask tab toggle */}
+            <View style={searchStyles.tabRow}>
+              {([["keyword", "Search", "search"] as const, ["natural", "Ask", "sparkles"] as const]).map(([mode, label, icon]) => (
                 <TouchableOpacity
-                  key={f}
-                  onPress={() => setBankFilter(f)}
-                  style={[styles.sheetFilterChip, bankFilter === f && styles.sheetFilterChipActive]}
+                  key={mode}
+                  onPress={() => { setSearchMode(mode); setBankSearch(""); askClear(); }}
+                  style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
                 >
-                  <Text style={[styles.sheetFilterText, bankFilter === f && styles.sheetFilterTextActive]}>
-                    {f === "all" ? "All charges" : "Needs splitting"}
-                  </Text>
+                  <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : darkUI.labelMuted} />
+                  <Text style={[searchStyles.tabText, searchMode === mode && searchStyles.tabTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* Search input */}
+            <View style={[styles.sheetSearchWrap, searchMode === "natural" && bankSearch.trim() ? { borderColor: "#A78BFA60" } : {}]}>
+              <Ionicons
+                name={searchMode === "natural" ? "sparkles" : "search"}
+                size={16}
+                color={searchMode === "natural" && bankSearch.trim() ? "#A78BFA" : darkUI.labelMuted}
+              />
+              <TextInput
+                value={bankSearch}
+                onChangeText={(text) => {
+                  setBankSearch(text);
+                  if (searchMode === "natural" && text.trim()) {
+                    const dateOpts = dateFilterRange
+                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
+                      : undefined;
+                    askSearch(text, dateOpts);
+                  } else if (searchMode === "natural" && !text.trim()) {
+                    askClear();
+                  }
+                }}
+                onSubmitEditing={() => {
+                  if (searchMode === "natural" && bankSearch.trim()) {
+                    const dateOpts = dateFilterRange
+                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
+                      : undefined;
+                    askSearch(bankSearch, dateOpts);
+                  }
+                }}
+                placeholder={searchMode === "natural" ? "Ask in plain English..." : "Search by name, amount, etc."}
+                placeholderTextColor={darkUI.labelMuted}
+                style={styles.sheetSearchInput}
+                returnKeyType={searchMode === "natural" ? "search" : "done"}
+              />
+              {bankSearch.length > 0 && (
+                <TouchableOpacity onPress={() => { setBankSearch(""); askClear(); }} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={darkUI.labelMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Date filter presets */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
+              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["custom", "Custom"]] as const).map(([preset, label]) => (
+                <TouchableOpacity
+                  key={preset}
+                  onPress={() => {
+                    setDatePreset(preset);
+                    if (preset === "custom") setShowCalendar(true);
+                    else { setShowCalendar(false); setCustomDateStart(null); setCustomDateEnd(null); }
+                  }}
+                  style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
+                >
+                  <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Calendar picker for Custom */}
+            {datePreset === "custom" && showCalendar ? (
+              <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+                <CalendarPicker
+                  startDate={customDateStart}
+                  endDate={customDateEnd}
+                  onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
+                />
+              </View>
+            ) : null}
+
+            {/* Ask mode: AI answer banner */}
+            {searchMode === "natural" && askResults?.answer && !askLoading ? (
+              <View style={searchStyles.answerBanner}>
+                <Ionicons name="sparkles" size={14} color="#A78BFA" />
+                <Text style={searchStyles.answerText}>{askResults.answer}</Text>
+              </View>
+            ) : null}
+
+            {/* Ask mode: loading */}
+            {searchMode === "natural" && askLoading ? (
+              <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                <ActivityIndicator size="small" color="#A78BFA" />
+                <Text style={[searchStyles.loadingText, { color: darkUI.labelMuted }]}>Searching...</Text>
+              </View>
+            ) : null}
+
+            {/* Ask mode: error */}
+            {searchMode === "natural" && askError && !askLoading ? (
+              <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                <Text style={{ color: "#F87171", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
+              </View>
+            ) : null}
+
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              {filteredAllBankRows.length === 0 ? (
-                <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No linked card charges found.</Text>
-                </View>
-              ) : (
-                <View style={styles.groupedCard}>
-                  {filteredAllBankRows.map((tx, i) => (
-                    <View key={tx.id}>
-                      <TouchableOpacity
-                        style={styles.friendRow}
-                        activeOpacity={0.75}
-                        onPress={() => {
-                          setShowAllBank(false);
-                          sfx.pop();
-                          setSelectedStrip(txToSheetRow(tx));
-                        }}
-                      >
-                        <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                          <MerchantLogo
-                            merchantName={tx.merchant || tx.rawDescription || "Purchase"}
-                            size={22}
-                            fallbackText="💳"
-                            logoUrl={tx.logoUrl}
-                            backgroundColor="transparent"
-                            borderColor="transparent"
-                          />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.friendName} numberOfLines={1}>
-                            {tx.merchant || tx.rawDescription || "Purchase"}
-                          </Text>
-                          <Text style={styles.friendMeta} numberOfLines={1}>
-                            {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
-                          </Text>
-                        </View>
-                        <Text style={[styles.friendAmt, styles.balAmtOut]}>
-                          ${Math.abs(Number(tx.amount)).toFixed(2)}
-                        </Text>
-                        {!tx.alreadySplit ? (
-                          <View style={styles.bankSplitPill}>
-                            <Text style={styles.bankSplitPillText}>Split</Text>
+              {searchMode === "keyword" ? (
+                filteredAllBankRows.length === 0 ? (
+                  <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No charges found.</Text>
+                  </View>
+                ) : (
+                  <View style={styles.groupedCard}>
+                    {filteredAllBankRows.map((tx, i) => (
+                      <View key={tx.id}>
+                        <TouchableOpacity
+                          style={styles.friendRow}
+                          activeOpacity={0.75}
+                          onPress={() => {
+                            setShowAllBank(false);
+                            sfx.pop();
+                            setSelectedStrip(txToSheetRow(tx));
+                          }}
+                        >
+                          <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                            <MerchantLogo
+                              merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+                              size={22}
+                              fallbackText="💳"
+                              logoUrl={tx.logoUrl}
+                              backgroundColor="transparent"
+                              borderColor="transparent"
+                            />
                           </View>
-                        ) : null}
-                      </TouchableOpacity>
-                      {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={styles.friendName} numberOfLines={1}>
+                              {tx.merchant || tx.rawDescription || "Purchase"}
+                            </Text>
+                            <Text style={styles.friendMeta} numberOfLines={1}>
+                              {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
+                            </Text>
+                          </View>
+                          <Text style={[styles.friendAmt, styles.balAmtOut]}>
+                            ${Math.abs(Number(tx.amount)).toFixed(2)}
+                          </Text>
+                          {!tx.alreadySplit ? (
+                            <View style={styles.bankSplitPill}>
+                              <Text style={styles.bankSplitPillText}>Split</Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                        {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
+                      </View>
+                    ))}
+                  </View>
+                )
+              ) : (
+                /* Ask mode: API search results */
+                !askLoading && !askError && askResults ? (
+                  askResults.transactions.length === 0 ? (
+                    <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                      <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No transactions found. Try a different question.</Text>
                     </View>
-                  ))}
-                </View>
+                  ) : (
+                    <>
+                      <Text style={searchStyles.resultCount}>
+                        {askResults.count} transaction{askResults.count !== 1 ? "s" : ""}
+                        {askResults.date_range ? ` · ${askResults.date_range.earliest} – ${askResults.date_range.latest}` : ""}
+                      </Text>
+                      <View style={styles.groupedCard}>
+                        {askResults.transactions.map((tx: SearchTransaction, i: number) => {
+                          const merchant = tx.merchant_name || tx.normalized_merchant || tx.raw_name || "Purchase";
+                          const category = tx.detailed_category || tx.primary_category;
+                          const location = [tx.city, tx.region].filter(Boolean).join(", ");
+                          return (
+                            <View key={tx.id}>
+                              <View style={styles.friendRow}>
+                                <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                                  <MerchantLogo merchantName={merchant} size={22} fallbackText="💳" backgroundColor="transparent" borderColor="transparent" />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                  <Text style={styles.friendName} numberOfLines={1}>{merchant}</Text>
+                                  <Text style={styles.friendMeta} numberOfLines={1}>
+                                    {tx.date}{category ? ` · ${category}` : ""}{location ? ` · ${location}` : ""}
+                                  </Text>
+                                </View>
+                                <Text style={[styles.friendAmt, tx.amount < 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
+                                  {tx.amount < 0 ? "+" : "-"}${Math.abs(tx.amount).toFixed(2)}
+                                </Text>
+                              </View>
+                              {i < askResults.transactions.length - 1 ? <View style={styles.rowSep} /> : null}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </>
+                  )
+                ) : !askLoading && !askError && !askResults && bankSearch.trim() === "" ? (
+                  <View style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 24 }}>
+                    <Ionicons name="sparkles-outline" size={36} color={darkUI.labelMuted} />
+                    <Text style={[styles.emptyBankText, { color: darkUI.labelMuted, marginTop: 10, textAlign: "center" }]}>
+                      Ask about your transactions
+                    </Text>
+                    <Text style={{ color: darkUI.labelMuted, fontSize: 12, fontFamily: font.regular, textAlign: "center", marginTop: 6 }}>
+                      Try "how much on food this month" or "Uber rides last week"
+                    </Text>
+                  </View>
+                ) : null
               )}
             </ScrollView>
-            <TouchableOpacity style={styles.sheetClose} onPress={() => setShowAllBank(false)}>
+            <TouchableOpacity style={styles.sheetClose} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
               <Text style={styles.sheetCloseText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
@@ -1458,5 +1619,92 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: font.medium,
     color: "#7A8088",
+  },
+});
+
+const searchStyles = StyleSheet.create({
+  tabRow: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: "#2a2d2e",
+    borderRadius: 14,
+    padding: 3,
+    gap: 3,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 8,
+    borderRadius: 11,
+  },
+  tabActive: {
+    backgroundColor: "#3d4043",
+  },
+  tabText: {
+    fontSize: 12,
+    fontFamily: font.bold,
+    fontWeight: "700",
+    color: "#7a7d80",
+  },
+  tabTextActive: {
+    color: "#fff",
+  },
+  dateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#3d4043",
+    backgroundColor: "#2a2d2e",
+  },
+  dateChipActive: {
+    borderColor: "#ffffff40",
+    backgroundColor: "#3d4043",
+  },
+  dateChipText: {
+    fontSize: 11,
+    fontFamily: font.bold,
+    fontWeight: "700",
+    color: "#7a7d80",
+  },
+  dateChipTextActive: {
+    color: "#fff",
+  },
+  answerBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#A78BFA18",
+    borderWidth: 1,
+    borderColor: "#A78BFA30",
+  },
+  answerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: font.medium,
+    color: "#e0d4fc",
+    lineHeight: 19,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontFamily: font.medium,
+    marginTop: 8,
+  },
+  resultCount: {
+    fontSize: 11,
+    fontFamily: font.semibold,
+    color: "#7a7d80",
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

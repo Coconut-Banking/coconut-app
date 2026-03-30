@@ -78,58 +78,32 @@ export default function SignInScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      const { createdSessionId, setActive } = await withTimeout(
-        startGoogleAuthenticationFlow(),
-        SIGN_IN_TIMEOUT_MS,
-        "Google auth flow"
+      const result = await withTimeout(
+        startSSOFlow({ strategy: "oauth_google" }),
+        GOOGLE_OAUTH_FALLBACK_TIMEOUT_MS,
+        "Google OAuth (browser)"
       );
-      if (createdSessionId && setActive) {
+      if (result.createdSessionId && result.setActive) {
         await withTimeout(
-          setActive({ session: createdSessionId }),
+          result.setActive({ session: result.createdSessionId }),
           SIGN_IN_TIMEOUT_MS,
-          "Google setActive"
+          "Google OAuth setActive"
         );
         setIsDemoOn(false);
         router.replace("/(tabs)");
-      } else {
-        setError("Google sign-in returned no session. Please try again.");
+        return;
       }
+      setError("Google sign-in did not complete. Try again.");
     } catch (e: unknown) {
-      const err = e as { code?: string; message?: string; errors?: Array<{ code?: string; message?: string; longMessage?: string; meta?: unknown }> };
+      const err = e as { code?: string; message?: string };
       if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
-      const isSessionExists = err.errors?.some((x) => x.code === "session_exists");
       const msg = getClerkErrorMessage(e, "Google sign-in failed");
-      if (isSessionExists || msg.toLowerCase().includes("already signed in")) {
+      if (msg.toLowerCase().includes("already signed in")) {
         setIsDemoOn(false);
         router.replace("/(tabs)");
         return;
       }
-      if (clerkRejectedGoogleOneTap(e)) {
-        try {
-          const fallback = await withTimeout(
-            startSSOFlow({ strategy: "oauth_google" }),
-            GOOGLE_OAUTH_FALLBACK_TIMEOUT_MS,
-            "Google OAuth (browser)"
-          );
-          if (fallback.createdSessionId && fallback.setActive) {
-            await withTimeout(
-              fallback.setActive({ session: fallback.createdSessionId }),
-              SIGN_IN_TIMEOUT_MS,
-              "Google OAuth setActive"
-            );
-            setIsDemoOn(false);
-            router.replace("/(tabs)");
-            return;
-          }
-          setError("Google sign-in (browser) did not complete. Try again.");
-        } catch (oauthErr: unknown) {
-          const o = oauthErr as { code?: string };
-          if (o.code === "SIGN_IN_CANCELLED" || o.code === "-5") return;
-          setError(getClerkErrorMessage(oauthErr, "Google sign-in (browser) failed"));
-        }
-        return;
-      }
-      if (__DEV__) console.warn("[GoogleSignIn]", msg, err.errors);
+      if (__DEV__) console.warn("[GoogleSignIn]", msg);
       setError(msg);
     } finally {
       setGoogleLoading(false);
