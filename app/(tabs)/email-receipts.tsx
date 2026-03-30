@@ -381,15 +381,17 @@ export default function EmailReceiptsScreen() {
         animationType="slide"
         onRequestClose={closeReceipt}
       >
-        <Pressable style={styles.backdrop} onPress={closeReceipt} />
-        {selectedReceipt ? (
-          <ReceiptDetailSheet
-            receipt={selectedReceipt}
-            detail={receiptDetail}
-            loading={loadingDetail}
-            onClose={closeReceipt}
-          />
-        ) : null}
+        <View style={styles.modalWrap}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeReceipt} />
+          {selectedReceipt ? (
+            <ReceiptDetailSheet
+              receipt={selectedReceipt}
+              detail={receiptDetail}
+              loading={loadingDetail}
+              onClose={closeReceipt}
+            />
+          ) : null}
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -436,8 +438,9 @@ const styles = StyleSheet.create({
   matchedBadge: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   matchedText: { fontFamily: font.medium, fontSize: 12, color: "#10B981" },
   unmatchedText: { fontFamily: font.regular, fontSize: 12, marginTop: 2 },
-  backdrop: {
+  modalWrap: {
     flex: 1,
+    justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.45)",
   },
 });
@@ -447,9 +450,10 @@ const sheet = StyleSheet.create({
     backgroundColor: darkUI.bg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "80%",
+    maxHeight: "85%",
     paddingHorizontal: 16,
     paddingTop: 10,
+    flexShrink: 1,
   },
   handle: {
     width: 40,
