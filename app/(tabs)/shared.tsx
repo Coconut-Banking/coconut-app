@@ -86,9 +86,12 @@ export default function SharedScreen() {
 
   useEffect(() => {
     apiFetch("/api/plaid/status")
-      .then((r) => r.json())
-      .then((d) => setPlaidLinked(d.linked === true))
-      .catch(() => setPlaidLinked(false));
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then((d) => { if (d !== null) setPlaidLinked(d.linked === true); })
+      .catch(() => {}); // network error: leave plaidLinked as null
   }, [apiFetch]);
 
   const showOverview = !selectedGroupId && !selectedPersonKey;
@@ -120,9 +123,11 @@ export default function SharedScreen() {
 
   if (loading && showOverview) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3D8E62" />
-      </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#3D8E62" />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -249,8 +254,9 @@ export default function SharedScreen() {
 
   if (selectedPersonKey && personDetail) {
     return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
-        style={styles.container}
+        style={{ flex: 1 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
         }
@@ -331,6 +337,7 @@ export default function SharedScreen() {
           </View>
         )}
       </ScrollView>
+      </SafeAreaView>
     );
   }
 
