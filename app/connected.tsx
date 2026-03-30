@@ -21,7 +21,7 @@ export default function ConnectedScreen() {
   const [showSkip, setShowSkip] = useState(false);
   const startRef = useRef(Date.now());
 
-  const goHome = () => router.replace("/(tabs)/");
+  const goHome = () => router.replace("/(tabs)");
 
   useEffect(() => {
     let cancelled = false;

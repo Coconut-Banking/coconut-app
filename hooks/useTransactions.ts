@@ -51,6 +51,8 @@ export function useTransactions() {
   const hasShownInitialLoad = useRef(false);
   const transientRetryCount = useRef(0);
   const lastPlaidPushAtRef = useRef(Date.now());
+  /** Set true in useEffect cleanup so in-flight pipeline callbacks skip setState after unmount. */
+  const fetchCancelledRef = useRef(false);
 
   const fetchData = useCallback((silent = false): Promise<void> => {
     const isFirstLoad = !hasShownInitialLoad.current;
@@ -62,13 +64,14 @@ export function useTransactions() {
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
         clearTimeout(timeout);
+        if (fetchCancelledRef.current) return null;
         if (__DEV__) console.log("[pipeline:tx] 2. plaid/status", r.status);
         if (r.status === 425) {
           if (transientRetryCount.current < 14) {
             transientRetryCount.current += 1;
             if (__DEV__) console.log("[pipeline:tx] 2b. 425 retry", transientRetryCount.current, "/14");
             setTimeout(() => {
-              fetchData(true);
+              if (!fetchCancelledRef.current) fetchData(true);
             }, 600);
             return null;
           }
@@ -101,7 +104,7 @@ export function useTransactions() {
         return r.json();
       })
       .then((data) => {
-        if (!data) return null;
+        if (fetchCancelledRef.current || !data) return null;
         if (!data.linked) {
           if (__DEV__) console.log("[pipeline:tx] 3. not linked → stop");
           linkedRef.current = false;
@@ -117,10 +120,11 @@ export function useTransactions() {
         return apiFetch("/api/plaid/transactions");
       })
       .then((r) => {
-        if (!r || !r.ok) return null;
+        if (fetchCancelledRef.current || !r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
+        if (fetchCancelledRef.current) return;
         if (Array.isArray(data)) {
           setTransactions(
             (data as unknown[]).map((raw) => {
@@ -135,13 +139,15 @@ export function useTransactions() {
         }
       })
       .finally(() => {
-        clearTimeout(timeout);
-        hasShownInitialLoad.current = true;
-        setLoading(false);
+        if (!fetchCancelledRef.current) {
+          clearTimeout(timeout);
+          hasShownInitialLoad.current = true;
+          setLoading(false);
+        }
       })
       .catch(() => {
         clearTimeout(timeout);
-        setLoading(false);
+        if (!fetchCancelledRef.current) setLoading(false);
       });
   }, [apiFetch]);
 
@@ -162,7 +168,11 @@ export function useTransactions() {
 
   // Initial load: GET only (fast). POST sync runs on pull-to-refresh or throttled foreground return.
   useEffect(() => {
-    fetchData(false);
+    fetchCancelledRef.current = false;
+    void fetchData(false);
+    return () => {
+      fetchCancelledRef.current = true;
+    };
   }, [fetchData]);
 
   // When app returns from background: refetch DB; periodically nudge Plaid (refresh + sync) like pull-to-refresh.
