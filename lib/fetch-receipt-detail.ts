@@ -78,10 +78,16 @@ export async function fetchReceiptDetailForTransaction(
   ];
 
   for (const path of paths) {
+    console.log("[fetchReceiptDetail] trying:", path);
     const res = await apiFetch(path, { method: "GET" });
-    if (res.status === 404) continue;
-    if (!res.ok) continue;
+    console.log("[fetchReceiptDetail] status:", res.status, "for", path);
+    if (res.status === 404) { console.log("[fetchReceiptDetail] 404, skipping"); continue; }
+    if (!res.ok) { console.log("[fetchReceiptDetail] not ok:", res.status, "skipping"); continue; }
     const data = (await res.json()) as ReceiptDetailPayload;
+    console.log("[fetchReceiptDetail] raw data keys:", Object.keys(data));
+    console.log("[fetchReceiptDetail] merchant_type:", data.merchant_type);
+    console.log("[fetchReceiptDetail] merchant_details:", JSON.stringify(data.merchant_details));
+    console.log("[fetchReceiptDetail] rideshare:", JSON.stringify(data.rideshare));
     const items = mapItems(data);
     const subFromItems = items.reduce((s, i) => s + i.totalPrice, 0);
     const subtotal = Number(data.subtotal ?? subFromItems);
@@ -106,5 +112,6 @@ export async function fetchReceiptDetailForTransaction(
       extras,
     };
   }
+  console.log("[fetchReceiptDetail] all paths failed, returning null");
   return null;
 }

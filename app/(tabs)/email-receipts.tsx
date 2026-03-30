@@ -250,7 +250,18 @@ export default function EmailReceiptsScreen() {
     setReceiptDetail(null);
     setLoadingDetail(true);
     try {
+      console.log("[receipt-detail] fetching id:", r.id, "type:", r.merchant_type);
+      // Try the email receipt detail endpoint directly first with raw logging
+      const raw = await apiFetch(`/api/email-receipts/${encodeURIComponent(r.id)}`);
+      console.log("[receipt-detail] status:", raw.status);
+      if (raw.ok) {
+        const body = await raw.json();
+        console.log("[receipt-detail] body keys:", Object.keys(body));
+        console.log("[receipt-detail] merchant_details:", JSON.stringify(body.merchant_details));
+        console.log("[receipt-detail] merchant_type:", body.merchant_type);
+      }
       const detail = await fetchReceiptDetailForTransaction(apiFetch, r.id);
+      console.log("[receipt-detail] parsed detail:", detail ? { merchantType: detail.merchantType, hasMerchantDetails: !!detail.merchantDetails, merchantDetails: detail.merchantDetails } : null);
       setReceiptDetail(detail);
     } finally {
       setLoadingDetail(false);
