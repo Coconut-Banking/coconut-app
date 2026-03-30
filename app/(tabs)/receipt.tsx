@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -112,6 +112,7 @@ export default function ReceiptScreen() {
   const demo = useDemoData();
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
+  const scrollRef = useRef<ScrollView>(null);
 
   return (
     <SafeAreaView style={[st.safe, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -128,16 +129,15 @@ export default function ReceiptScreen() {
           <Ionicons name="chevron-back" size={24} color={theme.primary} />
         </TouchableOpacity>
       </View>
-      <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView style={[st.scroll, { backgroundColor: theme.background }]} contentContainerStyle={st.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={st.header}>
-          <View style={[st.headerIcon, { backgroundColor: theme.primaryLight }]}><Ionicons name="receipt-outline" size={22} color={theme.primary} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={[st.headerTitle, { color: theme.text }]}>Split Receipt</Text>
-            <Text style={[st.headerSub, { color: theme.textQuaternary }]}>Scan a receipt and split items with friends</Text>
-          </View>
-        </View>
+      <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
+        <ScrollView
+          ref={scrollRef}
+          style={[st.scroll, { backgroundColor: theme.background }]}
+          contentContainerStyle={st.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
+        >
 
         {/* Step indicator */}
         <View style={st.steps}>
@@ -324,14 +324,14 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
         </View>
       </View>
 
-      {/* Nav */}
+        {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("upload")}>
           <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[st.btn, { backgroundColor: theme.primary }, (rs.saving || rs.editItems.length === 0) && st.btnOff]}
-          onPress={rs.confirmItems}
+          onPress={() => { rs.confirmItems(); }}
           disabled={rs.saving || rs.editItems.length === 0}
         >
           {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
@@ -344,25 +344,31 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
 }
 
 function DecimalInput({ numValue, onValueChange, style }: { numValue: number; onValueChange: (n: number) => void; style?: any }) {
-  const [text, setText] = useState(String(numValue));
+  const [text, setText] = useState(numValue.toFixed(2));
   const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setText(String(numValue)); }, [numValue, focused]);
+  useEffect(() => { if (!focused) setText(numValue.toFixed(2)); }, [numValue, focused]);
   return (
     <TextInput
       style={style}
       value={text}
       onChangeText={(v) => {
         const cleaned = v.replace(/[^0-9.]/g, "");
-        setText(cleaned);
-        const num = parseFloat(cleaned);
-        if (!isNaN(num)) onValueChange(num);
+        const parts = cleaned.split(".");
+        let capped = parts[0];
+        if (parts.length > 1) {
+          capped += "." + parts[1].slice(0, 2);
+        }
+        setText(capped);
+        const num = parseFloat(capped);
+        if (!isNaN(num)) onValueChange(Math.round(num * 100) / 100);
       }}
       onFocus={() => setFocused(true)}
       onBlur={() => {
         setFocused(false);
         const num = parseFloat(text) || 0;
-        onValueChange(num);
-        setText(String(num));
+        const rounded = Math.round(num * 100) / 100;
+        onValueChange(rounded);
+        setText(rounded.toFixed(2));
       }}
       keyboardType="decimal-pad"
       selectTextOnFocus
@@ -925,11 +931,6 @@ const st = StyleSheet.create({
   kv: { flex: 1 },
   scroll: { flex: 1, backgroundColor: colors.bg },
   scrollContent: { padding: 20, paddingBottom: 60 },
-
-  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
-  headerIcon: { width: 42, height: 42, borderRadius: radii.md, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
-  headerSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted, marginTop: 2 },
 
   steps: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
   stepWrap: { flex: 1, flexDirection: "row", alignItems: "center" },
