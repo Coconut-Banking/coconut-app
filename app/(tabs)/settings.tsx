@@ -178,8 +178,10 @@ export default function SettingsScreen() {
   const [gmailDisconnecting, setGmailDisconnecting] = useState(false);
   const [gmailScanResult, setGmailScanResult] = useState<{
     ok: boolean;
+    emailsFetched?: number;
     inserted?: number;
     matched?: number;
+    isFirstScan?: boolean;
     error?: string;
   } | null>(null);
   const gmailConnectedHandled = useRef(false);
@@ -334,8 +336,11 @@ export default function SettingsScreen() {
   const scanGmail = async () => {
     setGmailScanning(true);
     setGmailScanResult(null);
+    // First-time scan: go back 90 days to catch historical receipts
+    const isFirstScan = !gmailStatus?.lastScanAt;
     try {
-      const res = await apiFetch("/api/gmail/scan", { method: "POST", body: {} });
+      const body = isFirstScan ? { daysBack: 90 } : {};
+      const res = await apiFetch("/api/gmail/scan", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 403 && (data as { authError?: boolean }).authError) {
@@ -345,8 +350,8 @@ export default function SettingsScreen() {
           setGmailScanResult({ ok: false, error: (data as { error?: string }).error ?? "Scan failed. Try again." });
         }
       } else {
-        const d = data as { inserted?: number; matched?: number };
-        setGmailScanResult({ ok: true, inserted: d.inserted ?? 0, matched: d.matched ?? 0 });
+        const d = data as { emailsFetched?: number; inserted?: number; matched?: number };
+        setGmailScanResult({ ok: true, emailsFetched: d.emailsFetched, inserted: d.inserted ?? 0, matched: d.matched ?? 0, isFirstScan });
         void fetchGmailStatus();
       }
     } catch {
@@ -1066,11 +1071,19 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={[styles.resultTitle, { color: gmailScanResult.ok ? theme.text : theme.error }]}>
-                {gmailScanResult.ok ? "Scan complete" : "Scan failed"}
+                {gmailScanResult.ok
+                  ? gmailScanResult.inserted === 0
+                    ? "No new receipts"
+                    : "Scan complete"
+                  : "Scan failed"}
               </Text>
               {gmailScanResult.ok ? (
                 <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
-                  {gmailScanResult.inserted ?? 0} receipts found · {gmailScanResult.matched ?? 0} matched to transactions
+                  {gmailScanResult.emailsFetched != null
+                    ? `${gmailScanResult.emailsFetched} emails scanned · `
+                    : ""}
+                  {gmailScanResult.inserted ?? 0} new receipts · {gmailScanResult.matched ?? 0} matched
+                  {gmailScanResult.isFirstScan ? " (last 90 days)" : ""}
                 </Text>
               ) : gmailScanResult.error ? (
                 <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>{gmailScanResult.error}</Text>
@@ -1090,18 +1103,34 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <View style={{ gap: 12, marginTop: 4 }}>
-              {gmailStatus.email ? (
-                <Text style={[styles.muted, { color: theme.textTertiary }]}>{gmailStatus.email}</Text>
-              ) : null}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                {gmailStatus.email ? (
+                  <Text style={[styles.muted, { color: theme.textTertiary }]}>{gmailStatus.email}</Text>
+                ) : null}
+                {gmailStatus.lastScanAt ? (
+                  <Text style={[styles.muted, { color: theme.textQuaternary, fontSize: 12 }]}>
+                    Last scan {new Date(gmailStatus.lastScanAt).toLocaleDateString()}
+                  </Text>
+                ) : (
+                  <Text style={[styles.muted, { color: theme.textQuaternary, fontSize: 12 }]}>Never scanned</Text>
+                )}
+              </View>
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }, gmailScanning && styles.disabled]}
                 onPress={scanGmail}
                 disabled={gmailScanning || gmailDisconnecting}
               >
                 {gmailScanning ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.primaryBtnText}>
+                      {!gmailStatus.lastScanAt ? "Scanning 90 days…" : "Scanning…"}
+                    </Text>
+                  </View>
                 ) : (
-                  <Text style={styles.primaryBtnText}>Scan for receipts</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {!gmailStatus.lastScanAt ? "Scan receipts (last 90 days)" : "Scan for receipts"}
+                  </Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity

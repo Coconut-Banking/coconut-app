@@ -790,13 +790,86 @@ export default function BalancesPrototypeScreen() {
                         </View>
                       </View>
                     </>
-                  ) : itemizedReceipt?.merchantType && itemizedReceipt.merchantDetails ? (
+                  ) : itemizedReceipt?.merchantType === "food_delivery" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>
+                        {(itemizedReceipt.merchantDetails as Record<string, unknown>)?.restaurant_name
+                          ? String((itemizedReceipt.merchantDetails as Record<string, unknown>).restaurant_name)
+                          : "Order details"}
+                      </Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="food_delivery" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedReceipt?.merchantType === "saas" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Subscription</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="saas" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      {itemizedReceipt.items.length > 0 ? (
+                        <ItemizedReceiptPreview
+                          loading={itemizedLoading}
+                          error={itemizedError}
+                          merchantName={itemizedReceipt.merchantName}
+                          items={itemizedReceipt.items}
+                          subtotal={itemizedReceipt.subtotal}
+                          tax={itemizedReceipt.tax}
+                          tip={itemizedReceipt.tip}
+                          extras={itemizedReceipt.extras}
+                          total={itemizedReceipt.total}
+                        />
+                      ) : (
+                        <View style={styles.saasTotal}>
+                          {itemizedReceipt.tax > 0 ? (
+                            <View style={styles.saasTotalRow}>
+                              <Text style={styles.saasTotalLabel}>Tax</Text>
+                              <Text style={styles.saasTotalAmt}>${itemizedReceipt.tax.toFixed(2)}</Text>
+                            </View>
+                          ) : null}
+                          <View style={[styles.saasTotalRow, styles.saasTotalFinal]}>
+                            <Text style={styles.saasTotalLabelBold}>Total</Text>
+                            <Text style={styles.saasTotalAmtBold}>${itemizedReceipt.total.toFixed(2)}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </>
+                  ) : itemizedReceipt?.merchantType === "retail" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Receipt</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="retail" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedReceipt?.merchantType === "ecommerce" && itemizedReceipt.merchantDetails ? (
                     <>
                       <MerchantEnrichmentCard
-                        merchantType={itemizedReceipt.merchantType}
+                        merchantType="ecommerce"
                         merchantDetails={itemizedReceipt.merchantDetails}
                       />
-                      {itemizedReceipt.merchantType === "ecommerce" && itemizedReceipt.items.length > 0 ? (
+                      {itemizedReceipt.items.length > 0 ? (
                         <MerchantItemsList
                           items={itemizedReceipt.items}
                           estimatedDelivery={(itemizedReceipt.merchantDetails as Record<string, unknown>).estimated_delivery as string | undefined}
@@ -1236,6 +1309,29 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
+  saasTotal: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 4,
+    paddingTop: 8,
+    gap: 4,
+  },
+  saasTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  saasTotalFinal: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+  },
+  saasTotalLabel: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalAmt: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalLabelBold: { fontSize: 15, fontFamily: font.semibold, color: "#1f2937" },
+  saasTotalAmtBold: { fontSize: 15, fontFamily: font.bold, color: "#1f2937" },
   receiptIdHint: {
     fontSize: 13,
     fontFamily: font.regular,
