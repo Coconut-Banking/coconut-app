@@ -140,6 +140,7 @@ export default function SettingsScreen() {
   } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
   const [splitwiseClearing, setSplitwiseClearing] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
   /** True only while the in-focus Settings fetch runs (avoids treating null status as “not configured”). */
   const [splitwiseLoading, setSplitwiseLoading] = useState(false);
   const [splitwiseResult, setSplitwiseResult] = useState<{
@@ -809,6 +810,37 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleClearAll = () => {
+    Alert.alert(
+      "Clear all data?",
+      "This permanently deletes ALL your groups, expenses, settlements, and receipts from Coconut. Your bank connections and account stay intact.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete everything",
+          style: "destructive",
+          onPress: async () => {
+            setClearingAll(true);
+            try {
+              const res = await apiFetch("/api/groups/clear-all", { method: "POST" });
+              if (res.ok) {
+                const data = await res.json();
+                Alert.alert("Done", `Deleted ${data.deletedGroups} group(s) and all associated data.`);
+                DeviceEventEmitter.emit("groups-updated");
+              } else {
+                Alert.alert("Error", "Could not clear data.");
+              }
+            } catch {
+              Alert.alert("Error", "Network error.");
+            } finally {
+              setClearingAll(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSignOut = async () => {
     if (!signOut) return;
     setSigningOut(true);
@@ -1305,6 +1337,22 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.signOutButton,
+            { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
+          ]}
+          onPress={handleClearAll}
+          disabled={clearingAll}
+          activeOpacity={0.85}
+        >
+          {clearingAll ? (
+            <ActivityIndicator size="small" color={theme.error} />
+          ) : (
+            <Text style={[styles.signOutText, { color: theme.error }]}>Clear all data</Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[
