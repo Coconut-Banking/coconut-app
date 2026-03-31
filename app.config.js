@@ -88,6 +88,7 @@ export default {
         },
       ],
       ["expo-build-properties", { android: { minSdkVersion: 26 } }],
+      "react-native-reanimated",
     ],
     experiments: { typedRoutes: true },
   },
