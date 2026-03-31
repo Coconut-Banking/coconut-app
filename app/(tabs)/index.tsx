@@ -18,6 +18,8 @@ import {
   DeviceEventEmitter,
   AppState,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -972,7 +974,11 @@ export default function BalancesPrototypeScreen() {
         </Pressable>
       </Modal>
       <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
-        <Pressable style={styles.sheetOverlay} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+        <KeyboardAvoidingView
+          style={styles.sheetOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} />
           <Pressable style={[styles.sheet, { maxHeight: "92%" }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
             <View style={styles.allBankHead}>
@@ -1067,7 +1073,7 @@ export default function BalancesPrototypeScreen() {
             {/* Ask mode: AI answer banner */}
             {searchMode === "natural" && askResults?.answer && !askLoading ? (
               <View style={searchStyles.answerBanner}>
-                <Ionicons name="sparkles" size={14} color="#A78BFA" />
+                <Ionicons name="sparkles" size={18} color="#A78BFA" />
                 <Text style={searchStyles.answerText}>{askResults.answer}</Text>
               </View>
             ) : null}
@@ -1087,7 +1093,7 @@ export default function BalancesPrototypeScreen() {
               </View>
             ) : null}
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {searchMode === "keyword" ? (
                 filteredAllBankRows.length === 0 ? (
                   <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -1196,7 +1202,7 @@ export default function BalancesPrototypeScreen() {
               <Text style={styles.sheetCloseText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1677,21 +1683,22 @@ const searchStyles = StyleSheet.create({
   answerBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8,
+    gap: 10,
     marginHorizontal: 16,
     marginBottom: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: "#A78BFA18",
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "#1E1040",
     borderWidth: 1,
-    borderColor: "#A78BFA30",
+    borderColor: "#7C3AED40",
   },
   answerText: {
     flex: 1,
-    fontSize: 13,
-    fontFamily: font.medium,
-    color: "#e0d4fc",
-    lineHeight: 19,
+    fontSize: 15,
+    fontFamily: font.semibold,
+    color: "#fff",
+    lineHeight: 22,
+    letterSpacing: -0.1,
   },
   loadingText: {
     fontSize: 13,
