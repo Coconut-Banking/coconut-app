@@ -1093,7 +1093,7 @@ export default function BalancesPrototypeScreen() {
               </View>
             ) : null}
 
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {searchMode === "keyword" ? (
                 filteredAllBankRows.length === 0 ? (
                   <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
