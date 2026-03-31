@@ -353,6 +353,23 @@ export default function BalancesPrototypeScreen() {
     setSelectedStrip(null);
   }, [isDemoOn, linked]);
 
+  /**
+   * Transitive date filter: when the AI parses a date range from the query
+   * (e.g. "last two weeks"), reflect it in the date chips so keyword search
+   * also respects that window. Only applies if the user hasn't manually set a filter.
+   */
+  useEffect(() => {
+    if (!askResults?.applied_filters) return;
+    const { date_start, date_end } = askResults.applied_filters;
+    if (!date_start || !date_end) return;
+    if (datePreset !== "all") return; // user already has a manual filter, don't override
+    setDatePreset("custom");
+    setCustomDateStart(new Date(date_start + "T12:00:00"));
+    setCustomDateEnd(new Date(date_end + "T12:00:00"));
+    setShowCalendar(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askResults]);
+
   const friends = summary?.friends ?? [];
   const groups = summary?.groups ?? [];
   const hasFriendsOrGroups = friends.length > 0 || groups.length > 0;
@@ -1022,7 +1039,15 @@ export default function BalancesPrototypeScreen() {
               {([["keyword", "Search", "search"] as const, ["natural", "Ask", "sparkles"] as const]).map(([mode, label, icon]) => (
                 <TouchableOpacity
                   key={mode}
-                  onPress={() => { setSearchMode(mode); setBankSearch(""); askClear(); }}
+                  onPress={() => {
+                    setSearchMode(mode);
+                    setBankSearch("");
+                    askClear();
+                    setDatePreset("all");
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
+                    setShowCalendar(false);
+                  }}
                   style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
                 >
                   <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : darkUI.labelMuted} />
