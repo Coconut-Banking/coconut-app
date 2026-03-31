@@ -14,6 +14,34 @@ function unauthResponse() {
 let _tokenPromise: Promise<string | null> | null = null;
 let _lastGoodToken: string | null = null;
 
+let _rateLimitedUntil = 0;
+const _endpointBackoff = new Map<string, number>();
+const BACKOFF_BASE_MS = 3000;
+const BACKOFF_MAX_MS = 30000;
+
+const _inflightGets = new Map<string, Promise<Response>>();
+
+const MAX_CONCURRENT = 2;
+let _activeRequests = 0;
+const _requestQueue: Array<{ resolve: (v: void) => void }> = [];
+
+function acquireSlot(): Promise<void> {
+  if (_activeRequests < MAX_CONCURRENT) {
+    _activeRequests++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => _requestQueue.push({ resolve }));
+}
+
+function releaseSlot(): void {
+  const next = _requestQueue.shift();
+  if (next) {
+    next.resolve();
+  } else {
+    _activeRequests--;
+  }
+}
+
 function isOfflineError(e: unknown): boolean {
   const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
   return msg.includes("offline") || msg.includes("network request failed") || msg.includes("clerk_offline");
@@ -26,7 +54,6 @@ async function getTokenWithRetry(
   if (_tokenPromise) return _tokenPromise;
 
   _tokenPromise = (async () => {
-    // First: try the cache (no network) — works offline
     try {
       const cached = await getToken({ skipCache: false });
       if (cached) {
@@ -35,7 +62,6 @@ async function getTokenWithRetry(
       }
     } catch (e) {
       if (isOfflineError(e)) {
-        // Offline: return last known good token if available
         if (_lastGoodToken) {
           if (__DEV__) console.warn("[api] offline — using cached token");
           return _lastGoodToken;
@@ -43,7 +69,6 @@ async function getTokenWithRetry(
       }
     }
 
-    // Then: retry with network refresh
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const token = await getToken({ skipCache: true });
@@ -113,7 +138,31 @@ export function useApiFetch() {
         body = JSON.stringify(opts.body);
       }
 
-      if (__DEV__) console.log(`[api] → ${(opts.method ?? "GET").toUpperCase()} ${path}`);
+      const now = Date.now();
+      if (now < _rateLimitedUntil) {
+        return new Response(
+          JSON.stringify({ error: "Rate limited — try again shortly" }),
+          { status: 429, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const backoffUntil = _endpointBackoff.get(path) ?? 0;
+      if (now < backoffUntil) {
+        return new Response(
+          JSON.stringify({ error: "Backing off after server error" }),
+          { status: 503, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      const method = (opts.method ?? "GET").toUpperCase();
+      if (__DEV__) console.log(`[api] → ${method} ${path}`);
+
+      if (method === "GET") {
+        const inflight = _inflightGets.get(path);
+        if (inflight) {
+          if (__DEV__) console.log(`[api] ♻️ reusing inflight GET ${path}`);
+          return inflight.then((r) => r.clone());
+        }
+      }
 
       const timeoutMs = path.includes("plaid/transactions")
         ? 45_000
@@ -142,40 +191,84 @@ export function useApiFetch() {
         }
       };
 
-      try {
-        const response = await doFetch(token);
-        if (__DEV__) {
-          console.log(`[api] ← ${path} ${response.status}`);
-          if (!response.ok) {
-            response.clone().text().then((t) => console.warn(`[api] error body: ${t.slice(0, 300)}`)).catch(() => {});
+      const executeFetch = async (): Promise<Response> => {
+        try {
+          const response = await doFetch(token);
+          if (__DEV__) {
+            console.log(`[api] ← ${path} ${response.status}`);
+            if (!response.ok) {
+              response.clone().text().then((t) => console.warn(`[api] error body: ${t.slice(0, 300)}`)).catch(() => {});
+            }
           }
-        }
 
-        if (response.status === 401) {
-          _lastGoodToken = null;
-          _tokenPromise = null;
-          let freshToken: string | null = null;
-          try { freshToken = await gt({ skipCache: true }); } catch { /* ignore */ }
-          if (freshToken) _lastGoodToken = freshToken;
-          if (freshToken && freshToken !== token) {
-            if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
-            const retry = await doFetch(freshToken);
-            if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
-            return retry;
+          if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get("Retry-After") ?? "10", 10);
+            const waitMs = Math.max(retryAfter * 1000, BACKOFF_BASE_MS);
+            _rateLimitedUntil = Date.now() + waitMs;
+            if (__DEV__) console.warn(`[api] 429 rate limited — pausing all requests for ${waitMs}ms`);
+            return response;
           }
-        }
 
-        return response;
-      } catch (e) {
-        const isAbort = e instanceof DOMException && e.name === "AbortError";
-        const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
-        if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
-        return new Response(
-          JSON.stringify({ error: isAbort ? "Request timed out. Please try again." : "Network request failed. Check your connection and retry." }),
-          { status: 503, statusText: msg, headers: { "Content-Type": "application/json" } }
-        );
+          if (response.status >= 500) {
+            const prev = _endpointBackoff.get(path) ?? 0;
+            const elapsed = Date.now() - prev;
+            const nextBackoff = prev > 0 && elapsed < BACKOFF_MAX_MS * 2
+              ? Math.min((elapsed < BACKOFF_BASE_MS ? BACKOFF_BASE_MS * 2 : elapsed * 2), BACKOFF_MAX_MS)
+              : BACKOFF_BASE_MS;
+            _endpointBackoff.set(path, Date.now() + nextBackoff);
+            if (__DEV__) console.warn(`[api] 5xx on ${path} — backing off ${nextBackoff}ms`);
+            return response;
+          }
+
+          _endpointBackoff.delete(path);
+
+          if (response.status === 401) {
+            _lastGoodToken = null;
+            _tokenPromise = null;
+            let freshToken: string | null = null;
+            try { freshToken = await gt({ skipCache: true }); } catch { /* ignore */ }
+            if (freshToken) _lastGoodToken = freshToken;
+            if (freshToken && freshToken !== token) {
+              if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
+              const retry = await doFetch(freshToken);
+              if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+              return retry;
+            }
+          }
+
+          return response;
+        } catch (e) {
+          const isAbort = e instanceof DOMException && e.name === "AbortError";
+          const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
+          if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
+          return new Response(
+            JSON.stringify({ error: isAbort ? "Request timed out. Please try again." : "Network request failed. Check your connection and retry." }),
+            { status: 503, statusText: msg, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      };
+
+      if (method === "GET") {
+        const promise = (async () => {
+          await acquireSlot();
+          try { return await executeFetch(); } finally { releaseSlot(); }
+        })();
+        _inflightGets.set(path, promise);
+        try {
+          const res = await promise;
+          return res;
+        } finally {
+          _inflightGets.delete(path);
+        }
       }
+
+      await acquireSlot();
+      try { return await executeFetch(); } finally { releaseSlot(); }
     },
-    [getToken, isLoaded, isSignedIn]
+    // Empty deps: auth is read from `ref.current` each call. Clerk's `getToken` often gets a new
+    // function identity every render; including it here recreated `apiFetch` every render and
+    // retriggered every `useEffect([apiFetch])` → infinite updates (e.g. useGroupsSummary).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable fetcher; live auth via ref
+    []
   );
 }

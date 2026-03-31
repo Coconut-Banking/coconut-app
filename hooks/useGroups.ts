@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useApiFetch } from "../lib/api";
 
 export interface GroupSummary {
@@ -126,6 +126,8 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   const apiFetch = useApiFetch();
   const [summary, setSummary] = useState<GroupsSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCount = useRef(0);
 
   const fetchSummary = useCallback(
     async (showLoading = false) => {
@@ -133,6 +135,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
       try {
         const res = await apiFetch(summaryPath);
         if (res.ok) {
+          retryCount.current = 0;
           const data = await res.json();
           if (__DEV__)
             console.log(
@@ -144,6 +147,14 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
               data.groups?.length ?? 0
             );
           setSummary(data);
+        } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
+          if (retryCount.current < 5) {
+            retryCount.current += 1;
+            const delay = Math.min(3000 * Math.pow(1.5, retryCount.current - 1), 15000);
+            if (__DEV__) console.log(`[summary] retry ${retryCount.current}/5 in ${delay}ms`);
+            if (retryTimer.current) clearTimeout(retryTimer.current);
+            retryTimer.current = setTimeout(() => fetchSummary(false), delay);
+          }
         } else if (showLoading) {
           setSummary(null);
         }
@@ -155,7 +166,9 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   );
 
   useEffect(() => {
+    retryCount.current = 0;
     fetchSummary(true);
+    return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
   }, [fetchSummary]);
 
   return { summary, loading, refetch: fetchSummary };
@@ -310,6 +323,8 @@ export function useRecentActivity(enabled = true) {
   const apiFetch = useApiFetch();
   const [activity, setActivity] = useState<RecentActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCount = useRef(0);
 
   const fetchActivity = useCallback(async () => {
     if (!enabled) {
@@ -319,16 +334,29 @@ export function useRecentActivity(enabled = true) {
     try {
       const res = await apiFetch("/api/groups/recent-activity");
       if (res.ok) {
+        retryCount.current = 0;
         const data = await res.json();
         setActivity(data.activity ?? []);
-      } else setActivity([]);
+      } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
+        if (retryCount.current < 5) {
+          retryCount.current += 1;
+          const delay = Math.min(3000 * Math.pow(1.5, retryCount.current - 1), 15000);
+          if (__DEV__) console.log(`[activity] retry ${retryCount.current}/5 in ${delay}ms`);
+          if (retryTimer.current) clearTimeout(retryTimer.current);
+          retryTimer.current = setTimeout(() => fetchActivity(), delay);
+        }
+      } else {
+        setActivity([]);
+      }
     } finally {
       setLoading(false);
     }
   }, [apiFetch, enabled]);
 
   useEffect(() => {
+    retryCount.current = 0;
     fetchActivity();
+    return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
   }, [fetchActivity]);
 
   return { activity, loading, refetch: fetchActivity };
