@@ -597,7 +597,10 @@ export default function BalancesPrototypeScreen() {
         {Platform.OS !== "web" ? (
           <TouchableOpacity
             style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => { sfx.pop(); router.push("/(tabs)/pay"); }}
+            onPress={() => {
+              sfx.pop();
+              router.push("/(tabs)/tap-to-pay-education");
+            }}
             activeOpacity={0.85}
           >
             <View style={[ttpStyles.iconWrap, { backgroundColor: theme.primaryLight }]}>
@@ -606,7 +609,7 @@ export default function BalancesPrototypeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[ttpStyles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
               <Text style={[ttpStyles.sub, { color: theme.textTertiary }]}>
-                Accept contactless payments
+                Learn how it works — collect from an expense or settlement
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />

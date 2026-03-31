@@ -23,6 +23,18 @@ import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 
+/**
+ * iOS often returns UNSUPPORTED_OPERATION / native 2900 when the app binary was signed without
+ * `com.apple.developer.proximity-reader.payment.acceptance` (see ENABLE_TAP_TO_PAY_IOS in app.config.js).
+ */
+function isLikelyTapToPayEntitlementOrSigningError(err: StripeError | undefined): boolean {
+  if (!err) return false;
+  if (err.code === ErrorCode.UNSUPPORTED_OPERATION) return true;
+  if (err.nativeErrorCode === "2900") return true;
+  const msg = (err.message ?? "").toLowerCase();
+  return msg.includes("entitlement") || msg.includes("application bundle");
+}
+
 /** Error codes that indicate unsupported device/OS — show "Please update iOS" per checklist 1.4 */
 const UNSUPPORTED_DEVICE_CODES = [
   ErrorCode.TAP_TO_PAY_UNSUPPORTED_DEVICE,
@@ -124,6 +136,9 @@ function PayScreenInner() {
   const [ttpSoftwareUpdate, setTtpSoftwareUpdate] = useState(false);
   const [lastDirectPayout, setLastDirectPayout] = useState<boolean | null>(null);
   const [receiverPayoutsEnabled, setReceiverPayoutsEnabled] = useState<boolean | null>(null);
+  /** True after discoverReaders returns iOS entitlement / signing errors (2900, UNSUPPORTED_OPERATION). */
+  const [tapToPayEntitlementHint, setTapToPayEntitlementHint] = useState(false);
+  const lastTapToPayDiscoverErrorRef = useRef<StripeError | undefined>(undefined);
 
   useEffect(() => {
     readersRef.current = discoveredReaders;
@@ -183,6 +198,13 @@ function PayScreenInner() {
 
   useEffect(() => {
     connectedReaderRef.current = connectedReader ?? null;
+  }, [connectedReader]);
+
+  useEffect(() => {
+    if (connectedReader) {
+      setTapToPayEntitlementHint(false);
+      lastTapToPayDiscoverErrorRef.current = undefined;
+    }
   }, [connectedReader]);
 
   useEffect(() => {
@@ -248,19 +270,27 @@ function PayScreenInner() {
         ? { discoveryMethod: "internet", simulated: true }
         : { discoveryMethod: "tapToPay" }
     );
-    if (out?.error && __DEV__) {
-      console.warn("[Pay] discoverReaders", out.error);
+    if (out?.error) {
+      lastTapToPayDiscoverErrorRef.current = out.error;
+      if (isLikelyTapToPayEntitlementOrSigningError(out.error)) {
+        setTapToPayEntitlementHint(true);
+      }
+      if (__DEV__) {
+        console.warn("[Pay] discoverReaders", out.error);
+      }
     }
   }, [isInitialized, discoverReaders, cancelDiscovering]);
 
   // Reader warm-up: discover at launch (checklist 1.5). Re-run if user disconnects.
   useEffect(() => {
+    if (!hasPrefilledCheckout) return;
     if (!isInitialized) return;
     void warmDiscoverReaders();
-  }, [isInitialized, connectedReader, warmDiscoverReaders]);
+  }, [hasPrefilledCheckout, isInitialized, connectedReader, warmDiscoverReaders]);
 
   // Foreground: debounce so we don't overlap mount discovery (common READER_BUSY cause).
   useEffect(() => {
+    if (!hasPrefilledCheckout) return;
     let debounce: ReturnType<typeof setTimeout> | undefined;
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active" || !isInitialized) return;
@@ -273,7 +303,7 @@ function PayScreenInner() {
       sub.remove();
       clearTimeout(debounce);
     };
-  }, [isInitialized, warmDiscoverReaders]);
+  }, [hasPrefilledCheckout, isInitialized, warmDiscoverReaders]);
 
   useEffect(() => {
     autoConnectAttempted.current = false;
@@ -294,8 +324,14 @@ function PayScreenInner() {
         ? { discoveryMethod: "internet", simulated: true }
         : { discoveryMethod: "tapToPay" }
     );
-    if (discovered.error && __DEV__) {
-      console.warn("[Pay] discoverReaders", discovered.error);
+    if (discovered.error) {
+      lastTapToPayDiscoverErrorRef.current = discovered.error;
+      if (isLikelyTapToPayEntitlementOrSigningError(discovered.error)) {
+        setTapToPayEntitlementHint(true);
+      }
+      if (__DEV__) {
+        console.warn("[Pay] discoverReaders", discovered.error);
+      }
     }
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
@@ -327,11 +363,15 @@ function PayScreenInner() {
       const reader = await ensureTerminalReader();
       if (!reader) {
         setReaderPrepVisible(false);
+        const discErr = lastTapToPayDiscoverErrorRef.current;
+        const entitlement = !USE_SIMULATED_TERMINAL_READER && isLikelyTapToPayEntitlementOrSigningError(discErr);
         Alert.alert(
-          "No reader",
-          USE_SIMULATED_TERMINAL_READER
-            ? "Could not start the simulated Terminal reader. Use test mode keys, check Metro logs, and restart the app after enabling EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED."
-            : "Tap to Pay isn’t available on this device yet. Use an iPhone XS or newer with a current iOS version, or try again in a moment."
+          entitlement ? "Tap to Pay not in this build" : "No reader",
+          entitlement
+            ? "This install was likely built without the iOS Tap to Pay entitlement. Set ENABLE_TAP_TO_PAY_IOS=true when you run prebuild/build, do a clean native rebuild, and sign with a profile that includes Tap to Pay for this bundle ID. See docs/TAP_TO_PAY_BUILD.md."
+            : USE_SIMULATED_TERMINAL_READER
+              ? "Could not start the simulated Terminal reader. Use test mode keys, check Metro logs, and restart the app after enabling EXPO_PUBLIC_STRIPE_TERMINAL_SIMULATED."
+              : "Tap to Pay isn’t available on this device yet. Use an iPhone XS or newer with a current iOS version, or try again in a moment."
         );
         return;
       }
@@ -377,7 +417,13 @@ function PayScreenInner() {
       if (connectResult.error) {
         setReaderPrepVisible(false);
         const code = connectResult.error.code;
-        if (UNSUPPORTED_DEVICE_CODES.includes(code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
+        if (isLikelyTapToPayEntitlementOrSigningError(connectResult.error)) {
+          setTapToPayEntitlementHint(true);
+          Alert.alert(
+            "Tap to Pay not in this build",
+            "This install was likely built without the iOS Tap to Pay entitlement. Set ENABLE_TAP_TO_PAY_IOS=true when you prebuild/build, clean rebuild, and use a provisioning profile that includes Tap to Pay. See docs/TAP_TO_PAY_BUILD.md."
+          );
+        } else if (UNSUPPORTED_DEVICE_CODES.includes(code as (typeof UNSUPPORTED_DEVICE_CODES)[number])) {
           Alert.alert(
             "Update required",
             "Tap to Pay requires a compatible device and the latest iOS. Please update your iPhone to the latest version."
@@ -643,44 +689,73 @@ function PayScreenInner() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.surface }} edges={["top"]}>
       <View style={[styles.container, { backgroundColor: theme.surface }]}>
-      {hasPrefilledCheckout ? (
-        <View style={styles.checkoutHeader}>
-          <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
-            <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
-          </TouchableOpacity>
-          <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
-          <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
-            <Ionicons name="close" size={20} color={theme.textTertiary} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          <Text style={[styles.title, { color: theme.text }]}>Tap to Pay</Text>
-          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
-            Accept contactless payments with your phone. No reader required.
-          </Text>
-        </>
-      )}
+        {!hasPrefilledCheckout ? (
+          <>
+            <View style={styles.checkoutHeader}>
+              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+                <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
+              </TouchableOpacity>
+              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
+              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+                <Ionicons name="close" size={20} color={theme.textTertiary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.gateLead, { color: theme.textSecondary }]}>
+              Tap to Pay opens when you collect from an expense, a receipt split, or a friend balance. Add an expense or settle up to charge with your phone.
+            </Text>
+            {!API_URL && (
+              <Text style={[styles.warning, { color: theme.error }]}>
+                Set EXPO_PUBLIC_API_URL to your deployed web app URL.
+              </Text>
+            )}
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: theme.primary, marginTop: 20 }]}
+              onPress={() => router.push("/(tabs)/add-expense")}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.buttonText}>Add an expense</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.gateSecondary} onPress={handleClose} hitSlop={12}>
+              <Text style={[styles.gateSecondaryText, { color: theme.primary }]}>Go back</Text>
+            </TouchableOpacity>
+            <Text style={[styles.hint, { color: theme.textQuaternary, marginTop: 24 }]}>
+              Tap to Pay does not work in Expo Go. Run{" "}
+              <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:ios</Text> or{" "}
+              <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:android</Text> to
+              build with native Stripe support.{"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
+            </Text>
+          </>
+        ) : (
+          <>
+            <View style={styles.checkoutHeader}>
+              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+                <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
+              </TouchableOpacity>
+              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
+              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
+                <Ionicons name="close" size={20} color={theme.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
-      {!API_URL && (
-        <Text style={[styles.warning, { color: theme.error }]}>
-          Set EXPO_PUBLIC_API_URL to your deployed web app URL.
-        </Text>
-      )}
+            {!API_URL && (
+              <Text style={[styles.warning, { color: theme.error }]}>
+                Set EXPO_PUBLIC_API_URL to your deployed web app URL.
+              </Text>
+            )}
 
-      {USE_SIMULATED_TERMINAL_READER ? (
-        <Text
-          style={[
-            styles.warning,
-            { color: theme.textSecondary, backgroundColor: theme.primaryLight, padding: 12, borderRadius: 12 },
-          ]}
-        >
-          Dev: Stripe internet simulator only — tests your API + PaymentIntent + collect/process. It does not exercise Tap to Pay on iPhone (Apple/NFC). For real TTP, use sk_test + a Stripe physical test card.
-        </Text>
-      ) : null}
+            {USE_SIMULATED_TERMINAL_READER ? (
+              <Text
+                style={[
+                  styles.warning,
+                  { color: theme.textSecondary, backgroundColor: theme.primaryLight, padding: 12, borderRadius: 12 },
+                ]}
+              >
+                Dev: Stripe internet simulator only — tests your API + PaymentIntent + collect/process. It does not
+                exercise Tap to Pay on iPhone (Apple/NFC). For real TTP, use sk_test + a Stripe physical test card.
+              </Text>
+            ) : null}
 
-      {hasPrefilledCheckout ? (
-        <View style={[styles.checkoutCard, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
+            <View style={[styles.checkoutCard, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
           <Text style={[styles.checkoutAmount, { color: theme.text }]}>${lockedAmount.toFixed(2)}</Text>
           <Text style={[styles.checkoutSub, { color: theme.textTertiary }]}>
             {USE_SIMULATED_TERMINAL_READER
@@ -691,6 +766,14 @@ function PayScreenInner() {
                 ? "Reader connected. Hold phone near card."
                 : "Preparing Tap to Pay reader..."}
           </Text>
+          {tapToPayEntitlementHint && !USE_SIMULATED_TERMINAL_READER && Platform.OS === "ios" ? (
+            <Text style={[styles.entitlementHint, { color: theme.textSecondary }]}>
+              This build may be missing the Tap to Pay entitlement (Apple error 2900). Set{" "}
+              <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>ENABLE_TAP_TO_PAY_IOS=true</Text>{" "}
+              when you prebuild, run a clean native rebuild, and sign with a profile that includes Tap to Pay for your
+              bundle ID.
+            </Text>
+          ) : null}
           <TouchableOpacity
             style={[styles.button, { backgroundColor: theme.primary }]}
             onPress={() => {
@@ -735,94 +818,8 @@ function PayScreenInner() {
             </TouchableOpacity>
           ) : null}
         </View>
-      ) : (
-        <>
-          {/* Connect / Disconnect */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              Reader: {isConnected ? "Connected" : "Not connected"}
-            </Text>
-            {isConnected ? (
-              <TouchableOpacity
-                style={[styles.button, styles.disconnectButton]}
-                onPress={disconnect}
-                disabled={connecting}
-              >
-                <Text style={styles.buttonText}>Disconnect</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: theme.primary }]}
-                onPress={() => {
-                  if (connecting) return;
-                  if (!isInitialized) {
-                    Alert.alert(
-                      "One moment",
-                      USE_SIMULATED_TERMINAL_READER
-                        ? "Terminal is still starting up. Try again in a second."
-                        : "Tap to Pay is still starting up. Try again in a second."
-                    );
-                    return;
-                  }
-                  void connectTapToPay();
-                }}
-                disabled={connecting}
-              >
-                {connecting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <TapToPayButtonIcon color="#fff" size={22} />
-                    <Text style={styles.buttonText}>
-                      {!isInitialized
-                        ? "Initializing…"
-                        : USE_SIMULATED_TERMINAL_READER
-                          ? "Connect simulated reader"
-                          : "Connect Tap to Pay"}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
 
-          {/* Amount & Collect */}
-          {isConnected && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Amount ($)</Text>
-              <TextInput
-                style={[styles.input, { borderColor: theme.border, color: theme.text }]}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0.00"
-                placeholderTextColor={theme.inputPlaceholder}
-                keyboardType="decimal-pad"
-                editable={!collecting}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  { backgroundColor: theme.primary },
-                  (!amount || parseFloat(amount) <= 0 || collecting) && styles.buttonDisabled,
-                ]}
-                onPress={collectPayment}
-                disabled={!amount || parseFloat(amount) <= 0 || collecting}
-              >
-                {collecting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <TapToPayButtonIcon color="#fff" size={22} />
-                    <Text style={styles.buttonText}>Collect payment</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-        </>
-      )}
-
-      {/* Reader prep / software update progress (Apple checklist 3.9.1 — PSP equivalent) */}
+            {/* Reader prep / software update progress (Apple checklist 3.9.1 — PSP equivalent) */}
       {readerPrepVisible && (
         <View style={[styles.overlay, { zIndex: 150 }]}>
           <View style={[styles.overlayCard, { maxWidth: 320 }]}>
@@ -899,14 +896,8 @@ function PayScreenInner() {
         </View>
       )}
 
-      {!hasPrefilledCheckout ? (
-        <Text style={[styles.hint, { color: theme.textQuaternary }]}>
-          Tap to Pay does not work in Expo Go. Run{" "}
-          <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:ios</Text> or{" "}
-          <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>expo run:android</Text> to build with native Stripe support.
-          {"\n"}iOS: iPhone XS or later. Android: NFC device, API 26+.
-        </Text>
-      ) : null}
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -930,6 +921,21 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     color: colors.textTertiary,
     marginBottom: 24,
+  },
+  gateLead: {
+    fontSize: 16,
+    fontFamily: font.regular,
+    lineHeight: 24,
+    marginTop: 8,
+  },
+  gateSecondary: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  gateSecondaryText: {
+    fontSize: 16,
+    fontFamily: font.semibold,
+    fontWeight: "600",
   },
   warning: {
     fontSize: 13,
@@ -994,6 +1000,14 @@ const styles = StyleSheet.create({
     fontFamily: font.medium,
     textAlign: "center",
     marginBottom: 16,
+  },
+  entitlementHint: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 14,
+    paddingHorizontal: 4,
   },
   payoutNote: {
     fontSize: 12,
