@@ -21,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch } from "../../lib/api";
-import { useTransactions } from "../../hooks/useTransactions";
+import { usePlaidLinked } from "../../hooks/usePlaidLinked";
 import { useLocalSearchParams, useRouter, router as globalRouter } from "expo-router";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
@@ -57,7 +57,7 @@ export default function SettingsScreen() {
   const { sessionId } = useAuth();
   const { signOut } = useClerk();
   const apiFetch = useApiFetch();
-  const { linked } = useTransactions();
+  const { linked } = usePlaidLinked();
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
@@ -965,14 +965,9 @@ export default function SettingsScreen() {
               <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Tap to Pay on iPhone</Text>
             </View>
             <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-              Accept contactless cards and digital wallets on your iPhone — no extra hardware needed.
+              Accept contactless cards and digital wallets on your iPhone — no extra hardware needed. You can collect
+              after you add an expense or settle up with someone.
             </Text>
-            <TouchableOpacity
-              style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
-              onPress={() => globalRouter.push("/(tabs)/pay")}
-            >
-              <Text style={styles.primaryBtnText}>Open Tap to Pay</Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.linkRow}
               onPress={() => globalRouter.push("/(tabs)/tap-to-pay-education")}

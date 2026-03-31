@@ -21,7 +21,35 @@ const BACKOFF_MAX_MS = 30000;
 
 const _inflightGets = new Map<string, Promise<Response>>();
 
-const MAX_CONCURRENT = 2;
+const _responseCache = new Map<string, { body: string; status: number; ts: number }>();
+const CACHE_TTL_MS: Record<string, number> = {
+  "/api/plaid/status": 10_000,
+  "/api/plaid/transactions": 30_000,
+  "/api/groups/summary": 15_000,
+  "/api/plaid/accounts": 30_000,
+  "/api/splitwise/status": 30_000,
+  "/api/gmail/status": 60_000,
+  "/api/stripe/connect/status": 60_000,
+};
+
+function getCacheTtl(path: string): number {
+  for (const [prefix, ttl] of Object.entries(CACHE_TTL_MS)) {
+    if (path === prefix || path.startsWith(prefix + "?")) return ttl;
+  }
+  return 0;
+}
+
+export function invalidateApiCache(path?: string) {
+  if (path) {
+    Array.from(_responseCache.keys()).forEach((key) => {
+      if (key === path || key.startsWith(path + "?")) _responseCache.delete(key);
+    });
+  } else {
+    _responseCache.clear();
+  }
+}
+
+const MAX_CONCURRENT = 6;
 let _activeRequests = 0;
 const _requestQueue: Array<{ resolve: (v: void) => void }> = [];
 
@@ -157,6 +185,18 @@ export function useApiFetch() {
       if (__DEV__) console.log(`[api] → ${method} ${path}`);
 
       if (method === "GET") {
+        const ttl = getCacheTtl(path);
+        if (ttl > 0) {
+          const cached = _responseCache.get(path);
+          if (cached && Date.now() - cached.ts < ttl) {
+            if (__DEV__) console.log(`[api] 💾 cache hit ${path}`);
+            return new Response(cached.body, {
+              status: cached.status,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
+
         const inflight = _inflightGets.get(path);
         if (inflight) {
           if (__DEV__) console.log(`[api] ♻️ reusing inflight GET ${path}`);
@@ -251,7 +291,17 @@ export function useApiFetch() {
       if (method === "GET") {
         const promise = (async () => {
           await acquireSlot();
-          try { return await executeFetch(); } finally { releaseSlot(); }
+          try {
+            const res = await executeFetch();
+            const ttl = getCacheTtl(path);
+            if (ttl > 0 && res.ok) {
+              const clone = res.clone();
+              clone.text().then((body) => {
+                _responseCache.set(path, { body, status: res.status, ts: Date.now() });
+              }).catch(() => {});
+            }
+            return res;
+          } finally { releaseSlot(); }
         })();
         _inflightGets.set(path, promise);
         try {
@@ -262,6 +312,7 @@ export function useApiFetch() {
         }
       }
 
+      invalidateApiCache(path);
       await acquireSlot();
       try { return await executeFetch(); } finally { releaseSlot(); }
     },
