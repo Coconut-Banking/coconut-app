@@ -18,6 +18,7 @@ import {
   DeviceEventEmitter,
   AppState,
   Image,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -50,6 +51,7 @@ import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 import { sfx } from "../../lib/sounds";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
 function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
@@ -590,6 +592,25 @@ export default function BalancesPrototypeScreen() {
               )
             )}
           </View>
+        ) : null}
+
+        {Platform.OS !== "web" ? (
+          <TouchableOpacity
+            style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => { sfx.pop(); router.push("/(tabs)/pay"); }}
+            activeOpacity={0.85}
+          >
+            <View style={[ttpStyles.iconWrap, { backgroundColor: theme.primaryLight }]}>
+              <TapToPayButtonIcon color={theme.primary} size={22} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ttpStyles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
+              <Text style={[ttpStyles.sub, { color: theme.textTertiary }]}>
+                Accept contactless payments
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+          </TouchableOpacity>
         ) : null}
 
         <View style={{ marginBottom: 12 }}>
@@ -1706,5 +1727,34 @@ const searchStyles = StyleSheet.create({
     paddingBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+});
+
+const ttpStyles = StyleSheet.create({
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    marginBottom: 18,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  sub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    marginTop: 2,
   },
 });
