@@ -7,7 +7,6 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   DeviceEventEmitter,
   Alert,
   Linking,
@@ -16,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
