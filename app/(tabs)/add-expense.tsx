@@ -331,8 +331,14 @@ export default function AddExpenseScreen() {
   }, [splitPeople, total, splitMethod, customSplits]);
 
   const shareSum = shares.reduce((acc, p) => acc + p.share, 0);
-  const splitValid = splitMethod === "equal" || Math.abs(shareSum - total) < 0.02;
-  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving;
+  const percentSum = splitMethod === "percent"
+    ? splitPeople.reduce((acc, p) => acc + (parseFloat(customSplits[p.key] || "0") || 0), 0)
+    : 0;
+  const splitValid =
+    splitMethod === "equal" ||
+    splitMethod === "shares" ||
+    (splitMethod === "percent" ? Math.abs(percentSum - 100) < 0.02 : Math.abs(shareSum - total) < 0.02);
+  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving && splitValid;
 
   // ── Payer display for the compact "Paid by" row ──
   const resolvedMeId = myMemberId ?? groupMembers[0]?.id ?? null;
@@ -550,12 +556,37 @@ export default function AddExpenseScreen() {
       sfx.toggle();
       setSplitMethod(m);
       if (m === "equal") { setCustomSplits({}); return; }
+      const n = splitPeople.length;
       const init: Record<string, string> = {};
-      splitPeople.forEach((p) => {
-        if (m === "shares") init[p.key] = "1";
-        else if (m === "percent") init[p.key] = (100 / splitPeople.length).toFixed(1);
-        else init[p.key] = total > 0 ? (total / splitPeople.length).toFixed(2) : "0";
-      });
+      if (m === "shares") {
+        splitPeople.forEach((p) => { init[p.key] = "1"; });
+      } else if (m === "percent") {
+        const base = Math.floor(10000 / n) / 100;
+        let assigned = 0;
+        splitPeople.forEach((p, i) => {
+          if (i < n - 1) {
+            init[p.key] = base.toFixed(2);
+            assigned += base;
+          } else {
+            init[p.key] = (100 - assigned).toFixed(2);
+          }
+        });
+      } else {
+        if (total > 0) {
+          const base = Math.floor((total / n) * 100) / 100;
+          let assigned = 0;
+          splitPeople.forEach((p, i) => {
+            if (i < n - 1) {
+              init[p.key] = base.toFixed(2);
+              assigned += base;
+            } else {
+              init[p.key] = (total - assigned).toFixed(2);
+            }
+          });
+        } else {
+          splitPeople.forEach((p) => { init[p.key] = "0"; });
+        }
+      }
       setCustomSplits(init);
     },
     [splitPeople, total]
@@ -568,8 +599,8 @@ export default function AddExpenseScreen() {
     const effPayer = paidByMe ? (myMemberId ?? groupMembers[0]?.id ?? null) : payerMemberId;
     if (!effPayer) { setError("Missing payer"); return; }
     if (!splitValid) {
-      if (splitMethod === "percent") setError("Percents must add to 100%");
-      else setError(`Amounts must add up to $${total.toFixed(2)}`);
+      if (splitMethod === "percent") setError(`Percents add to ${percentSum.toFixed(1)}% — must be 100%`);
+      else if (splitMethod === "exact") setError(`Amounts add to $${shareSum.toFixed(2)} — must be $${total.toFixed(2)}`);
       return;
     }
 
@@ -901,7 +932,7 @@ export default function AddExpenseScreen() {
                   {splitMethod !== "equal" && (
                     <View style={s.bkCard}>
                       {splitPeople.map((p, i) => (
-                        <View key={p.key} style={[s.bkRow, i < splitPeople.length - 1 && s.bkBorder]}>
+                        <View key={p.key} style={[s.bkRow, s.bkBorder]}>
                           <Text style={s.bkName} numberOfLines={1}>{p.name}</Text>
                           <View style={s.bkInWrap}>
                             {splitMethod === "exact" && <Text style={s.bkPre}>$</Text>}
@@ -918,6 +949,22 @@ export default function AddExpenseScreen() {
                           <Text style={s.bkShareAmt}>${shares.find((x) => x.key === p.key)?.share.toFixed(2)}</Text>
                         </View>
                       ))}
+                      {/* Total row */}
+                      <View style={s.bkTotalRow}>
+                        <Text style={s.bkTotalLabel}>Total</Text>
+                        <Text style={[
+                          s.bkTotalValue,
+                          !splitValid && total > 0 && s.bkTotalError,
+                        ]}>
+                          ${shareSum.toFixed(2)}{total > 0 ? ` / $${total.toFixed(2)}` : ""}
+                        </Text>
+                        {splitValid && total > 0 && (
+                          <Ionicons name="checkmark-circle" size={16} color="#3A7D44" style={{ marginLeft: 4 }} />
+                        )}
+                        {!splitValid && total > 0 && (
+                          <Ionicons name="alert-circle" size={16} color="#E8507A" style={{ marginLeft: 4 }} />
+                        )}
+                      </View>
                     </View>
                   )}
                 </View>
@@ -1135,6 +1182,10 @@ const s = StyleSheet.create({
   bkSuf: { fontSize: 12, color: darkUI.labelMuted },
   bkIn: { flex: 1, fontFamily: font.semibold, fontSize: 14, color: darkUI.label, paddingVertical: 8 },
   bkShareAmt: { width: 64, fontFamily: font.black, fontSize: 14, color: colors.primary, textAlign: "right" },
+  bkTotalRow: { flexDirection: "row", alignItems: "center", paddingTop: 10, paddingBottom: 4, gap: 8 },
+  bkTotalLabel: { fontFamily: font.extrabold, fontSize: 13, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+  bkTotalValue: { fontFamily: font.black, fontSize: 14, color: colors.primary, marginLeft: "auto" },
+  bkTotalError: { color: "#E8507A" },
 
   // Dup warning
   dupBanner: { flexDirection: "row", flexWrap: "wrap", gap: 10, backgroundColor: "rgba(251,191,36,0.12)", borderWidth: 1, borderColor: "rgba(251,191,36,0.4)", borderRadius: radii.lg, padding: 12, marginTop: 16 },
