@@ -22,13 +22,14 @@ import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch } from "../../lib/api";
 import { useTransactions } from "../../hooks/useTransactions";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, router as globalRouter } from "expo-router";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../lib/theme-context";
 import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { colors, font, shadow, radii } from "../../lib/theme";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -955,6 +956,32 @@ export default function SettingsScreen() {
             })}
           </View>
         </View>
+
+        {/* Tap to Pay on iPhone (Apple checklist 3.6 + 4.3) */}
+        {Platform.OS !== "web" ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <TapToPayButtonIcon color={theme.primary} size={24} />
+              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Tap to Pay on iPhone</Text>
+            </View>
+            <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
+              Accept contactless cards and digital wallets on your iPhone — no extra hardware needed.
+            </Text>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+              onPress={() => globalRouter.push("/(tabs)/pay")}
+            >
+              <Text style={styles.primaryBtnText}>Open Tap to Pay</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => globalRouter.push("/(tabs)/tap-to-pay-education")}
+            >
+              <Ionicons name="book-outline" size={16} color={theme.primary} />
+              <Text style={[styles.linkInline, { color: theme.primary }]}>How Tap to Pay works</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Payments (Stripe Connect) */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
