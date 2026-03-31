@@ -269,8 +269,8 @@ export default function BalancesPrototypeScreen() {
     return bankVisibleTransactions
       .filter((tx) => Number(tx.amount) < 0)
       .sort((a, b) => {
-        const da = new Date(a.dateStr || a.date || "").getTime();
-        const db = new Date(b.dateStr || b.date || "").getTime();
+        const da = new Date(a.date || "").getTime();
+        const db = new Date(b.date || "").getTime();
         return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
       })
       .slice(0, 120);
@@ -294,8 +294,14 @@ export default function BalancesPrototypeScreen() {
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
       if (dateFilterRange) {
-        const txDate = new Date(tx.dateStr || tx.date || "");
-        if (!Number.isNaN(txDate.getTime()) && (txDate < dateFilterRange.start || txDate > dateFilterRange.end)) return false;
+        // Use tx.date (ISO "2026-03-31") — tx.dateStr is a human label ("Mar 31") that new Date() can't parse
+        const txDate = new Date(tx.date || "");
+        if (!Number.isNaN(txDate.getTime())) {
+          const txDay = new Date(txDate.getFullYear(), txDate.getMonth(), txDate.getDate());
+          const startDay = new Date(dateFilterRange.start.getFullYear(), dateFilterRange.start.getMonth(), dateFilterRange.start.getDate());
+          const endDay = new Date(dateFilterRange.end.getFullYear(), dateFilterRange.end.getMonth(), dateFilterRange.end.getDate());
+          if (txDay < startDay || txDay > endDay) return false;
+        }
       }
       if (!q) return true;
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
@@ -1067,19 +1073,33 @@ export default function BalancesPrototypeScreen() {
 
             {/* Date filter presets */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
-              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["custom", "Custom"]] as const).map(([preset, label]) => (
+              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"]] as const).map(([preset, label]) => (
                 <TouchableOpacity
                   key={preset}
                   onPress={() => {
                     setDatePreset(preset);
-                    if (preset === "custom") setShowCalendar(true);
-                    else { setShowCalendar(false); setCustomDateStart(null); setCustomDateEnd(null); }
+                    setShowCalendar(false);
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
                   }}
                   style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
                 >
                   <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                onPress={() => {
+                  setDatePreset("custom");
+                  setShowCalendar(true);
+                }}
+                style={[searchStyles.dateChip, datePreset === "custom" && searchStyles.dateChipActive]}
+              >
+                <Text style={[searchStyles.dateChipText, datePreset === "custom" && searchStyles.dateChipTextActive]}>
+                  {datePreset === "custom" && customDateStart && customDateEnd
+                    ? `${customDateStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customDateEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                    : "Custom"}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
 
             {/* Calendar picker for Custom */}
@@ -1090,6 +1110,17 @@ export default function BalancesPrototypeScreen() {
                   endDate={customDateEnd}
                   onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
                 />
+                <TouchableOpacity
+                  style={[searchStyles.applyBtn, (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled]}
+                  onPress={() => {
+                    if (customDateStart && customDateEnd) setShowCalendar(false);
+                  }}
+                  disabled={!customDateStart || !customDateEnd}
+                >
+                  <Text style={searchStyles.applyBtnText}>
+                    {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : null}
 
@@ -1736,6 +1767,21 @@ const searchStyles = StyleSheet.create({
     paddingBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  applyBtn: {
+    marginTop: 10,
+    backgroundColor: "#3D8E62",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyBtnDisabled: {
+    backgroundColor: "#3d4043",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#fff",
   },
 });
 
