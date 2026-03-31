@@ -38,7 +38,7 @@ export default function TapToPayEducationScreen() {
 
   const done = useCallback(async () => {
     await markTapToPayEducationCompleted();
-    router.replace("/(tabs)/pay");
+    router.push("/(tabs)/add-expense");
   }, [router]);
 
   const back = useCallback(() => {
@@ -65,7 +65,7 @@ export default function TapToPayEducationScreen() {
             <View style={[styles.banner, { backgroundColor: theme.successLight, borderColor: theme.border }]}>
               <Ionicons name="checkmark-circle" size={22} color={theme.positive} />
               <Text style={[styles.bannerText, { color: theme.text }]}>
-                Terms accepted. Review these tips once—then you can take a payment.
+                Terms accepted. Review these tips once—then collect from an expense or settlement.
               </Text>
             </View>
           ) : null}
@@ -91,7 +91,7 @@ export default function TapToPayEducationScreen() {
             activeOpacity={0.9}
           >
             <TapToPayCtaIcon color="#fff" />
-            <Text style={styles.ctaText}>Try Tap to Pay</Text>
+            <Text style={styles.ctaText}>Add an expense to collect</Text>
           </TouchableOpacity>
 
           {Platform.OS !== "web" ? (

@@ -7,7 +7,6 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   DeviceEventEmitter,
   Alert,
   Linking,
@@ -16,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
@@ -299,7 +299,7 @@ export default function AddExpenseScreen() {
   const filteredGroups = q ? visibleGroups.filter((g) => g.name.toLowerCase().includes(q)) : visibleGroups;
   const selectedKeys = new Set(targets.map((t) => t.key));
   const noMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
-  const showDropdown = searchFocused && (q.length > 0 || targets.length === 0);
+  const showDropdown = searchFocused && (q.length > 0 || targets.length === 0 || targets.every((t) => t.type === "friend"));
 
   const myMemberId = useMemo(() => {
     const byAuth = groupMembers.find((m) => m.user_id && m.user_id === userId)?.id;
@@ -331,8 +331,14 @@ export default function AddExpenseScreen() {
   }, [splitPeople, total, splitMethod, customSplits]);
 
   const shareSum = shares.reduce((acc, p) => acc + p.share, 0);
-  const splitValid = splitMethod === "equal" || Math.abs(shareSum - total) < 0.02;
-  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving;
+  const percentSum = splitMethod === "percent"
+    ? splitPeople.reduce((acc, p) => acc + (parseFloat(customSplits[p.key] || "0") || 0), 0)
+    : 0;
+  const splitValid =
+    splitMethod === "equal" ||
+    splitMethod === "shares" ||
+    (splitMethod === "percent" ? Math.abs(percentSum - 100) < 0.02 : Math.abs(shareSum - total) < 0.02);
+  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving && splitValid;
 
   // ── Payer display for the compact "Paid by" row ──
   const resolvedMeId = myMemberId ?? groupMembers[0]?.id ?? null;
@@ -359,11 +365,13 @@ export default function AddExpenseScreen() {
 
   // ── Group resolution ──
   const loadGroupForTargets = useCallback(async (): Promise<boolean> => {
+    if (targets.length === 0) return false;
     const t = targets[0];
-    if (!t) return false;
     setError(null);
     try {
       let gid: string | null = null;
+
+      // --- Demo mode ---
       if (isDemoOn) {
         if (t.type === "group") {
           gid = t.key;
@@ -384,19 +392,55 @@ export default function AddExpenseScreen() {
         return true;
       }
 
+      // --- Single group selected ---
       if (t.type === "group") {
         gid = t.key;
-      } else {
+      }
+      // --- Multiple friends: create an ad-hoc group ---
+      else if (targets.length > 1) {
+        const friendNames = targets.map((ft) => ft.name);
+        const groupName = friendNames.join(", ");
+        const friendDetails: Array<{ name: string; email: string | null }> = [];
+        for (const ft of targets) {
+          try {
+            const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(ft.key)}`);
+            const data = await res.json();
+            friendDetails.push({
+              name: data.displayName ?? ft.name,
+              email: data.email ?? null,
+            });
+          } catch {
+            friendDetails.push({ name: ft.name, email: null });
+          }
+        }
+        try {
+          const groupRes = await apiFetch("/api/groups", {
+            method: "POST",
+            body: { name: groupName, ownerDisplayName: "You" } as object,
+          });
+          const group = await groupRes.json();
+          if (groupRes.ok && group.id) {
+            for (const fd of friendDetails) {
+              await apiFetch(`/api/groups/${group.id}/members`, {
+                method: "POST",
+                body: { displayName: fd.name, ...(fd.email ? { email: fd.email } : {}) } as object,
+              });
+            }
+            gid = group.id;
+          }
+        } catch { /* fall through */ }
+        if (!gid) { setError("Could not create group"); return false; }
+      }
+      // --- Single friend ---
+      else {
         const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(t.key)}`);
         const data = await res.json();
         if (!res.ok) { setError("Could not load friend"); return false; }
         const sg = data.sharedGroups as { id: string; name: string; memberCount: number }[] | undefined;
-        // Prefer a 1:1 (2-member) group so friend expenses don't land in trip/household groups
         const twoPersonGroup = sg?.find((g) => g.memberCount === 2);
         gid = twoPersonGroup?.id ?? null;
 
         if (!gid && sg && sg.length > 0) {
-          // No dedicated 1:1 group — create one
           const friendName = data.displayName ?? t.name;
           const friendEmail = data.email ?? null;
           try {
@@ -418,6 +462,7 @@ export default function AddExpenseScreen() {
         gid = gid ?? sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
         if (!gid) { setError("No shared group with this person yet"); return false; }
       }
+
       setResolvedGroupId(gid);
       const gr = await apiFetch(`/api/groups/${gid}`);
       const gj = await gr.json();
@@ -433,15 +478,12 @@ export default function AddExpenseScreen() {
     }
   }, [apiFetch, targets, isDemoOn, demo.personDetails, demo.groupDetails]);
 
-  // Auto-resolve group when a target is selected
+  // Auto-resolve group when targets change
   useEffect(() => {
     if (targets.length === 0) {
       setResolvedGroupId(null);
       setGroupMembers([]);
       return;
-    }
-    if (targets.length > 1) {
-      Alert.alert("One at a time", "For now, split with one friend or one group per expense. Using the first one you selected.");
     }
     let cancelled = false;
     setResolving(true);
@@ -484,8 +526,25 @@ export default function AddExpenseScreen() {
     setError(null);
   }, []);
 
-  const removeTarget = useCallback(() => {
-    setTargets([]);
+  const toggleTarget = useCallback((t: Target) => {
+    sfx.pop();
+    setError(null);
+    setTargets((prev) => {
+      const exists = prev.find((p) => p.key === t.key);
+      if (exists) return prev.filter((p) => p.key !== t.key);
+      if (t.type === "group") return [t];
+      const prevFriendsOnly = prev.filter((p) => p.type === "friend");
+      return [...prevFriendsOnly, t];
+    });
+    setQuery("");
+  }, []);
+
+  const removeTarget = useCallback((key?: string) => {
+    if (!key) {
+      setTargets([]);
+    } else {
+      setTargets((prev) => prev.filter((t) => t.key !== key));
+    }
     setResolvedGroupId(null);
     setGroupMembers([]);
     setCustomSplits({});
@@ -497,12 +556,37 @@ export default function AddExpenseScreen() {
       sfx.toggle();
       setSplitMethod(m);
       if (m === "equal") { setCustomSplits({}); return; }
+      const n = splitPeople.length;
       const init: Record<string, string> = {};
-      splitPeople.forEach((p) => {
-        if (m === "shares") init[p.key] = "1";
-        else if (m === "percent") init[p.key] = (100 / splitPeople.length).toFixed(1);
-        else init[p.key] = total > 0 ? (total / splitPeople.length).toFixed(2) : "0";
-      });
+      if (m === "shares") {
+        splitPeople.forEach((p) => { init[p.key] = "1"; });
+      } else if (m === "percent") {
+        const base = Math.floor(10000 / n) / 100;
+        let assigned = 0;
+        splitPeople.forEach((p, i) => {
+          if (i < n - 1) {
+            init[p.key] = base.toFixed(2);
+            assigned += base;
+          } else {
+            init[p.key] = (100 - assigned).toFixed(2);
+          }
+        });
+      } else {
+        if (total > 0) {
+          const base = Math.floor((total / n) * 100) / 100;
+          let assigned = 0;
+          splitPeople.forEach((p, i) => {
+            if (i < n - 1) {
+              init[p.key] = base.toFixed(2);
+              assigned += base;
+            } else {
+              init[p.key] = (total - assigned).toFixed(2);
+            }
+          });
+        } else {
+          splitPeople.forEach((p) => { init[p.key] = "0"; });
+        }
+      }
       setCustomSplits(init);
     },
     [splitPeople, total]
@@ -515,8 +599,8 @@ export default function AddExpenseScreen() {
     const effPayer = paidByMe ? (myMemberId ?? groupMembers[0]?.id ?? null) : payerMemberId;
     if (!effPayer) { setError("Missing payer"); return; }
     if (!splitValid) {
-      if (splitMethod === "percent") setError("Percents must add to 100%");
-      else setError(`Amounts must add up to $${total.toFixed(2)}`);
+      if (splitMethod === "percent") setError(`Percents add to ${percentSum.toFixed(1)}% — must be 100%`);
+      else if (splitMethod === "exact") setError(`Amounts add to $${shareSum.toFixed(2)} — must be $${total.toFixed(2)}`);
       return;
     }
 
@@ -675,7 +759,7 @@ export default function AddExpenseScreen() {
           <View style={s.personBar}>
             <Text style={s.personLabel}>With you and:</Text>
             {targets.map((t, i) => (
-              <TouchableOpacity key={t.key} style={s.personChip} onPress={removeTarget}>
+              <TouchableOpacity key={t.key} style={s.personChip} onPress={() => removeTarget(t.key)}>
                 <View style={[s.personChipDot, { backgroundColor: ACCENT[i % ACCENT.length] }]} />
                 <Text style={s.personChipTxt}>{t.name}</Text>
                 <Ionicons name="close" size={12} color={darkUI.labelMuted} />
@@ -687,7 +771,7 @@ export default function AddExpenseScreen() {
               value={query}
               onChangeText={setQuery}
               onFocus={() => setSearchFocused(true)}
-              placeholder={targets.length === 0 ? "Name or group" : ""}
+              placeholder={targets.length === 0 ? "Name or group" : "Add more people..."}
               placeholderTextColor={darkUI.labelMuted}
               autoCorrect={false}
             />
@@ -696,54 +780,62 @@ export default function AddExpenseScreen() {
           {/* ── Search dropdown ── */}
           {showDropdown && (
             <View style={s.dropdown}>
-              {noMatches && (
-                <TouchableOpacity style={s.dropRow} onPress={startAddFriend}>
-                  <Ionicons name="person-add" size={18} color={colors.primary} />
-                  <Text style={s.dropRowAddTxt}>Add &quot;{query.trim()}&quot;</Text>
-                </TouchableOpacity>
-              )}
-              {filteredFriends.slice(0, 8).map((f, i) => {
-                const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
-                const isGroupBackedFriend = !!groupBackedId;
-                const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
-                const on = selectedKeys.has(targetKey);
-                return (
-                  <TouchableOpacity
-                    key={f.key}
-                    style={[s.dropRow, on && { backgroundColor: "rgba(31,35,40,0.06)" }]}
-                    onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
-                  >
-                    <View style={[s.dropAv, { backgroundColor: ACCENT[i % ACCENT.length] }]}>
-                      <Text style={s.dropAvTxt}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
-                    </View>
-                    <Text style={s.dropRowName}>{f.displayName}</Text>
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                style={{ maxHeight: 280 }}
+              >
+                {noMatches && (
+                  <TouchableOpacity style={s.dropRow} onPress={startAddFriend}>
+                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Text style={s.dropRowAddTxt}>Add &quot;{query.trim()}&quot;</Text>
                   </TouchableOpacity>
-                );
-              })}
-              {filteredGroups.slice(0, 5).map((g) => {
-                const on = selectedKeys.has(g.id);
-                return (
-                  <TouchableOpacity
-                    key={g.id}
-                    style={[s.dropRow, on && { backgroundColor: "rgba(31,35,40,0.06)" }]}
-                    onPress={() => selectTarget({ type: "group", key: g.id, name: g.name })}
-                  >
-                    <View style={s.dropGrp}>
-                      <Ionicons name="people" size={14} color={colors.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.dropRowName}>{g.name}</Text>
-                      <Text style={s.dropRowMeta}>{g.memberCount} members</Text>
-                    </View>
+                )}
+                {filteredFriends.map((f, i) => {
+                  const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
+                  const isGroupBackedFriend = !!groupBackedId;
+                  const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
+                  const on = selectedKeys.has(targetKey);
+                  return (
+                    <TouchableOpacity
+                      key={f.key}
+                      style={[s.dropRow, on && s.dropRowSelected]}
+                      onPress={() => toggleTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
+                    >
+                      <View style={[s.dropAv, { backgroundColor: ACCENT[i % ACCENT.length] }]}>
+                        <Text style={s.dropAvTxt}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
+                      </View>
+                      <Text style={[s.dropRowName, { flex: 1 }]}>{f.displayName}</Text>
+                      {on && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+                {filteredGroups.map((g) => {
+                  const on = selectedKeys.has(g.id);
+                  return (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[s.dropRow, on && s.dropRowSelected]}
+                      onPress={() => toggleTarget({ type: "group", key: g.id, name: g.name })}
+                    >
+                      <View style={s.dropGrp}>
+                        <Ionicons name="people" size={14} color={colors.primary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.dropRowName}>{g.name}</Text>
+                        <Text style={s.dropRowMeta}>{g.memberCount} members</Text>
+                      </View>
+                      {on && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+                {!noMatches && q.length > 1 && (
+                  <TouchableOpacity style={s.dropRow} onPress={startAddFriend}>
+                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Text style={s.dropRowAddTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
                   </TouchableOpacity>
-                );
-              })}
-              {!noMatches && q.length > 1 && (
-                <TouchableOpacity style={s.dropRow} onPress={startAddFriend}>
-                  <Ionicons name="person-add" size={18} color={colors.primary} />
-                  <Text style={s.dropRowAddTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
-                </TouchableOpacity>
-              )}
+                )}
+              </ScrollView>
             </View>
           )}
 
@@ -840,7 +932,7 @@ export default function AddExpenseScreen() {
                   {splitMethod !== "equal" && (
                     <View style={s.bkCard}>
                       {splitPeople.map((p, i) => (
-                        <View key={p.key} style={[s.bkRow, i < splitPeople.length - 1 && s.bkBorder]}>
+                        <View key={p.key} style={[s.bkRow, s.bkBorder]}>
                           <Text style={s.bkName} numberOfLines={1}>{p.name}</Text>
                           <View style={s.bkInWrap}>
                             {splitMethod === "exact" && <Text style={s.bkPre}>$</Text>}
@@ -857,6 +949,22 @@ export default function AddExpenseScreen() {
                           <Text style={s.bkShareAmt}>${shares.find((x) => x.key === p.key)?.share.toFixed(2)}</Text>
                         </View>
                       ))}
+                      {/* Total row */}
+                      <View style={s.bkTotalRow}>
+                        <Text style={s.bkTotalLabel}>Total</Text>
+                        <Text style={[
+                          s.bkTotalValue,
+                          !splitValid && total > 0 && s.bkTotalError,
+                        ]}>
+                          ${shareSum.toFixed(2)}{total > 0 ? ` / $${total.toFixed(2)}` : ""}
+                        </Text>
+                        {splitValid && total > 0 && (
+                          <Ionicons name="checkmark-circle" size={16} color="#3A7D44" style={{ marginLeft: 4 }} />
+                        )}
+                        {!splitValid && total > 0 && (
+                          <Ionicons name="alert-circle" size={16} color="#E8507A" style={{ marginLeft: 4 }} />
+                        )}
+                      </View>
                     </View>
                   )}
                 </View>
@@ -1010,9 +1118,9 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: darkUI.stroke,
     marginBottom: 8,
-    maxHeight: 280,
     overflow: "hidden",
   },
+  dropRowSelected: { backgroundColor: `${colors.primary}12` },
   dropRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingHorizontal: 14 },
   dropAv: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   dropAvTxt: { color: "#fff", fontFamily: font.bold, fontSize: 11 },
@@ -1074,6 +1182,10 @@ const s = StyleSheet.create({
   bkSuf: { fontSize: 12, color: darkUI.labelMuted },
   bkIn: { flex: 1, fontFamily: font.semibold, fontSize: 14, color: darkUI.label, paddingVertical: 8 },
   bkShareAmt: { width: 64, fontFamily: font.black, fontSize: 14, color: colors.primary, textAlign: "right" },
+  bkTotalRow: { flexDirection: "row", alignItems: "center", paddingTop: 10, paddingBottom: 4, gap: 8 },
+  bkTotalLabel: { fontFamily: font.extrabold, fontSize: 13, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.6 },
+  bkTotalValue: { fontFamily: font.black, fontSize: 14, color: colors.primary, marginLeft: "auto" },
+  bkTotalError: { color: "#E8507A" },
 
   // Dup warning
   dupBanner: { flexDirection: "row", flexWrap: "wrap", gap: 10, backgroundColor: "rgba(251,191,36,0.12)", borderWidth: 1, borderColor: "rgba(251,191,36,0.4)", borderRadius: radii.lg, padding: 12, marginTop: 16 },

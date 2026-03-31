@@ -46,10 +46,10 @@ export function TapToPayHeroModal() {
     setVisible(false);
   }, []);
 
-  const openPay = useCallback(async () => {
+  const openAddExpense = useCallback(async () => {
     await markTapToPayHeroModalSeen();
     setVisible(false);
-    router.push("/(tabs)/pay");
+    router.push("/(tabs)/add-expense");
   }, [router]);
 
   const openEducation = useCallback(async () => {
@@ -73,14 +73,14 @@ export function TapToPayHeroModal() {
           </View>
           <Text style={styles.title}>Tap to Pay on iPhone</Text>
           <Text style={styles.body}>
-            Accept contactless cards and digital wallets on your iPhone—no extra hardware. Set it up once in
-            the Pay tab, then charge from checkout or when you split expenses.
+            Accept contactless cards and digital wallets on your iPhone—no extra hardware. Set up payments in
+            Settings, then collect when you add an expense or settle up with someone.
           </Text>
         </View>
 
         <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={openPay} activeOpacity={0.9}>
-            <Text style={styles.primaryBtnText}>Open Pay</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={openAddExpense} activeOpacity={0.9}>
+            <Text style={styles.primaryBtnText}>Add an expense</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryBtn} onPress={openEducation} activeOpacity={0.85}>
             <Text style={styles.secondaryBtnText}>How it works</Text>

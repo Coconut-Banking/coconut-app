@@ -37,6 +37,7 @@ if (!publishableKey) {
 const FORCE_SIGN_OUT_ON_LAUNCH = process.env.EXPO_PUBLIC_FORCE_SIGN_OUT === "true";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
 
+
 function AuthSwitch() {
   const { isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
