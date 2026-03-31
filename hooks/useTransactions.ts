@@ -126,15 +126,54 @@ export function useTransactions() {
       .then((data) => {
         if (fetchCancelledRef.current) return;
         if (Array.isArray(data)) {
-          setTransactions(
-            (data as unknown[]).map((raw) => {
+          const mapped = (data as unknown[]).map((raw) => {
+            const t = raw as Record<string, unknown>;
+            const rid = t.receipt_id ?? t.receiptId;
+            const base = { ...t } as unknown as Transaction;
+            if (rid != null && rid !== "") base.receiptId = String(rid);
+            return base;
+          });
+          if (__DEV__) {
+            const withReceipt = mapped.filter((tx) => tx.hasReceipt || tx.receiptId);
+            const sample = mapped.slice(0, 2).map((tx) => ({
+              id: tx.id,
+              merchant: tx.merchant,
+              hasReceipt: tx.hasReceipt,
+              receiptId: tx.receiptId,
+              receiptMatchLine: tx.receiptMatchLine,
+              hasSplitSuggestion: tx.hasSplitSuggestion,
+            }));
+            // Log raw API fields for Target to diagnose missing receipt_id
+            const targetTxs = (data as unknown[]).filter((raw) => {
               const t = raw as Record<string, unknown>;
-              const rid = t.receipt_id ?? t.receiptId;
-              const base = { ...t } as unknown as Transaction;
-              if (rid != null && rid !== "") base.receiptId = String(rid);
-              return base;
-            })
-          );
+              return String(t.merchant_name ?? t.merchant ?? "").toLowerCase().includes("target");
+            });
+            if (targetTxs.length > 0) {
+              console.log("[pipeline:tx] TARGET raw fields:", JSON.stringify(
+                targetTxs.map((raw) => {
+                  const t = raw as Record<string, unknown>;
+                  return {
+                    id: t.id,
+                    merchant_name: t.merchant_name,
+                    merchant: t.merchant,
+                    amount: t.amount,
+                    date: t.date,
+                    receipt_id: t.receipt_id,
+                    receiptId: t.receiptId,
+                    has_receipt: t.has_receipt,
+                    hasReceipt: t.hasReceipt,
+                    receipt_match_line: t.receipt_match_line,
+                  };
+                })
+              ));
+            }
+            console.log("[pipeline:tx] 4. receipt debug", {
+              total: mapped.length,
+              withReceipt: withReceipt.length,
+              sample,
+            });
+          }
+          setTransactions(mapped);
           if (__DEV__) console.log("[pipeline:tx] 4. output", { count: (data as unknown[]).length });
         }
       })
