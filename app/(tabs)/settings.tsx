@@ -65,40 +65,8 @@ export default function SettingsScreen() {
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showAllAccounts, setShowAllAccounts] = useState(false);
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
-  const [accountSort, setAccountSort] = useState<"default" | "name" | "institution" | "type">("default");
   const ACCOUNTS_PREVIEW = 5;
-  const STARS_KEY = "coconut:starred_accounts";
-
-  // Load persisted stars on mount
-  useEffect(() => {
-    AsyncStorage.getItem(STARS_KEY).then((raw) => {
-      if (raw) {
-        try { setStarredIds(new Set(JSON.parse(raw))); } catch { /* ignore */ }
-      }
-    });
-  }, []);
-
-  const toggleStar = (id: string) => {
-    setStarredIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      AsyncStorage.setItem(STARS_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  };
-
-  const sortedAccounts = useMemo(() => {
-    const starred = accounts.filter((a) => starredIds.has(a.id));
-    const rest = accounts.filter((a) => !starredIds.has(a.id));
-    const sorter = (arr: PlaidAccount[]) => {
-      if (accountSort === "name") return [...arr].sort((a, b) => (a.nickname ?? a.name).localeCompare(b.nickname ?? b.name));
-      if (accountSort === "institution") return [...arr].sort((a, b) => (a.institution_name ?? "").localeCompare(b.institution_name ?? ""));
-      if (accountSort === "type") return [...arr].sort((a, b) => (a.subtype ?? a.type ?? "").localeCompare(b.subtype ?? b.type ?? ""));
-      return arr;
-    };
-    return [...sorter(starred), ...sorter(rest)];
-  }, [accounts, starredIds, accountSort]);
+  const [devToolsOpen, setDevToolsOpen] = useState(false);
 
   const renameAccount = (a: PlaidAccount) => {
     Alert.prompt(
@@ -398,11 +366,11 @@ export default function SettingsScreen() {
     const days = daysBack ?? (isFirstScan ? 90 : 7);
     try {
       const body = { daysBack: days };
-      console.log("[gmail:scan] starting — daysBack:", days, "body:", JSON.stringify(body));
+      if (__DEV__) console.log("[gmail:scan] starting — daysBack:", days, "body:", JSON.stringify(body));
       const res = await apiFetch("/api/gmail/scan", { method: "POST", body });
-      console.log("[gmail:scan] response status:", res.status);
-      const data = await res.json().catch((e) => { console.warn("[gmail:scan] json parse error:", e); return {}; });
-      console.log("[gmail:scan] response body:", JSON.stringify(data));
+      if (__DEV__) console.log("[gmail:scan] response status:", res.status);
+      const data = await res.json().catch((e) => { if (__DEV__) console.warn("[gmail:scan] json parse error:", e); return {}; });
+      if (__DEV__) console.log("[gmail:scan] response body:", JSON.stringify(data));
       if (!res.ok) {
         if (res.status === 403 && (data as { authError?: boolean }).authError) {
           setGmailStatus((prev) => prev ? { ...prev, connected: false } : null);
@@ -412,7 +380,7 @@ export default function SettingsScreen() {
         }
       } else {
         const d = data as { emailsFetched?: number; inserted?: number; matched?: number; error?: string };
-        console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched, "error:", d.error);
+        if (__DEV__) console.log("[gmail:scan] success — fetched:", d.emailsFetched, "inserted:", d.inserted, "matched:", d.matched, "error:", d.error);
         if (d.error) {
           setGmailScanResult({ ok: false, error: d.error });
         } else {
@@ -421,7 +389,7 @@ export default function SettingsScreen() {
         void fetchGmailStatus();
       }
     } catch (e) {
-      console.error("[gmail:scan] exception:", e instanceof Error ? e.message : e);
+      if (__DEV__) console.error("[gmail:scan] exception:", e instanceof Error ? e.message : e);
       setGmailScanResult({ ok: false, error: "Scan failed. Check your connection." });
     } finally {
       setGmailScanning(false);
@@ -1058,85 +1026,29 @@ export default function SettingsScreen() {
             <Text style={[styles.muted, { color: theme.textQuaternary }]}>No bank accounts linked.</Text>
           ) : (
             <View style={styles.accountList}>
-              {/* Sort bar — only visible when list is expanded */}
-              {showAllAccounts && accounts.length > 1 ? (
-                <View style={[styles.sortBar, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
-                  <Text style={[styles.sortLabel, { color: theme.textTertiary }]}>Sort</Text>
-                  <View style={styles.sortChips}>
-                    {(["default", "name", "institution", "type"] as const).map((s) => {
-                      const active = accountSort === s;
-                      return (
-                        <TouchableOpacity
-                          key={s}
-                          onPress={() => setAccountSort(s)}
-                          activeOpacity={0.7}
-                          style={[styles.sortChip, { borderColor: active ? theme.primary : theme.border, backgroundColor: active ? theme.primaryLight : theme.surface }]}
-                        >
-                          <Text style={[styles.sortChipText, { color: active ? theme.primary : theme.textSecondary, fontFamily: active ? font.semibold : font.medium }]}>
-                            {s === "default" ? "Default" : s === "name" ? "Name" : s === "institution" ? "Bank" : "Type"}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+              {(showAllAccounts ? accounts : accounts.slice(0, ACCOUNTS_PREVIEW)).map((a) => (
+                <TouchableOpacity
+                  key={a.account_id}
+                  style={[styles.accountRow, { borderBottomColor: theme.borderLight }]}
+                  onPress={() => renameAccount(a)}
+                  activeOpacity={0.7}
+                >
+                  <MerchantLogo
+                    merchantName={a.institution_name ?? a.name}
+                    size={40}
+                    fallbackText={a.institution_name ?? a.name}
+                    style={styles.accountIcon}
+                  />
+                  <View style={styles.accountInfo}>
+                    <Text style={[styles.bankName, { color: theme.text }]} numberOfLines={2}>
+                      {stripEmoji(a.nickname ?? a.name)}
+                    </Text>
+                    <Text style={[styles.accountMask, { color: theme.textTertiary }]}>
+                      {(a.subtype ?? a.type ?? "Account").replace(/_/g, " ")} ••••{a.mask ?? "****"}
+                    </Text>
                   </View>
-                </View>
-              ) : null}
-
-              {/* Starred section header */}
-              {starredIds.size > 0 && showAllAccounts ? (
-                <View style={[styles.accountSectionHeader, { borderBottomColor: theme.borderLight }]}>
-                  <Ionicons name="star" size={11} color="#F5A623" />
-                  <Text style={[styles.accountSectionLabel, { color: theme.textTertiary }]}>Starred</Text>
-                </View>
-              ) : null}
-
-              {(showAllAccounts ? sortedAccounts : sortedAccounts.slice(0, ACCOUNTS_PREVIEW)).map((a, i, arr) => {
-                const isStarred = starredIds.has(a.id);
-                // Insert "Other" divider between starred and non-starred when expanded
-                const prevStarred = i > 0 && starredIds.has(arr[i - 1].id);
-                const showDivider = showAllAccounts && starredIds.size > 0 && !isStarred && prevStarred;
-                return (
-                  <View key={a.account_id}>
-                    {showDivider ? (
-                      <View style={[styles.accountSectionHeader, { borderBottomColor: theme.borderLight }]}>
-                        <Text style={[styles.accountSectionLabel, { color: theme.textTertiary }]}>Other accounts</Text>
-                      </View>
-                    ) : null}
-                    <TouchableOpacity
-                      style={[styles.accountRow, { borderBottomColor: theme.borderLight }]}
-                      onPress={() => renameAccount(a)}
-                      activeOpacity={0.7}
-                    >
-                      <MerchantLogo
-                        merchantName={a.institution_name ?? a.name}
-                        size={40}
-                        fallbackText={a.institution_name ?? a.name}
-                        style={styles.accountIcon}
-                      />
-                      <View style={styles.accountInfo}>
-                        <Text style={[styles.bankName, { color: theme.text }]} numberOfLines={2}>
-                          {stripEmoji(a.nickname ?? a.name)}
-                        </Text>
-                        <Text style={[styles.accountMask, { color: theme.textTertiary }]}>
-                          {(a.subtype ?? a.type ?? "Account").replace(/_/g, " ")} ••••{a.mask ?? "****"}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => toggleStar(a.id)}
-                        hitSlop={12}
-                        style={styles.starBtn}
-                        accessibilityLabel={isStarred ? "Unstar account" : "Star account"}
-                      >
-                        <Ionicons
-                          name={isStarred ? "star" : "star-outline"}
-                          size={18}
-                          color={isStarred ? "#F5A623" : theme.textTertiary}
-                        />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
+                </TouchableOpacity>
+              ))}
 
               {accounts.length > ACCOUNTS_PREVIEW ? (
                 <TouchableOpacity
@@ -1356,35 +1268,6 @@ export default function SettingsScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
-              {gmailStatus.lastScanAt ? (
-                <TouchableOpacity
-                  style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
-                  onPress={() => scanGmail(90)}
-                  disabled={gmailScanning || gmailDisconnecting}
-                >
-                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
-                    Scan last 90 days
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
-                onPress={rematchReceipts}
-                disabled={rematching || gmailScanning}
-              >
-                {rematching ? (
-                  <ActivityIndicator size="small" color={theme.textSecondary} />
-                ) : (
-                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary }]}>
-                    Re-match receipts to transactions
-                  </Text>
-                )}
-              </TouchableOpacity>
-              {rematchResult ? (
-                <Text style={[styles.muted, { color: theme.textTertiary, fontSize: 12, textAlign: "center" }]}>
-                  {rematchResult}
-                </Text>
-              ) : null}
               <TouchableOpacity
                 style={styles.linkRow}
                 onPress={() => router.push("/(tabs)/email-receipts")}
@@ -1407,21 +1290,69 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.signOutButton,
-            { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
-          ]}
-          onPress={handleClearAll}
-          disabled={clearingAll}
-          activeOpacity={0.85}
-        >
-          {clearingAll ? (
-            <ActivityIndicator size="small" color={theme.error} />
-          ) : (
-            <Text style={[styles.signOutText, { color: theme.error }]}>Clear all data</Text>
-          )}
-        </TouchableOpacity>
+        {/* Collapsible Developer Tools */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+          <TouchableOpacity
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+            onPress={() => setDevToolsOpen((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="construct-outline" size={18} color={theme.textSecondary} />
+              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Developer Tools</Text>
+            </View>
+            <Ionicons name={devToolsOpen ? "chevron-up" : "chevron-down"} size={18} color={theme.textTertiary} />
+          </TouchableOpacity>
+
+          {devToolsOpen ? (
+            <View style={{ gap: 10, marginTop: 14 }}>
+              {gmailStatus?.connected && gmailStatus.lastScanAt ? (
+                <TouchableOpacity
+                  style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                  onPress={() => scanGmail(90)}
+                  disabled={gmailScanning || gmailDisconnecting}
+                >
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+                    Scan last 90 days
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={rematchReceipts}
+                disabled={rematching || gmailScanning}
+              >
+                {rematching ? (
+                  <ActivityIndicator size="small" color={theme.textSecondary} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+                    Re-match receipts to transactions
+                  </Text>
+                )}
+              </TouchableOpacity>
+              {rematchResult ? (
+                <Text style={[styles.muted, { color: theme.textTertiary, fontSize: 12, textAlign: "center" }]}>
+                  {rematchResult}
+                </Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
+                onPress={handleClearAll}
+                disabled={clearingAll}
+              >
+                {clearingAll ? (
+                  <ActivityIndicator size="small" color={theme.error} />
+                ) : (
+                  <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error, fontSize: 14 }]}>
+                    Clear all data
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
 
         <TouchableOpacity
           style={[
@@ -1478,37 +1409,6 @@ const styles = StyleSheet.create({
   linkInline: { fontSize: 15, fontFamily: font.medium },
   linkCenter: { fontSize: 15, fontFamily: font.medium, textAlign: "center" },
   accountList: { marginTop: 4 },
-  sortBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  sortLabel: { fontSize: 12, fontFamily: font.medium },
-  sortChips: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  sortChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  sortChipText: { fontSize: 12 },
-  accountSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingTop: 10,
-    paddingBottom: 6,
-    paddingHorizontal: 2,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 2,
-  },
-  accountSectionLabel: { fontSize: 11, fontFamily: font.semibold, textTransform: "uppercase", letterSpacing: 0.6 },
-  starBtn: { padding: 6, marginLeft: 4 },
   showAllRow: {
     flexDirection: "row",
     alignItems: "center",
