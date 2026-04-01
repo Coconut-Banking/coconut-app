@@ -9,7 +9,7 @@ const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-lemon.vercel.app";
 
 if (!publishableKey) {
-  console.warn("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY not set — auth will fail");
+  throw new Error("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY not set — auth will fail");
 }
 
 function TerminalTokenProvider({ children }: { children: React.ReactElement | React.ReactElement[] }) {
@@ -22,10 +22,11 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
       if (token) break;
       if (i < 3) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
     }
+    if (!token) throw new Error("Not authenticated — cannot fetch Terminal connection token");
     const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/stripe/terminal/connection-token`, {
       method: "POST",
       headers: {
-        Authorization: token ? `Bearer ${token}` : "",
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
@@ -91,6 +92,7 @@ function AuthSwitch() {
     return (
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="connected" options={{ headerShown: false }} />
       </Stack>
     );
   }
@@ -107,8 +109,8 @@ function AuthSwitch() {
 export default function RootLayout() {
   return (
     <ClerkProvider
-      publishableKey={publishableKey ?? ""}
-      tokenCache={SKIP_AUTH || FORCE_SIGN_OUT_ON_LAUNCH ? undefined : tokenCache}
+      publishableKey={publishableKey}
+      tokenCache={SKIP_AUTH ? undefined : tokenCache}
     >
       <StatusBar style="auto" />
       <AuthSwitch />
