@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
+import * as SecureStore from "expo-secure-store";
 import { AuthHandoffHandler } from "../components/AuthHandoffHandler";
 import { ThemeProvider, useTheme } from "../lib/theme-context";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ToastProvider } from "../components/Toast";
 import { DemoModeProvider, useDemoMode } from "../lib/demo-mode-context";
 import { DemoProvider } from "../lib/demo-context";
+import { SetupProvider, useSetup } from "../lib/setup-context";
+import { BiometricLockProvider, useBiometricLock } from "../lib/biometric-lock-context";
+import { BiometricLockScreen } from "../components/BiometricLockScreen";
+import { BiometricEnablePrompt } from "../components/BiometricEnablePrompt";
 import {
   useFonts,
   Inter_400Regular,
@@ -42,6 +47,7 @@ function AuthSwitch() {
   const { isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
   const { isDemoOn, demoModeHydrated } = useDemoMode();
+  const { setupComplete, setupHydrated } = useSetup();
   const hasClearedSession = useRef(false);
   const instance = useMemo(() => {
     if (!publishableKey) return "missing";
@@ -53,8 +59,8 @@ function AuthSwitch() {
   useEffect(() => {
     if (SKIP_AUTH) return;
     const showAuth = !isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn);
-    console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : "TABS"}`);
-  }, [isLoaded, isSignedIn, instance]);
+    console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} setup=${setupComplete} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : setupComplete || isDemoOn ? "TABS" : "SETUP"}`);
+  }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
 
   useEffect(() => {
     if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || !isSignedIn || hasClearedSession.current) return;
@@ -68,6 +74,7 @@ function AuthSwitch() {
   if (SKIP_AUTH) {
     return (
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="setup" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
@@ -87,13 +94,68 @@ function AuthSwitch() {
       </Stack>
     );
   }
+
+  if (!setupHydrated) return null;
+
+  // Demo mode skips setup, real users must complete it first
+  const needsSetup = !isDemoOn && !setupComplete;
+
   return (
-    <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="connected" options={{ headerShown: false }} />
-      <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
-    </Stack>
+    <BiometricLockProvider isSignedIn>
+      <BiometricLockGate />
+      {!needsSetup && <BiometricFirstTimePrompt />}
+      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
+        {needsSetup ? (
+          <Stack.Screen name="setup" options={{ headerShown: false }} />
+        ) : (
+          <>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="connected" options={{ headerShown: false }} />
+            <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
+          </>
+        )}
+      </Stack>
+    </BiometricLockProvider>
   );
+}
+
+function BiometricLockGate() {
+  const { isLocked, enabled, hydrated } = useBiometricLock();
+  if (!hydrated || !enabled || !isLocked) return null;
+  return <BiometricLockScreen />;
+}
+
+const BIOMETRIC_PROMPT_SHOWN_KEY = "coconut.biometric_prompt_shown_v1";
+
+function BiometricFirstTimePrompt() {
+  const { biometricAvailable, enabled, hydrated } = useBiometricLock();
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    if (!hydrated || !biometricAvailable || enabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const shown = await SecureStore.getItemAsync(BIOMETRIC_PROMPT_SHOWN_KEY);
+        if (cancelled || shown === "true") return;
+        // Short delay so the home screen loads first
+        setTimeout(() => {
+          if (!cancelled) setShowPrompt(true);
+        }, 1200);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hydrated, biometricAvailable, enabled]);
+
+  const handleDismiss = () => {
+    setShowPrompt(false);
+    void SecureStore.setItemAsync(BIOMETRIC_PROMPT_SHOWN_KEY, "true");
+  };
+
+  if (!showPrompt) return null;
+  return <BiometricEnablePrompt visible onDismiss={handleDismiss} />;
 }
 
 export default function RootLayout() {
@@ -137,13 +199,15 @@ export default function RootLayout() {
       >
         <DemoModeProvider>
           <DemoProvider>
-            <ErrorBoundary>
-              <ToastProvider>
-                <StatusBarFromTheme />
-                <AuthHandoffHandler />
-                <AuthSwitch />
-              </ToastProvider>
-            </ErrorBoundary>
+            <SetupProvider>
+              <ErrorBoundary>
+                <ToastProvider>
+                  <StatusBarFromTheme />
+                  <AuthHandoffHandler />
+                  <AuthSwitch />
+                </ToastProvider>
+              </ErrorBoundary>
+            </SetupProvider>
           </DemoProvider>
         </DemoModeProvider>
       </ClerkProvider>

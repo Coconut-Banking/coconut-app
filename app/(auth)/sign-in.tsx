@@ -90,7 +90,6 @@ export default function SignInScreen() {
           "Google OAuth setActive"
         );
         setIsDemoOn(false);
-        router.replace("/(tabs)");
         return;
       }
       setError("Google sign-in did not complete. Try again.");
@@ -100,7 +99,6 @@ export default function SignInScreen() {
       const msg = getClerkErrorMessage(e, "Google sign-in failed");
       if (msg.toLowerCase().includes("already signed in")) {
         setIsDemoOn(false);
-        router.replace("/(tabs)");
         return;
       }
       if (__DEV__) console.warn("[GoogleSignIn]", msg);
@@ -141,7 +139,6 @@ export default function SignInScreen() {
       const msg = getClerkErrorMessage(e, "Sign in failed");
       if (msg.toLowerCase().includes("already signed in")) {
         setIsDemoOn(false);
-        router.replace("/(tabs)");
         return;
       }
       setError(msg);

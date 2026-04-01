@@ -13,6 +13,8 @@ import {
   Platform,
   AppState,
   InteractionManager,
+  Modal,
+  Pressable,
   type AppStateStatus,
 } from "react-native";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
@@ -28,8 +30,13 @@ import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../lib/theme-context";
 import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
+import { useSetup } from "../../lib/setup-context";
 import { colors, font, shadow, radii } from "../../lib/theme";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
+import { sendSmsInvite, sendEmailInvite, shareInvite } from "../../lib/invite";
+import { useBiometricLock } from "../../lib/biometric-lock-context";
+import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
+import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -53,11 +60,15 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { theme, mode, setMode } = useTheme();
   const { setIsDemoOn } = useDemoMode();
+  const { resetSetup } = useSetup();
   const { user } = useUser();
   const { sessionId } = useAuth();
   const { signOut } = useClerk();
   const apiFetch = useApiFetch();
   const { linked } = usePlaidLinked();
+  const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess, loading: contactsLoading } = useDeviceContacts();
+  const { biometricAvailable, biometricType, enabled: biometricEnabled, setEnabled: setBiometricEnabled } = useBiometricLock();
+  const biometricLabel = getBiometricLabel(biometricType);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
@@ -123,6 +134,12 @@ export default function SettingsScreen() {
     };
     error?: string;
   } | null>(null);
+
+  type UninvitedMember = { displayName: string; email: string | null; groupName: string };
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [uninvitedMembers, setUninvitedMembers] = useState<UninvitedMember[]>([]);
+  const [selectedInvites, setSelectedInvites] = useState<Set<number>>(new Set());
+  const [sendingInvites, setSendingInvites] = useState(false);
 
   const splitwiseAutoImportStarted = useRef(false);
   const splitwiseStatusRef = useRef(splitwiseStatus);
@@ -691,6 +708,14 @@ export default function SettingsScreen() {
       }
       setSplitwiseResult(data as typeof splitwiseResult);
       DeviceEventEmitter.emit("groups-updated");
+
+      // Show invite modal if there are uninvited members
+      const members = (data as { uninvitedMembers?: UninvitedMember[] }).uninvitedMembers;
+      if (members && members.length > 0) {
+        setUninvitedMembers(members);
+        setSelectedInvites(new Set(members.map((_, i) => i)));
+        setTimeout(() => setShowInviteModal(true), 500);
+      }
     } catch (e) {
       if (__DEV__) console.warn("[splitwise] import exception", e);
       setSplitwiseResult({
@@ -870,6 +895,44 @@ export default function SettingsScreen() {
   const base = API_URL.replace(/\/$/, "");
   const connectUrl = `${base}/connect?from_app=1`;
 
+  const toggleInvite = (idx: number) => {
+    setSelectedInvites((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleAllInvites = () => {
+    if (selectedInvites.size === uninvitedMembers.length) {
+      setSelectedInvites(new Set());
+    } else {
+      setSelectedInvites(new Set(uninvitedMembers.map((_, i) => i)));
+    }
+  };
+
+  const handleSendInvites = async () => {
+    if (selectedInvites.size === 0) return;
+    setSendingInvites(true);
+    const senderName = user?.fullName || user?.username || undefined;
+    const selected = uninvitedMembers.filter((_, i) => selectedInvites.has(i));
+    const emails = selected.filter((m) => m.email).map((m) => m.email!);
+
+    try {
+      if (emails.length > 0) {
+        await sendEmailInvite(emails, senderName);
+      } else {
+        await shareInvite(senderName);
+      }
+    } catch {
+      Alert.alert("Error", "Could not send invites. Try again.");
+    } finally {
+      setSendingInvites(false);
+      setShowInviteModal(false);
+    }
+  };
+
   const appearanceOptions: { value: ThemeMode; label: string }[] = [
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
@@ -923,7 +986,95 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+
+          {biometricAvailable ? (
+            <View style={styles.biometricRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginBottom: 0 }]}>
+                  App lock
+                </Text>
+                <Text style={{ fontSize: 13, fontFamily: font.regular, color: theme.textTertiary, marginTop: 2 }}>
+                  Require {biometricLabel} to open Coconut
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.biometricToggle,
+                  {
+                    backgroundColor: biometricEnabled ? theme.primary : theme.surfaceSecondary,
+                    borderColor: biometricEnabled ? theme.primary : theme.border,
+                  },
+                ]}
+                onPress={async () => {
+                  if (biometricEnabled) {
+                    setBiometricEnabled(false);
+                  } else {
+                    const result = await authenticate(`Verify ${biometricLabel} to enable`);
+                    if (result.success) setBiometricEnabled(true);
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.biometricToggleThumb,
+                    biometricEnabled ? styles.biometricToggleThumbOn : styles.biometricToggleThumbOff,
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
+
+        {/* Contacts */}
+        {Platform.OS !== "web" ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <Ionicons name="people-circle-outline" size={24} color={theme.primary} />
+              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Contacts</Text>
+            </View>
+            <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
+              Connect your contacts to quickly find friends when splitting expenses.
+            </Text>
+
+            {contactsPerm === "granted" ? (
+              <View style={[styles.resultBox, { backgroundColor: "#EEF7F2", borderColor: "#C3E0D3" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
+                  <Text style={[styles.resultTitle, { color: theme.text }]}>Contacts connected</Text>
+                </View>
+                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                  {contactsLoading ? "Loading..." : `${deviceContacts.length} contacts available when adding expenses`}
+                </Text>
+              </View>
+            ) : contactsPerm === "denied" ? (
+              <View style={{ gap: 8, marginTop: 4 }}>
+                <View style={[styles.resultBox, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="lock-closed-outline" size={18} color="#F59E0B" />
+                    <Text style={[styles.resultTitle, { color: theme.text }]}>Access denied</Text>
+                  </View>
+                  <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
+                    Open Settings to allow Coconut to access your contacts.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => Linking.openSettings()}
+                >
+                  <Text style={styles.primaryBtnText}>Open Settings</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 4 }]}
+                onPress={requestContactsAccess}
+              >
+                <Text style={styles.primaryBtnText}>Connect contacts</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
 
         {/* Tap to Pay on iPhone (Apple checklist 3.6 + 4.3) */}
         {Platform.OS !== "web" ? (
@@ -1350,6 +1501,18 @@ export default function SettingsScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={() => {
+                  resetSetup();
+                  Alert.alert("Setup reset", "You'll see the onboarding flow next time you sign in.");
+                }}
+              >
+                <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+                  Reset onboarding setup
+                </Text>
+              </TouchableOpacity>
             </View>
           ) : null}
         </View>
@@ -1372,6 +1535,93 @@ export default function SettingsScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Invite modal after Splitwise import */}
+      <Modal visible={showInviteModal} transparent animationType="slide" onRequestClose={() => setShowInviteModal(false)}>
+        <Pressable style={styles.inviteOverlay} onPress={() => setShowInviteModal(false)}>
+          <Pressable style={[styles.inviteSheet, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.inviteHandle} />
+
+            <Text style={[styles.inviteTitle, { color: theme.text }]}>
+              Invite friends to Coconut
+            </Text>
+            <Text style={[styles.inviteSubtitle, { color: theme.textTertiary }]}>
+              {uninvitedMembers.length} {uninvitedMembers.length === 1 ? "person" : "people"} from
+              your Splitwise groups {uninvitedMembers.length === 1 ? "isn't" : "aren't"} on Coconut
+              yet. Invite them so they can see shared expenses too.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.inviteSelectAll}
+              onPress={toggleAllInvites}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={selectedInvites.size === uninvitedMembers.length ? "checkbox" : "square-outline"}
+                size={22}
+                color={selectedInvites.size === uninvitedMembers.length ? theme.primary : theme.textTertiary}
+              />
+              <Text style={[styles.inviteSelectAllTxt, { color: theme.text }]}>
+                {selectedInvites.size === uninvitedMembers.length ? "Deselect all" : "Select all"}
+              </Text>
+            </TouchableOpacity>
+
+            <ScrollView style={styles.inviteList} showsVerticalScrollIndicator={false}>
+              {uninvitedMembers.map((m, i) => {
+                const checked = selectedInvites.has(i);
+                return (
+                  <TouchableOpacity
+                    key={`${m.email ?? m.displayName}-${i}`}
+                    style={[styles.inviteRow, { borderBottomColor: theme.borderLight }]}
+                    onPress={() => toggleInvite(i)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={checked ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={checked ? theme.primary : theme.textTertiary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.inviteName, { color: theme.text }]}>{m.displayName}</Text>
+                      <Text style={[styles.inviteMeta, { color: theme.textQuaternary }]}>
+                        {m.email ?? "No email"} · {m.groupName}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.inviteActions}>
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  { backgroundColor: theme.primary, flex: 1 },
+                  (selectedInvites.size === 0 || sendingInvites) && styles.disabled,
+                ]}
+                onPress={handleSendInvites}
+                disabled={selectedInvites.size === 0 || sendingInvites}
+              >
+                {sendingInvites ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>
+                    Invite {selectedInvites.size > 0 ? `${selectedInvites.size} ` : ""}
+                    {selectedInvites.size === 1 ? "person" : "people"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.inviteSkip}
+              onPress={() => setShowInviteModal(false)}
+            >
+              <Text style={[styles.inviteSkipTxt, { color: theme.textTertiary }]}>Skip for now</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1471,4 +1721,112 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   signOutText: { fontSize: 16, fontFamily: font.semibold },
+
+  // Invite modal
+  inviteOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  inviteSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
+    maxHeight: "85%",
+  },
+  inviteHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#D1D5DB",
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  inviteTitle: {
+    fontSize: 20,
+    fontFamily: font.bold,
+    marginBottom: 8,
+  },
+  inviteSubtitle: {
+    fontSize: 14,
+    fontFamily: font.regular,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  inviteSelectAll: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  inviteSelectAllTxt: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+  },
+  inviteList: {
+    maxHeight: 320,
+    marginBottom: 16,
+  },
+  inviteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inviteName: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+  },
+  inviteMeta: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    marginTop: 2,
+  },
+  inviteActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  inviteSkip: {
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  inviteSkipTxt: {
+    fontSize: 15,
+    fontFamily: font.medium,
+  },
+
+  // Biometric lock toggle
+  biometricRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#E5E7EB",
+  },
+  biometricToggle: {
+    width: 52,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  biometricToggleThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#fff",
+  },
+  biometricToggleThumbOn: {
+    alignSelf: "flex-end",
+  },
+  biometricToggleThumbOff: {
+    alignSelf: "flex-start",
+  },
 });

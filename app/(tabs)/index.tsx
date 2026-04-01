@@ -3,6 +3,7 @@
  * No legacy transaction list / NL search / insights on this screen.
  */
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
@@ -53,6 +54,7 @@ import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 import { sfx } from "../../lib/sounds";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
+import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
 function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
@@ -197,6 +199,28 @@ export default function BalancesPrototypeScreen() {
   } | null>(null);
   const [itemizedLoading, setItemizedLoading] = useState(false);
   const [itemizedError, setItemizedError] = useState<string | null>(null);
+
+  // Contacts banner (one-time dismissable)
+  const { permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
+  const [contactsBannerDismissed, setContactsBannerDismissed] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem("coconut.contacts.banner.dismissed").then((v) => {
+      if (v !== "true") setContactsBannerDismissed(false);
+    });
+  }, []);
+  const dismissContactsBanner = useCallback(() => {
+    setContactsBannerDismissed(true);
+    AsyncStorage.setItem("coconut.contacts.banner.dismissed", "true");
+  }, []);
+  const handleConnectContacts = useCallback(async () => {
+    const granted = await requestContactsAccess();
+    if (granted) dismissContactsBanner();
+  }, [requestContactsAccess, dismissContactsBanner]);
+  const showContactsBanner =
+    !contactsBannerDismissed &&
+    contactsPerm !== "granted" &&
+    isSignedIn &&
+    !isDemoOn;
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
@@ -415,6 +439,32 @@ export default function BalancesPrototypeScreen() {
         </View>
 
         <BalanceHero summary={summary} />
+
+        {showContactsBanner ? (
+          <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
+              <View style={[styles.contactsIconWrap, { backgroundColor: "#EEF7F2" }]}>
+                <Ionicons name="people-circle" size={24} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contactsBannerTitle, { color: theme.text }]}>Connect your contacts</Text>
+                <Text style={[styles.contactsBannerSub, { color: theme.textTertiary }]}>
+                  Quickly find friends when splitting expenses
+                </Text>
+              </View>
+              <TouchableOpacity onPress={dismissContactsBanner} hitSlop={10} style={{ padding: 4 }}>
+                <Ionicons name="close" size={18} color={theme.textTertiary} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.contactsBannerBtn, { backgroundColor: colors.primary }]}
+              onPress={handleConnectContacts}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.contactsBannerBtnTxt}>Allow access</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {useDemoBankUi && stripRows.length > 0 ? (
           <View style={{ marginBottom: 18 }}>
@@ -1720,6 +1770,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: font.medium,
     color: "#7A8088",
+  },
+  contactsBanner: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 18,
+    gap: 12,
+  },
+  contactsIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactsBannerTitle: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+  },
+  contactsBannerSub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    marginTop: 2,
+  },
+  contactsBannerBtn: {
+    borderRadius: radii.md,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  contactsBannerBtnTxt: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: font.semibold,
   },
 });
 

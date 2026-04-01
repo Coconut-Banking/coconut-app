@@ -56,6 +56,10 @@ export default {
       buildNumber: "2",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSContactsUsageDescription:
+          "Coconut uses your contacts to help you quickly add friends to split expenses with.",
+        NSFaceIDUsageDescription:
+          "Coconut uses Face ID to securely unlock the app and protect your financial data.",
       },
       ...(ENABLE_TAP_TO_PAY_IOS
         ? {
@@ -73,7 +77,7 @@ export default {
       },
       package: bundleId,
       minSdkVersion: 26,
-      permissions: ["INTERNET"],
+      permissions: ["INTERNET", "READ_CONTACTS"],
     },
     plugins: [
       "expo-router",
@@ -85,6 +89,13 @@ export default {
           tapToPayCheck: ENABLE_TAP_TO_PAY_IOS,
           locationWhenInUsePermission:
             "Location access is required to accept payments.",
+        },
+      ],
+      [
+        "expo-contacts",
+        {
+          contactsPermission:
+            "Coconut uses your contacts to help you quickly add friends to split expenses with.",
         },
       ],
       ["expo-build-properties", { android: { minSdkVersion: 26 } }],
