@@ -63,6 +63,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const [itemsWithExtras, setItemsWithExtras] = useState<ReceiptItemWithExtras[]>([]);
   const [personShares, setPersonShares] = useState<PersonShare[]>([]);
   const [saving, setSaving] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const uploadReceipt = useCallback(
     async (
@@ -89,9 +90,11 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: formData,
         });
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error((errorData as { error?: string }).error ?? `Upload failed (${res.status})`);
+        }
         const data = await res.json();
-
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -188,8 +191,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        setConfirmError(e instanceof Error ? e.message : "Failed to save items. Please try again.");
       } finally {
         setSaving(false);
       }
@@ -374,6 +377,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     editMerchant,
     setEditMerchant,
     confirmItems,
+    confirmError,
+    setConfirmError,
     people,
     addPerson,
     removePerson,
