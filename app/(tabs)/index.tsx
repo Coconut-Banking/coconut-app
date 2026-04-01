@@ -18,6 +18,7 @@ import {
   DeviceEventEmitter,
   AppState,
   Image,
+  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -268,8 +269,8 @@ export default function BalancesPrototypeScreen() {
     return bankVisibleTransactions
       .filter((tx) => Number(tx.amount) < 0)
       .sort((a, b) => {
-        const da = new Date(a.dateStr || a.date || "").getTime();
-        const db = new Date(b.dateStr || b.date || "").getTime();
+        const da = new Date(a.date || "").getTime();
+        const db = new Date(b.date || "").getTime();
         return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
       })
       .slice(0, 120);
@@ -293,8 +294,14 @@ export default function BalancesPrototypeScreen() {
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
       if (dateFilterRange) {
-        const txDate = new Date(tx.dateStr || tx.date || "");
-        if (!Number.isNaN(txDate.getTime()) && (txDate < dateFilterRange.start || txDate > dateFilterRange.end)) return false;
+        // Use tx.date (ISO "2026-03-31") — tx.dateStr is a human label ("Mar 31") that new Date() can't parse
+        const txDate = new Date(tx.date || "");
+        if (!Number.isNaN(txDate.getTime())) {
+          const txDay = new Date(txDate.getFullYear(), txDate.getMonth(), txDate.getDate());
+          const startDay = new Date(dateFilterRange.start.getFullYear(), dateFilterRange.start.getMonth(), dateFilterRange.start.getDate());
+          const endDay = new Date(dateFilterRange.end.getFullYear(), dateFilterRange.end.getMonth(), dateFilterRange.end.getDate());
+          if (txDay < startDay || txDay > endDay) return false;
+        }
       }
       if (!q) return true;
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
@@ -345,6 +352,23 @@ export default function BalancesPrototypeScreen() {
     setShowAllBank(false);
     setSelectedStrip(null);
   }, [isDemoOn, linked]);
+
+  /**
+   * Transitive date filter: when the AI parses a date range from the query
+   * (e.g. "last two weeks"), reflect it in the date chips so keyword search
+   * also respects that window. Only applies if the user hasn't manually set a filter.
+   */
+  useEffect(() => {
+    if (!askResults?.applied_filters) return;
+    const { date_start, date_end } = askResults.applied_filters;
+    if (!date_start || !date_end) return;
+    if (datePreset !== "all") return; // user already has a manual filter, don't override
+    setDatePreset("custom");
+    setCustomDateStart(new Date(date_start + "T12:00:00"));
+    setCustomDateEnd(new Date(date_end + "T12:00:00"));
+    setShowCalendar(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askResults]);
 
   const friends = summary?.friends ?? [];
   const groups = summary?.groups ?? [];
@@ -996,7 +1020,11 @@ export default function BalancesPrototypeScreen() {
         </Pressable>
       </Modal>
       <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
-        <Pressable style={styles.sheetOverlay} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+        <KeyboardAvoidingView
+          style={styles.sheetOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} />
           <Pressable style={[styles.sheet, { maxHeight: "92%" }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
             <View style={styles.allBankHead}>
@@ -1011,7 +1039,15 @@ export default function BalancesPrototypeScreen() {
               {([["keyword", "Search", "search"] as const, ["natural", "Ask", "sparkles"] as const]).map(([mode, label, icon]) => (
                 <TouchableOpacity
                   key={mode}
-                  onPress={() => { setSearchMode(mode); setBankSearch(""); askClear(); }}
+                  onPress={() => {
+                    setSearchMode(mode);
+                    setBankSearch("");
+                    askClear();
+                    setDatePreset("all");
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
+                    setShowCalendar(false);
+                  }}
                   style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
                 >
                   <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : darkUI.labelMuted} />
@@ -1062,19 +1098,33 @@ export default function BalancesPrototypeScreen() {
 
             {/* Date filter presets */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
-              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["custom", "Custom"]] as const).map(([preset, label]) => (
+              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"]] as const).map(([preset, label]) => (
                 <TouchableOpacity
                   key={preset}
                   onPress={() => {
                     setDatePreset(preset);
-                    if (preset === "custom") setShowCalendar(true);
-                    else { setShowCalendar(false); setCustomDateStart(null); setCustomDateEnd(null); }
+                    setShowCalendar(false);
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
                   }}
                   style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
                 >
                   <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                onPress={() => {
+                  setDatePreset("custom");
+                  setShowCalendar(true);
+                }}
+                style={[searchStyles.dateChip, datePreset === "custom" && searchStyles.dateChipActive]}
+              >
+                <Text style={[searchStyles.dateChipText, datePreset === "custom" && searchStyles.dateChipTextActive]}>
+                  {datePreset === "custom" && customDateStart && customDateEnd
+                    ? `${customDateStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customDateEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                    : "Custom"}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
 
             {/* Calendar picker for Custom */}
@@ -1085,13 +1135,24 @@ export default function BalancesPrototypeScreen() {
                   endDate={customDateEnd}
                   onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
                 />
+                <TouchableOpacity
+                  style={[searchStyles.applyBtn, (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled]}
+                  onPress={() => {
+                    if (customDateStart && customDateEnd) setShowCalendar(false);
+                  }}
+                  disabled={!customDateStart || !customDateEnd}
+                >
+                  <Text style={searchStyles.applyBtnText}>
+                    {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : null}
 
             {/* Ask mode: AI answer banner */}
             {searchMode === "natural" && askResults?.answer && !askLoading ? (
               <View style={searchStyles.answerBanner}>
-                <Ionicons name="sparkles" size={14} color="#A78BFA" />
+                <Ionicons name="sparkles" size={18} color="#A78BFA" />
                 <Text style={searchStyles.answerText}>{askResults.answer}</Text>
               </View>
             ) : null}
@@ -1111,7 +1172,7 @@ export default function BalancesPrototypeScreen() {
               </View>
             ) : null}
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {searchMode === "keyword" ? (
                 filteredAllBankRows.length === 0 ? (
                   <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -1220,7 +1281,7 @@ export default function BalancesPrototypeScreen() {
               <Text style={styles.sheetCloseText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1701,21 +1762,22 @@ const searchStyles = StyleSheet.create({
   answerBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8,
+    gap: 10,
     marginHorizontal: 16,
     marginBottom: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: "#A78BFA18",
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "#1E1040",
     borderWidth: 1,
-    borderColor: "#A78BFA30",
+    borderColor: "#7C3AED40",
   },
   answerText: {
     flex: 1,
-    fontSize: 13,
-    fontFamily: font.medium,
-    color: "#e0d4fc",
-    lineHeight: 19,
+    fontSize: 15,
+    fontFamily: font.semibold,
+    color: "#fff",
+    lineHeight: 22,
+    letterSpacing: -0.1,
   },
   loadingText: {
     fontSize: 13,
@@ -1730,6 +1792,21 @@ const searchStyles = StyleSheet.create({
     paddingBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  applyBtn: {
+    marginTop: 10,
+    backgroundColor: "#3D8E62",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyBtnDisabled: {
+    backgroundColor: "#3d4043",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#fff",
   },
 });
 
