@@ -9,14 +9,25 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  ScrollView,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSignIn } from "@clerk/expo";
+import { Ionicons } from "@expo/vector-icons";
+import { useSignIn } from "@clerk/expo/legacy";
+import { useSSO } from "@clerk/expo";
 import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
+import { useTheme } from "../../lib/theme-context";
+import { useDemoMode } from "../../lib/demo-mode-context";
+import { clerkRejectedGoogleOneTap } from "../../lib/clerk-google";
+import { colors, font, fontSize, shadow, radii } from "../../lib/theme";
+import { CoconutMark } from "../../components/brand/CoconutMark";
 
 const SIGN_IN_TIMEOUT_MS = 20000;
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-lemon.vercel.app";
+/** Browser OAuth can take longer than native Google. */
+const GOOGLE_OAUTH_FALLBACK_TIMEOUT_MS = 120000;
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -39,45 +50,59 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 }
 
 export default function SignInScreen() {
-  const { isLoaded, signIn, setActive } = useSignIn();
+  const { theme } = useTheme();
+  const { setIsDemoOn } = useDemoMode();
+  // Clerk v3 types changed but runtime still provides these properties
+  const { isLoaded, signIn, setActive } = useSignIn() as unknown as {
+    isLoaded: boolean;
+    signIn: { create: (params: { identifier: string; password: string }) => Promise<{ createdSessionId?: string }> } | undefined;
+    setActive: ((opts: { session: string }) => Promise<void>) | undefined;
+  };
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
+  const { startSSOFlow } = useSSO();
   const [email, setEmail] = useState("");
-
-  useEffect(() => {
-    console.log("[SignInScreen] mounted isLoaded=", isLoaded);
-  }, [isLoaded]);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [clerkStuckHint, setClerkStuckHint] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded) return;
+    const t = setTimeout(() => setClerkStuckHint(true), 8000);
+    return () => clearTimeout(t);
+  }, [isLoaded]);
 
   const handleGoogleSignIn = async () => {
     if (Platform.OS !== "ios" && Platform.OS !== "android") return;
     setError("");
     setGoogleLoading(true);
-    console.log("[auth-mobile] google_sign_in_start");
     try {
-      const { createdSessionId, setActive } = await withTimeout(
-        startGoogleAuthenticationFlow(),
-        SIGN_IN_TIMEOUT_MS,
-        "Google auth flow"
+      const result = await withTimeout(
+        startSSOFlow({ strategy: "oauth_google" }),
+        GOOGLE_OAUTH_FALLBACK_TIMEOUT_MS,
+        "Google OAuth (browser)"
       );
-      if (createdSessionId && setActive) {
+      if (result.createdSessionId && result.setActive) {
         await withTimeout(
-          setActive({ session: createdSessionId }),
+          result.setActive({ session: result.createdSessionId }),
           SIGN_IN_TIMEOUT_MS,
-          "Google setActive"
+          "Google OAuth setActive"
         );
-        console.log("[auth-mobile] google_sign_in_success");
-      } else {
-        console.warn("[auth-mobile] google_sign_in_missing_session");
-        setError("Google sign-in returned no session. Please try again.");
+        setIsDemoOn(false);
+        return;
       }
+      setError("Google sign-in did not complete. Try again.");
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
       if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
-      console.error("[auth-mobile] google_sign_in_error", e);
-      setError(getClerkErrorMessage(e, "Google sign-in failed"));
+      const msg = getClerkErrorMessage(e, "Google sign-in failed");
+      if (msg.toLowerCase().includes("already signed in")) {
+        setIsDemoOn(false);
+        return;
+      }
+      if (__DEV__) console.warn("[GoogleSignIn]", msg);
+      setError(msg);
     } finally {
       setGoogleLoading(false);
     }
@@ -94,7 +119,6 @@ export default function SignInScreen() {
     }
     setError("");
     setLoading(true);
-    console.log("[auth-mobile] password_sign_in_start");
     try {
       const res = await withTimeout(
         signIn.create({ identifier: email.trim(), password } as { identifier: string; password: string }),
@@ -108,195 +132,339 @@ export default function SignInScreen() {
           SIGN_IN_TIMEOUT_MS,
           "Password setActive"
         );
-        console.log("[auth-mobile] password_sign_in_success");
       } else {
-        console.warn("[auth-mobile] password_sign_in_missing_session");
         setError("Sign-in did not create a session. Please try again.");
       }
     } catch (e: unknown) {
-      console.error("[auth-mobile] password_sign_in_error", e);
-      setError(getClerkErrorMessage(e, "Sign in failed"));
+      const msg = getClerkErrorMessage(e, "Sign in failed");
+      if (msg.toLowerCase().includes("already signed in")) {
+        setIsDemoOn(false);
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const webLoginUrl = `${API_URL.replace(/\/$/, "")}/login`;
+  const webLoginUrl = `${API_URL.replace(/\/$/, "")}/login?redirect_url=${encodeURIComponent(`${API_URL.replace(/\/$/, "")}/auth/return-to-app`)}`;
   const formDisabled = !isLoaded;
+  const canAttemptSignIn = email.trim().length > 0 && password.length > 0;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F7FAF8" }} edges={["top", "bottom"]}>
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <Text style={styles.title}>Coconut</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>
-
-      {/* Always-available escape: Clerk SignIn can stay loading indefinitely on some devices */}
-      <TouchableOpacity
-        onPress={() => Linking.openURL(webLoginUrl)}
-        style={{
-          backgroundColor: "#3D8E62",
-          paddingVertical: 14,
-          paddingHorizontal: 24,
-          borderRadius: 12,
-          marginBottom: 20,
-        }}
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" }}>
-          Open login in browser
-        </Text>
-      </TouchableOpacity>
-      <Text style={{ color: "#9CA3AF", fontSize: 12, textAlign: "center", marginBottom: 16 }}>
-        Or sign in below
-      </Text>
-
-      {(Platform.OS === "ios" || Platform.OS === "android") && (
-        <>
-          <TouchableOpacity
-            style={[styles.googleButton, (googleLoading || formDisabled) && styles.buttonDisabled]}
-            onPress={handleGoogleSignIn}
-            disabled={googleLoading || formDisabled}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            )}
-          </TouchableOpacity>
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.decorWrap} pointerEvents="none">
+            <View style={[styles.decorBlob, styles.decorBlobA, { backgroundColor: theme.primaryLight }]} />
+            <View style={[styles.decorBlob, styles.decorBlobB, { backgroundColor: theme.accentMuted }]} />
           </View>
-        </>
-      )}
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        autoComplete="email"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoComplete="password"
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity
-        style={[styles.button, (loading || formDisabled) && styles.buttonDisabled]}
-        onPress={handleSignIn}
-        disabled={loading || formDisabled}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Sign in</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => router.replace("/(auth)/sign-up")}
-      >
-        <Text style={styles.linkText}>
-          Don&apos;t have an account? Sign up
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+
+          {/* Brand */}
+          <View style={styles.brand}>
+            <CoconutMark size={76} elevated />
+            <Text style={[styles.title, { color: theme.text }]}>Coconut</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Sign in to your account</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.demoBtn,
+              {
+                borderColor: theme.accent,
+                backgroundColor: theme.surfaceSecondary,
+                borderWidth: 2,
+              },
+            ]}
+            onPress={() => {
+              setIsDemoOn(true);
+              router.replace("/(tabs)");
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.demoIconWrap, { backgroundColor: theme.accentMuted }]}>
+              <Ionicons name="sparkles" size={22} color={theme.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.demoBtnTitle, { color: theme.text }]}>Try demo — no sign-in</Text>
+              <Text style={[styles.demoBtnSub, { color: theme.textTertiary }]}>
+                Sample friends, splits & add-expense flow (simulator-friendly)
+              </Text>
+            </View>
+            <Text style={[styles.demoBtnChevron, { color: theme.accent }]}>→</Text>
+          </TouchableOpacity>
+
+          {/* Primary: Google */}
+          {(Platform.OS === "ios" || Platform.OS === "android") && (
+            <TouchableOpacity
+              style={[styles.googleBtn, { backgroundColor: theme.surface, borderColor: theme.border }, (googleLoading || formDisabled) && styles.btnDisabled]}
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading || formDisabled}
+            >
+              {googleLoading ? (
+                <ActivityIndicator size="small" color="#5F6368" />
+              ) : (
+                <>
+                  <Text style={styles.googleIcon}>G</Text>
+                  <Text style={[styles.googleText, { color: theme.textSecondary }]}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <Text style={[styles.dividerText, { color: theme.textQuaternary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+          </View>
+
+          {/* Email / Password */}
+          <View style={styles.form}>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
+              placeholder="Email"
+              placeholderTextColor={theme.inputPlaceholder}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              editable={!formDisabled}
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
+              placeholder="Password"
+              placeholderTextColor={theme.inputPlaceholder}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              editable={!formDisabled}
+            />
+            {error ? <Text style={[styles.error, { color: theme.error }]}>{error}</Text> : null}
+            {clerkStuckHint && !isLoaded && (
+              <Text style={styles.hint}>
+                Auth is loading slowly. Try the browser option below.
+              </Text>
+            )}
+            <Pressable onPress={() => router.push("/(auth)/forgot-password")}>
+              <Text style={[styles.forgotText, { color: theme.primary }]}>Forgot password?</Text>
+            </Pressable>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }, (loading || (formDisabled && !canAttemptSignIn)) && styles.btnDisabled]}
+              onPress={handleSignIn}
+              disabled={loading || (!canAttemptSignIn && formDisabled)}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Sign in</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Sign up link */}
+          <Pressable
+            style={styles.swapBtn}
+            onPress={() => router.replace("/(auth)/sign-up")}
+          >
+            <Text style={[styles.swapText, { color: theme.textTertiary }]}>Don't have an account? </Text>
+            <Text style={[styles.swapLink, { color: theme.primary }]}>Sign up</Text>
+          </Pressable>
+
+          {/* Browser fallback */}
+          <Pressable
+            style={styles.browserBtn}
+            onPress={() => Linking.openURL(webLoginUrl)}
+          >
+            <Text style={[styles.browserText, { color: theme.textQuaternary }]}>Open login in browser</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    backgroundColor: "#F7FAF8",
-    justifyContent: "center",
+  safe: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 28,
+    paddingTop: 48,
+    paddingBottom: 32,
+    minHeight: "100%",
+    position: "relative",
+  },
+  decorWrap: {
+    ...StyleSheet.absoluteFillObject,
+    top: 0,
+    height: 280,
+    overflow: "hidden",
+  },
+  decorBlob: {
+    position: "absolute",
+    borderRadius: 999,
+    opacity: 0.9,
+  },
+  decorBlobA: {
+    width: 200,
+    height: 200,
+    top: -60,
+    right: -50,
+  },
+  decorBlobB: {
+    width: 140,
+    height: 140,
+    top: 40,
+    left: -40,
+  },
+  brand: {
+    alignItems: "center",
+    marginBottom: 40,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "700",
-    color: "#1F2937",
-    textAlign: "center",
-    marginBottom: 8,
+    fontFamily: font.bold,
+    color: colors.text,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 24,
+    fontSize: 15,
+    fontFamily: font.regular,
+    color: colors.textTertiary,
+    marginTop: 6,
   },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  error: {
-    color: "#DC2626",
-    fontSize: 14,
+  demoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: radii.lg,
     marginBottom: 8,
   },
-  button: {
-    backgroundColor: "#3D8E62",
-    padding: 14,
+  demoIconWrap: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "center",
   },
-  buttonDisabled: {
-    opacity: 0.7,
+  demoBtnTitle: { fontSize: 16, fontFamily: font.bold },
+  demoBtnSub: { fontSize: 13, fontFamily: font.regular, marginTop: 2, lineHeight: 18 },
+  demoBtnChevron: { fontSize: 18, fontFamily: font.semibold },
+  googleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    ...shadow.sm,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
+  googleIcon: {
+    fontSize: 18,
     fontWeight: "600",
+    fontFamily: font.semibold,
+    color: colors.blue,
   },
-  linkButton: {
-    marginTop: 16,
-    alignSelf: "center",
-  },
-  linkText: {
-    color: "#3D8E62",
-    fontSize: 14,
+  googleText: {
+    fontSize: 16,
     fontWeight: "500",
-  },
-  googleButton: {
-    backgroundColor: "#4285F4",
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  googleButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    fontFamily: font.medium,
+    color: colors.textSecondary,
   },
   divider: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 16,
+    marginVertical: 28,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: colors.border,
   },
   dividerText: {
-    marginHorizontal: 12,
-    color: "#6B7280",
+    marginHorizontal: 16,
+    fontSize: 13,
+    fontFamily: font.medium,
+    color: colors.textMuted,
+    fontWeight: "500",
+  },
+  form: { gap: 12 },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontFamily: font.regular,
+    color: colors.text,
+  },
+  error: {
     fontSize: 14,
+    fontFamily: font.regular,
+    color: colors.red,
+    marginTop: 4,
+  },
+  hint: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: colors.amber,
+    marginTop: 4,
+  },
+  primaryBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: 12,
+    ...shadow.md,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    fontWeight: "600",
+    fontFamily: font.semibold,
+    color: "#fff",
+  },
+  btnDisabled: { opacity: 0.6 },
+  swapBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 28,
+  },
+  forgotText: {
+    fontSize: 14,
+    fontFamily: font.medium,
+    textAlign: "right",
+    marginTop: 2,
+  },
+  swapText: { fontSize: 15, fontFamily: font.regular, color: colors.textTertiary },
+  swapLink: { fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.primary },
+  browserBtn: {
+    marginTop: 24,
+    alignSelf: "center",
+  },
+  browserText: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: colors.textMuted,
+    textDecorationLine: "underline",
   },
 });

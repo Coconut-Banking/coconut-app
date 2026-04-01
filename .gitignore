@@ -31,10 +31,16 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
 *.tsbuildinfo
+
+# build artifacts
+*.ipa
+*.apk
+*.aab
 
 # generated native folders
 /ios

@@ -1,878 +1,1939 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { Redirect } from "expo-router";
+/**
+ * Home tab — UI matches `Create design prototype (1)/src/app/pages/MobileAppPage.tsx` HomeScreen.
+ * No legacy transaction list / NL search / insights on this screen.
+ */
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  Linking,
-  Pressable,
+  FlatList,
   Modal,
+  Pressable,
+  RefreshControl,
+  ActivityIndicator,
+  TextInput,
+  DeviceEventEmitter,
+  AppState,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useAuth, useClerk, useUser } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
-import { useTransactions, type Transaction } from "../../hooks/useTransactions";
-import { useSubscriptions } from "../../hooks/useSubscriptions";
+import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
+import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
+import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
+import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
+import type { ReceiptItem } from "../../lib/receipt-split";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { useTransactions, type Transaction } from "../../hooks/useTransactions";
+import { useDemoMode } from "../../lib/demo-mode-context";
+import { useDemoData } from "../../lib/demo-context";
+import { useTheme } from "../../lib/theme-context";
+import { BalanceHero } from "../../components/split/BalanceHero";
+import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
+import { MerchantLogo } from "../../components/merchant/MerchantLogo";
+import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
+import { DEMO_HOME_DISPLAY_NAME, formatHomeGreetingLine } from "../../lib/home-greeting";
+import {
+  buildLiveMatchedStrip,
+  demoChargeToStripRow,
+  merchantEmoji,
+  type HomeBankStripRow,
+} from "../../lib/home-bank-strip";
+import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
+import { CalendarPicker } from "../../components/CalendarPicker";
+import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
+import { sfx } from "../../lib/sounds";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
+import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-lemon.vercel.app";
-const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
-
-const MERCHANT_COLORS = [
-  "#E50914", "#1DB954", "#00674B", "#FF9900", "#003366", "#7BB848",
-  "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#9B59B6",
-];
-
-function hashColor(str: string): string {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
-  return MERCHANT_COLORS[Math.abs(h) % MERCHANT_COLORS.length];
-}
-
-function fmtDate(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[d.getMonth()]} ${d.getDate()}`;
-}
-
-type ApiTransaction = {
-  id?: string;
-  plaid_transaction_id?: string;
-  merchant_name?: string | null;
-  raw_name?: string | null;
-  amount?: number;
-  date?: string;
-  primary_category?: string | null;
-};
-
-function mapApiTx(t: ApiTransaction): Transaction {
-  const merchant = t.merchant_name || t.raw_name || "Unknown";
-  const category = (t.primary_category ?? "OTHER").replace(/_/g, " ");
+/** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
+  const merchant = tx.merchant || tx.rawDescription || "Purchase";
+  const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
   return {
-    id: t.plaid_transaction_id ?? t.id ?? String(Math.random()),
+    stripId: tx.id,
     merchant,
-    rawDescription: t.raw_name ?? "",
-    amount: t.amount ?? 0,
-    category,
-    categoryColor: "bg-gray-100",
-    date: t.date ?? "",
-    dateStr: t.date ? fmtDate(t.date) : "",
-    merchantColor: hashColor(merchant),
+    emoji: merchantEmoji(merchant),
+    amount: Math.abs(Number(tx.amount)),
+    cardDetailLine: tx.dateStr || tx.date || "",
+    cardDetailIsReceipt: hasReceipt,
+    hasMailBadge: hasReceipt,
+    sheetDateLine: tx.dateStr || tx.date || "",
+    showReceiptBox: hasReceipt,
+    receiptId: tx.receiptId ?? null,
+    logoUrl: tx.logoUrl ?? null,
   };
 }
 
-type SearchMode = "exact" | "semantic";
+const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
-function MerchantAvatar({ name, color }: { name: string; color: string }) {
-  const initial = (name[0] || "").toUpperCase();
+function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
+  const hue = FRIEND_HUES[name.charCodeAt(0) % FRIEND_HUES.length];
   return (
-    <View style={[styles.avatar, { backgroundColor: color }]}>
-      <Text style={styles.avatarText}>{initial || "$"}</Text>
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: `${hue}33`,
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: `${hue}55`,
+      }}
+    >
+      <Text style={{ color: hue, fontFamily: font.bold, fontSize: size * 0.3 }}>
+        {name.slice(0, 2).toUpperCase()}
+      </Text>
     </View>
   );
 }
 
-function TransactionRow({ tx, onPress }: { tx: Transaction; onPress?: () => void }) {
-  return (
-    <Pressable style={styles.txRow} onPress={onPress}>
-      <MerchantAvatar name={tx.merchant} color={tx.merchantColor} />
-      <View style={styles.txInfo}>
-        <Text style={styles.txMerchant} numberOfLines={1}>{tx.merchant}</Text>
-        <Text style={styles.txCategory}>{tx.category}</Text>
-      </View>
-      <View style={styles.txRight}>
-        <Text style={styles.txAmount}>${Math.abs(tx.amount).toFixed(2)}</Text>
-        <Text style={styles.txDate}>{tx.dateStr}</Text>
-      </View>
-    </Pressable>
-  );
+function SLabel({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  return <Text style={[styles.sLabel, { color: theme.textTertiary }]}>{children}</Text>;
 }
 
-function deriveMonthlySpend(transactions: Transaction[]): number {
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  return transactions
-    .filter((tx) => tx.date.startsWith(thisMonth))
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+function timeAgo(iso: string) {
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return d === 0 ? "Today" : d === 1 ? "Yesterday" : d < 7 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function filterExact(transactions: Transaction[], q: string): Transaction[] {
-  const lower = q.trim().toLowerCase();
-  if (!lower) return transactions;
-  return transactions.filter(
-    (tx) =>
-      tx.merchant.toLowerCase().includes(lower) ||
-      tx.category.toLowerCase().includes(lower) ||
-      (tx.rawDescription && tx.rawDescription.toLowerCase().includes(lower))
-  );
+function normalizeMerchant(tx: Transaction) {
+  return (tx.merchant || tx.rawDescription || "purchase").trim().toLowerCase();
 }
 
-export default function HomeScreen() {
-  const { getToken, isLoaded: authLoaded, isSignedIn, sessionId } = useAuth();
-  const { signOut } = useClerk();
-  const { user } = useUser();
-  const apiFetch = useApiFetch();
-  const { transactions, linked, loading, status, refetch } = useTransactions();
-  const { subscriptions } = useSubscriptions();
-  const { summary: groupsSummary } = useGroupsSummary();
+function txTimeMs(tx: Transaction) {
+  const d = new Date(tx.dateStr || tx.date || "").getTime();
+  return Number.isNaN(d) ? 0 : d;
+}
 
-  const [searchMode, setSearchMode] = useState<SearchMode>("exact");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [semanticResults, setSemanticResults] = useState<Transaction[] | null>(null);
-  const [semanticSearching, setSemanticSearching] = useState(false);
+/**
+ * Hide refund/void reversals from split UI:
+ * if a debit has a nearby matching credit (same merchant + absolute amount),
+ * omit both so users don't try splitting charges that net to zero.
+ */
+function filterOffsettingBankPairs(transactions: Transaction[]): Transaction[] {
+  const sorted = [...transactions].sort((a, b) => txTimeMs(b) - txTimeMs(a));
+  const creditByKey = new Map<string, number[]>();
+
+  for (let i = 0; i < sorted.length; i++) {
+    const tx = sorted[i];
+    const amt = Number(tx.amount);
+    if (!(amt > 0)) continue;
+    const key = `${normalizeMerchant(tx)}|${Math.abs(amt).toFixed(2)}`;
+    const list = creditByKey.get(key) ?? [];
+    list.push(i);
+    creditByKey.set(key, list);
+  }
+
+  const omitted = new Set<number>();
+  const maxMs = 7 * 24 * 60 * 60 * 1000;
+  for (let i = 0; i < sorted.length; i++) {
+    if (omitted.has(i)) continue;
+    const tx = sorted[i];
+    const amt = Number(tx.amount);
+    if (!(amt < 0)) continue;
+    const key = `${normalizeMerchant(tx)}|${Math.abs(amt).toFixed(2)}`;
+    const credits = creditByKey.get(key);
+    if (!credits || credits.length === 0) continue;
+
+    const debitTime = txTimeMs(tx);
+    const matchPos = credits.findIndex((idx) => {
+      if (omitted.has(idx)) return false;
+      const creditTime = txTimeMs(sorted[idx]);
+      return Math.abs(debitTime - creditTime) <= maxMs;
+    });
+    if (matchPos === -1) continue;
+    const creditIdx = credits.splice(matchPos, 1)[0];
+    omitted.add(i);
+    omitted.add(creditIdx);
+  }
+
+  return sorted.filter((_, idx) => !omitted.has(idx));
+}
+
+export default function BalancesPrototypeScreen() {
+  const { theme } = useTheme();
+  const { isSignedIn, isLoaded: authLoaded } = useAuth();
+  const { user, isLoaded: userLoaded } = useUser();
+  const { isDemoOn } = useDemoMode();
+  const demo = useDemoData();
+  const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
+
+  const summary = isDemoOn ? demo.summary : apiSummary;
+  const [dismissedBank, setDismissedBank] = useState<string[]>([]);
+  const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
+  const [showAllBank, setShowAllBank] = useState(false);
+  const [bankSearch, setBankSearch] = useState("");
+  const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
+  const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
+  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom">("all");
+  const [customDateStart, setCustomDateStart] = useState<Date | null>(null);
+  const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } = useSearch();
   const [refreshing, setRefreshing] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [showFabMenu, setShowFabMenu] = useState(false);
+  const apiFetch = useApiFetch();
+  const [itemizedReceipt, setItemizedReceipt] = useState<{
+    items: ReceiptItem[];
+    merchantName: string;
+    merchantType: string | null;
+    merchantDetails: Record<string, unknown> | null;
+    rideshare?: import("../../lib/fetch-receipt-detail").ReceiptDetailPayload["rideshare"];
+    subtotal: number;
+    tax: number;
+    tip: number;
+    total: number;
+    extras: Array<{ name: string; amount: number }>;
+  } | null>(null);
+  const [itemizedLoading, setItemizedLoading] = useState(false);
+  const [itemizedError, setItemizedError] = useState<string | null>(null);
+
+  // Contacts banner (one-time dismissable)
+  const { permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
+  const [contactsBannerDismissed, setContactsBannerDismissed] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem("coconut.contacts.banner.dismissed").then((v) => {
+      if (v !== "true") setContactsBannerDismissed(false);
+    });
+  }, []);
+  const dismissContactsBanner = useCallback(() => {
+    setContactsBannerDismissed(true);
+    AsyncStorage.setItem("coconut.contacts.banner.dismissed", "true");
+  }, []);
+  const handleConnectContacts = useCallback(async () => {
+    const granted = await requestContactsAccess();
+    if (granted) dismissContactsBanner();
+  }, [requestContactsAccess, dismissContactsBanner]);
+  const showContactsBanner =
+    !contactsBannerDismissed &&
+    contactsPerm !== "granted" &&
+    isSignedIn &&
+    !isDemoOn;
+
+  // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
+  const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
+  const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx, runFullSync } = useTransactions();
+  const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
+  const initialHomeLoading =
+    !isDemoOn &&
+    isSignedIn &&
+    !summary &&
+    summaryLoading &&
+    txLoading;
+
+  const demoStripRows = useMemo(() => {
+    if (!useDemoBankUi) return [];
+    return PROTOTYPE_DEMO_BANK_CHARGES.filter(
+      (tx) => tx.unsplit && !dismissedBank.includes(tx.id)
+    ).map(demoChargeToStripRow);
+  }, [useDemoBankUi, dismissedBank]);
+
+  const liveStripRows = useMemo(() => {
+    if (useDemoBankUi || !linked) return [];
+    const built = buildLiveMatchedStrip(bankVisibleTransactions);
+    return built.filter((r) => !dismissedBank.includes(r.stripId));
+  }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank]);
+
+  const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
+
+  useEffect(() => {
+    if (!selectedStrip) {
+      setItemizedReceipt(null);
+      setItemizedError(null);
+      setItemizedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setItemizedReceipt(null);
+    setItemizedError(null);
+    if (selectedStrip.receiptId === "__demo__") {
+      setItemizedReceipt(getDemoItemizedReceipt());
+      setItemizedLoading(false);
+      return;
+    }
+    if (!selectedStrip.receiptId) {
+      setItemizedLoading(false);
+      return;
+    }
+    setItemizedLoading(true);
+    fetchReceiptDetailForTransaction(apiFetch, selectedStrip.receiptId)
+      .then((d) => {
+        if (cancelled) return;
+        if (d) setItemizedReceipt(d);
+        else
+          setItemizedError(
+            "Could not load line items. Ensure the web API exposes GET /api/receipt/[id] for this receipt."
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setItemizedError("Could not load receipt details.");
+      })
+      .finally(() => {
+        if (!cancelled) setItemizedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStrip, apiFetch]);
+
+  const allLinkedBankRows = useMemo(() => {
+    if (!linked) return [];
+    return bankVisibleTransactions
+      .filter((tx) => Number(tx.amount) < 0)
+      .sort((a, b) => {
+        const da = new Date(a.date || "").getTime();
+        const db = new Date(b.date || "").getTime();
+        return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
+      })
+      .slice(0, 120);
+  }, [bankVisibleTransactions, linked]);
+
+  const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
+    if (datePreset === "all") return null;
+    if (datePreset === "custom" && customDateStart && customDateEnd) {
+      return { start: customDateStart, end: customDateEnd };
+    }
+    const end = new Date();
+    const start = new Date();
+    if (datePreset === "week") start.setDate(start.getDate() - 7);
+    else if (datePreset === "month") start.setDate(start.getDate() - 30);
+    else return null;
+    return { start, end };
+  }, [datePreset, customDateStart, customDateEnd]);
+
+  const filteredAllBankRows = useMemo(() => {
+    const q = bankSearch.trim().toLowerCase();
+    return allLinkedBankRows.filter((tx) => {
+      if (bankFilter === "unsplit" && tx.alreadySplit) return false;
+      if (dateFilterRange) {
+        // Use tx.date (ISO "2026-03-31") — tx.dateStr is a human label ("Mar 31") that new Date() can't parse
+        const txDate = new Date(tx.date || "");
+        if (!Number.isNaN(txDate.getTime())) {
+          const txDay = new Date(txDate.getFullYear(), txDate.getMonth(), txDate.getDate());
+          const startDay = new Date(dateFilterRange.start.getFullYear(), dateFilterRange.start.getMonth(), dateFilterRange.start.getDate());
+          const endDay = new Date(dateFilterRange.end.getFullYear(), dateFilterRange.end.getMonth(), dateFilterRange.end.getDate());
+          if (txDay < startDay || txDay > endDay) return false;
+        }
+      }
+      if (!q) return true;
+      const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
+      return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
+    });
+  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange]);
+
+  const onRefresh = useCallback(async () => {
+    if (isDemoOn) return;
+    setRefreshing(true);
+    try {
+      // runFullSync pulls fresh data from Plaid into the DB, then reloads the list (can take ~15–30s).
+      await Promise.all([refetch(), runFullSync(false)]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [isDemoOn, refetch, runFullSync]);
+
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
 
   useEffect(() => {
-    console.log("[HomeScreen] mounted loading=", loading, "linked=", linked);
-  }, []);
-
-  useEffect(() => {
-    console.log("[HomeScreen] loading=", loading, "linked=", linked);
-  }, [loading, linked]);
-
-  useEffect(() => {
-    if (!isFocused) setShowFabMenu(false);
-  }, [isFocused]);
-
-  // Refetch when returning to this tab (e.g. from connected screen after bank link)
-  useEffect(() => {
-    if (isFocused && !prevFocused.current) {
-      refetch(true);
-    }
+    if (isFocused && !prevFocused.current && !isDemoOn) void refetch();
     prevFocused.current = isFocused;
-  }, [isFocused, refetch]);
+  }, [isFocused, isDemoOn, refetch]);
 
-  const monthlySpend = useMemo(() => deriveMonthlySpend(transactions), [transactions]);
-  const subsTotal = useMemo(
-    () => subscriptions.reduce((s, sub) => s + sub.amount, 0),
-    [subscriptions]
-  );
-  const sharedNet = groupsSummary
-    ? groupsSummary.totalOwedToMe - groupsSummary.totalIOwe
-    : 0;
+  useEffect(() => {
+    if (isDemoOn) return;
+    const subs = [
+      DeviceEventEmitter.addListener("groups-updated", () => void refetch()),
+      DeviceEventEmitter.addListener("expense-added", () => void refetch()),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [isDemoOn, refetch]);
 
-  const recentTransactions = transactions.slice(0, 50);
+  useEffect(() => {
+    if (isDemoOn) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refetch();
+    });
+    return () => sub.remove();
+  }, [isDemoOn, refetch]);
 
-  const [hasSearchedSemantic, setHasSearchedSemantic] = useState(false);
-  const [semanticAnswer, setSemanticAnswer] = useState<string>("");
+  /** After disconnect, strip rows must stay empty; close sheet and reset dismiss state. */
+  useEffect(() => {
+    if (isDemoOn || linked) return;
+    setDismissedBank([]);
+    setShowAllBank(false);
+    setSelectedStrip(null);
+  }, [isDemoOn, linked]);
 
-  const displayTransactions = useMemo(() => {
-    if (searchMode === "exact") {
-      return filterExact(recentTransactions, searchQuery);
-    }
-    if (hasSearchedSemantic && semanticResults !== null) return semanticResults;
-    return recentTransactions;
-  }, [searchMode, semanticResults, recentTransactions, searchQuery, hasSearchedSemantic]);
+  /**
+   * Transitive date filter: when the AI parses a date range from the query
+   * (e.g. "last two weeks"), reflect it in the date chips so keyword search
+   * also respects that window. Only applies if the user hasn't manually set a filter.
+   */
+  useEffect(() => {
+    if (!askResults?.applied_filters) return;
+    const { date_start, date_end } = askResults.applied_filters;
+    if (!date_start || !date_end) return;
+    if (datePreset !== "all") return; // user already has a manual filter, don't override
+    setDatePreset("custom");
+    setCustomDateStart(new Date(date_start + "T12:00:00"));
+    setCustomDateEnd(new Date(date_end + "T12:00:00"));
+    setShowCalendar(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askResults]);
 
-  const runSemanticSearch = async () => {
-    const q = searchQuery.trim();
-    if (!q) {
-      setSemanticResults(null);
-      setHasSearchedSemantic(false);
-      setSemanticAnswer("");
-      return;
-    }
-    setSemanticSearching(true);
-    setHasSearchedSemantic(true);
-    setSemanticAnswer("");
-    try {
-      const res = await apiFetch("/api/nl-search", {
-        method: "POST",
-        body: { q },
-      });
-      const data = await res.json();
-      const raw = data.transactions ?? [];
-      const txs = Array.isArray(raw) ? raw.map(mapApiTx) : [];
-      setSemanticResults(txs);
-      setSemanticAnswer(data.answer ?? "");
-    } catch {
-      setSemanticResults([]);
-      setSemanticAnswer("Search failed.");
-    } finally {
-      setSemanticSearching(false);
-    }
-  };
+  const friends = summary?.friends ?? [];
+  const groups = summary?.groups ?? [];
+  const hasFriendsOrGroups = friends.length > 0 || groups.length > 0;
+  const friendExpenseCount = (key: string) =>
+    isDemoOn ? (demo.personDetails[key]?.activity.length ?? 0) : undefined;
 
-  // Auto-redirect to sign-up when auth is loaded but user is not signed in (skip when SKIP_AUTH)
-  if (!SKIP_AUTH && authLoaded && !isSignedIn) {
-    return <Redirect href="/(auth)/sign-up" />;
-  }
-
-  const openConnect = async () => {
-    setConnectError(null);
-    if (!isSignedIn) {
-      return;
-    }
-    const base = API_URL.replace(/\/$/, "");
-    const email = user?.primaryEmailAddress?.emailAddress;
-    try {
-      let token: string | null = null;
-      for (let i = 0; i < 4; i++) {
-        token = await getToken({ skipCache: i > 0 });
-        if (token) break;
-        await new Promise((r) => setTimeout(r, 300 * (i + 1)));
-      }
-      if (token) {
-        const res = await apiFetch("/api/auth/handoff-token", { method: "POST" });
-        if (res.ok) {
-          const { url } = await res.json();
-          if (url) {
-            const canOpenHandoff = await Linking.canOpenURL(url);
-            if (canOpenHandoff) {
-              await Linking.openURL(url);
-              return;
-            }
-          }
-        }
-      }
-    } catch {
-      /* fallback */
-    }
-    const fallback = `${base}/connect-from-app`;
-    const fallbackUrl = email ? `${fallback}?hint=${encodeURIComponent(email)}` : fallback;
-    try {
-      const canOpenFallback = await Linking.canOpenURL(fallbackUrl);
-      if (!canOpenFallback) throw new Error("cannot_open");
-      await Linking.openURL(fallbackUrl);
-    } catch {
-      setConnectError("Could not open browser. Please sign in first, then try again.");
-    }
-  };
-  const openSettings = () => Linking.openURL(`${API_URL.replace(/\/$/, "")}/app/settings`);
-
-  // Loading — show escape hatches FIRST; cached session can land us here, then API/token may hang
-  const webLoginUrl = `${API_URL.replace(/\/$/, "")}/login`;
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      // AuthSwitch reactively mounts (auth) stack when isSignedIn becomes false
-    } catch (e) {
-      console.error("[home] signOut failed:", e);
-    }
-  };
-
-  // Never show a full-screen spinner — show Connect UI with sign out / refresh options
-  if (loading) {
+  const greetingName = isDemoOn
+    ? DEMO_HOME_DISPLAY_NAME
+    : userLoaded && isSignedIn
+      ? (user?.firstName?.trim() || user?.username?.trim() || "")
+      : "";
+  const greetingTitle = formatHomeGreetingLine(greetingName);
+  if (initialHomeLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={[styles.connectCard, { padding: 24 }]}>
-          <Ionicons name="time-outline" size={44} color="#3D8E62" />
-          <Text style={styles.connectTitle}>Checking status…</Text>
-          <Text style={styles.connectSubtitle}>
-            Tap below to sign out or open the web app.
-          </Text>
-          <TouchableOpacity
-            style={[styles.connectButton, { marginBottom: 12 }]}
-            onPress={handleSignOut}
-          >
-            <Text style={styles.connectButtonText}>Sign out</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.connectButton}
-            onPress={() => Linking.openURL(webLoginUrl)}
-          >
-            <Text style={styles.connectButtonText}>Open login in browser</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.connectRefreshButton}
-            onPress={() => refetch(false)}
-          >
-            <Ionicons name="refresh" size={16} color="#3D8E62" />
-            <Text style={styles.connectRefreshText}>Retry</Text>
-          </TouchableOpacity>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
+        <View style={styles.homeLoadingWrap}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[styles.homeLoadingText, { color: theme.textTertiary }]}>Loading your home…</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Not linked — show Connect CTA only; never show dashboard
-  if (!linked) {
-    const accountHint =
-      status === "unauthorized"
-        ? "Sign in with the same account you used on the website."
-        : status === "not_linked"
-          ? "Connected on a different account? Sign in with that email here."
-          : null;
-
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.connectCard}>
-          <Ionicons name="wallet-outline" size={48} color="#3D8E62" />
-          <Text style={styles.connectTitle}>Connect your bank</Text>
-          {user?.primaryEmailAddress?.emailAddress ? (
-            <Text style={styles.connectAccountEmail}>
-              Signed in as {user.primaryEmailAddress.emailAddress}
-            </Text>
-          ) : null}
-          {user?.id ? (
-            <Text style={styles.connectAccountId}>
-              Clerk user: {user.id}
-            </Text>
-          ) : null}
-          {(!user?.id || !user?.primaryEmailAddress?.emailAddress) ? (
-            <Text style={styles.connectAccountId}>
-              Auth loaded: {String(authLoaded)} | Signed in: {String(isSignedIn)}
-            </Text>
-          ) : null}
-          <Text style={styles.connectSubtitle}>
-            Link your account to see spending, transactions, and split receipts with friends.
-          </Text>
-          <Text style={styles.connectHint}>
-            1) Tap "Connect in web app" and sign in with this same account.
-          </Text>
-          {accountHint ? (
-            <Text style={styles.connectHintImportant}>{accountHint}</Text>
-          ) : null}
-          {connectError ? (
-            <Text style={styles.connectErrorText}>{connectError}</Text>
-          ) : null}
-          {signOutError ? (
-            <Text style={styles.connectErrorText}>{signOutError}</Text>
-          ) : null}
-          <Text style={styles.connectHint}>
-            2) Stay in the browser until you see "Bank connected!" and then tap "Return to app".
-          </Text>
-          <Text style={styles.connectHint}>Do not close early on Plaid's "Continue to Coconut" screen.</Text>
-          <TouchableOpacity
-            style={styles.connectButton}
-            onPress={openConnect}
-          >
-            <Text style={styles.connectButtonText}>{isSignedIn ? "Connect in web app" : "Sign in to continue"}</Text>
-            {isSignedIn ? <Ionicons name="open-outline" size={16} color="#fff" /> : null}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.connectRefreshButton}
-            onPress={() => {
-              setRefreshing(true);
-              refetch(true).finally(() => setRefreshing(false));
-            }}
-            disabled={refreshing}
-          >
-            {refreshing ? (
-              <ActivityIndicator size="small" color="#3D8E62" />
-            ) : (
-              <Ionicons name="refresh" size={16} color="#3D8E62" />
-            )}
-            <Text style={styles.connectRefreshText}>
-              {refreshing ? "Checking..." : "Just connected? Tap to refresh"}
-            </Text>
-          </TouchableOpacity>
-          {signOut && isSignedIn ? (
-            <TouchableOpacity
-              style={styles.connectSignOutButton}
-              onPress={async () => {
-                if (signingOut) return;
-                setSigningOut(true);
-                setSignOutError(null);
-                try {
-                  const signOutPromise = sessionId ? signOut({ sessionId }) : signOut();
-                  const signOutWithTimeout = Promise.race([
-                    signOutPromise,
-                    new Promise((_, reject) =>
-                      setTimeout(() => reject(new Error("Sign out timed out")), 12000),
-                    ),
-                  ]);
-                  await signOutWithTimeout;
-                } catch (e) {
-                  const err = e as { message?: string };
-                  setSignOutError(
-                    err.message === "Sign out timed out"
-                      ? "Sign out is taking too long. Please try again."
-                      : (err.message ?? "Sign out failed. Please try again."),
-                  );
-                } finally {
-                  setSigningOut(false);
-                }
-              }}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <ActivityIndicator size="small" color="#6B7280" />
-                  <Text style={styles.connectSignOutText}>Signing out…</Text>
-                </View>
-              ) : (
-                <Text style={styles.connectSignOutText}>
-                  {accountHint ? "Sign out & switch account" : "Sign out"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Linked — show dashboard
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          isDemoOn ? undefined : (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          )
+        }
       >
-        {/* Greeting */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>
-              Good {new Date().getHours() < 12 ? "morning" : "afternoon"}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
+              {greetingTitle}
             </Text>
-            <Text style={styles.subGreeting}>
-              {new Date().toLocaleString("en", { month: "long", year: "numeric" })}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={openSettings} style={styles.settingsBtn} hitSlop={12}>
-            <Ionicons name="settings-outline" size={22} color="#6B7280" />
-          </TouchableOpacity>
-        </View>
-
-        {/* 3 metric panels */}
-        <View style={styles.panels}>
-          <View style={styles.panel}>
-            <View style={[styles.panelIcon, { backgroundColor: "#FEE2E2" }]}>
-              <Ionicons name="trending-down" size={18} color="#DC2626" />
-            </View>
-            <Text style={styles.panelValue}>${monthlySpend.toLocaleString()}</Text>
-            <Text style={styles.panelLabel}>This month</Text>
-          </View>
-          <View style={styles.panel}>
-            <View style={[styles.panelIcon, { backgroundColor: "#F3E8FF" }]}>
-              <Ionicons name="refresh" size={18} color="#7C3AED" />
-            </View>
-            <Text style={styles.panelValue}>${subsTotal.toFixed(0)}</Text>
-            <Text style={styles.panelLabel}>Subscriptions</Text>
-          </View>
-          <View style={styles.panel}>
-            <View style={[styles.panelIcon, { backgroundColor: "#EEF7F2" }]}>
-              <Ionicons name="people" size={18} color="#3D8E62" />
-            </View>
-            <Text style={[
-              styles.panelValue,
-              sharedNet > 0 && styles.panelValueGreen,
-              sharedNet < 0 && styles.panelValueAmber,
-            ]}>
-              {sharedNet >= 0 ? "+" : ""}${sharedNet.toFixed(0)}
-            </Text>
-            <Text style={styles.panelLabel}>Shared</Text>
+            <Text style={[styles.titleSub, { color: theme.textTertiary }]}>Here&apos;s where you stand with friends and groups.</Text>
           </View>
         </View>
 
-        {/* Search */}
-        <View style={styles.searchSection}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={18} color="#9CA3AF" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={
-                searchMode === "exact"
-                  ? "Starbucks, Uber, Food & Drink..."
-                  : "dinner with Alex in January"
-              }
-              placeholderTextColor="#9CA3AF"
-              value={searchQuery}
-              onChangeText={(t) => {
-                setSearchQuery(t);
-                if (searchMode === "exact") setSemanticResults(null);
-                else { setHasSearchedSemantic(false); setSemanticAnswer(""); }
-              }}
-              onSubmitEditing={() => searchMode === "semantic" && runSemanticSearch()}
-              returnKeyType={searchMode === "semantic" ? "search" : "default"}
+        <BalanceHero summary={summary} />
+
+        {showContactsBanner ? (
+          <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
+              <View style={[styles.contactsIconWrap, { backgroundColor: "#EEF7F2" }]}>
+                <Ionicons name="people-circle" size={24} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contactsBannerTitle, { color: theme.text }]}>Connect your contacts</Text>
+                <Text style={[styles.contactsBannerSub, { color: theme.textTertiary }]}>
+                  Quickly find friends when splitting expenses
+                </Text>
+              </View>
+              <TouchableOpacity onPress={dismissContactsBanner} hitSlop={10} style={{ padding: 4 }}>
+                <Ionicons name="close" size={18} color={theme.textTertiary} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.contactsBannerBtn, { backgroundColor: colors.primary }]}
+              onPress={handleConnectContacts}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.contactsBannerBtnTxt}>Allow access</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {useDemoBankUi && stripRows.length > 0 ? (
+          <View style={{ marginBottom: 18 }}>
+            <View style={styles.sectionRow}>
+              <SLabel>From your bank</SLabel>
+              <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
+                <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              horizontal
+              data={stripRows}
+              keyExtractor={(t) => t.stripId}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
+                  onPress={() => setSelectedStrip(item)}
+                >
+                  <View style={styles.bankTop}>
+                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                      <MerchantLogo
+                        merchantName={item.merchant}
+                        size={22}
+                        fallbackText={item.emoji}
+                        logoUrl={item.logoUrl}
+                        backgroundColor="transparent"
+                        borderColor="transparent"
+                      />
+                      {item.hasMailBadge ? (
+                        <View style={styles.mailDot}>
+                          <Ionicons name="mail" size={7} color="#fff" />
+                        </View>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setDismissedBank((d) => [...d, item.stripId])}
+                      hitSlop={8}
+                      style={{ padding: 2 }}
+                    >
+                      <Ionicons name="close" size={13} color={darkUI.labelMuted} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+                    {item.merchant}
+                  </Text>
+                  <Text
+                    style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+                    numberOfLines={1}
+                  >
+                    {item.cardDetailLine}
+                  </Text>
+                  <Text style={[styles.bankAmt, { color: theme.text }]}>${item.amount.toFixed(2)}</Text>
+                  <View style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Text style={[styles.bankCtaText, { color: theme.text }]}>
+                      {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
+                    </Text>
+                  </View>
+                </Pressable>
+              )}
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setSearchQuery("");
-                  setSemanticResults(null);
-                  setHasSearchedSemantic(false);
-                  setSemanticAnswer("");
-                }}
-              >
-                <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-              </TouchableOpacity>
-            )}
-            {searchMode === "semantic" && (
-              <TouchableOpacity
-                style={styles.searchIconBtn}
-                onPress={runSemanticSearch}
-                disabled={semanticSearching || !searchQuery.trim()}
-              >
-                {semanticSearching ? (
-                  <ActivityIndicator size="small" color="#3D8E62" />
-                ) : (
-                  <Ionicons name="search" size={20} color="#3D8E62" />
+          </View>
+        ) : !useDemoBankUi ? (
+          <View style={{ marginBottom: 18 }}>
+            <View style={styles.sectionRow}>
+              <SLabel>From your bank</SLabel>
+              {linked ? (
+                <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
+                  <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {null}
+            {txStatus === "api_unreachable" ? (
+              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
+                  Can&apos;t reach the Coconut API (got 404). Set EXPO_PUBLIC_API_URL in .env to your live Next.js URL
+                  (same host as the web app), restart Expo, and try again.
+                </Text>
+              </View>
+            ) : txStatus === "unauthorized" ? (
+              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>Sign in again to load bank charges.</Text>
+              </View>
+            ) : !linked ? (
+              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
+                  Connect your bank on the web to see charges. When a purchase matches an email receipt,
+                  it&apos;ll show here to split.
+                </Text>
+              </View>
+            ) : stripRows.length > 0 ? (
+              <FlatList
+                horizontal
+                data={stripRows}
+                keyExtractor={(t) => t.stripId}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
+                    onPress={() => { sfx.pop(); setSelectedStrip(item); }}
+                  >
+                    <View style={styles.bankTop}>
+                      <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                        <MerchantLogo
+                          merchantName={item.merchant}
+                          size={22}
+                          fallbackText={item.emoji}
+                          logoUrl={item.logoUrl}
+                          backgroundColor="transparent"
+                          borderColor="transparent"
+                        />
+                        {item.hasMailBadge ? (
+                          <View style={styles.mailDot}>
+                            <Ionicons name="mail" size={7} color="#fff" />
+                          </View>
+                        ) : null}
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setDismissedBank((d) => [...d, item.stripId])}
+                        hitSlop={8}
+                        style={{ padding: 2 }}
+                      >
+                        <Ionicons name="close" size={13} color={darkUI.labelMuted} />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+                      {item.merchant}
+                    </Text>
+                    <Text
+                      style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+                      numberOfLines={1}
+                    >
+                      {item.cardDetailLine}
+                    </Text>
+                    <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
+                    <View style={styles.bankCta}>
+                      <Text style={styles.bankCtaText}>
+                        {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
+                      </Text>
+                    </View>
+                  </Pressable>
                 )}
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={styles.searchModeRow}>
-            <TouchableOpacity
-              style={[styles.modeChip, searchMode === "exact" && styles.modeChipActive]}
-              onPress={() => { setSearchMode("exact"); setSemanticResults(null); setHasSearchedSemantic(false); setSemanticAnswer(""); }}
-            >
-              <Text style={[styles.modeChipText, searchMode === "exact" && styles.modeChipTextActive]}>
-                Exact
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeChip, searchMode === "semantic" && styles.modeChipActive]}
-              onPress={() => setSearchMode("semantic")}
-            >
-              <Text style={[styles.modeChipText, searchMode === "semantic" && styles.modeChipTextActive]}>
-                Natural language
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {searchMode === "semantic" && (
-            <Text style={styles.searchHint}>
-              Try: "coffee last week", "dinner with Alex" - tap search icon
-            </Text>
-          )}
-        </View>
-
-        {/* Semantic search answer — shown above results when available */}
-        {searchMode === "semantic" && hasSearchedSemantic && (semanticSearching || semanticAnswer) && (
-          <View style={styles.answerBanner}>
-            {semanticSearching ? (
-              <Text style={styles.answerText}>Searching...</Text>
+              />
+            ) : txLoading ? (
+              <View style={[styles.emptyBank, styles.emptyBankLoading]}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.emptyBankText, { marginTop: 10 }]}>Loading bank charges…</Text>
+              </View>
             ) : (
-              <Text style={styles.answerText}>{semanticAnswer || "No answer for this query."}</Text>
+              allLinkedBankRows.length > 0 ? (
+                <FlatList
+                  horizontal
+                  data={allLinkedBankRows.slice(0, 12)}
+                  keyExtractor={(tx) => `live-${tx.id}`}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+                  renderItem={({ item: tx }) => (
+                    <Pressable
+                      style={styles.bankCard}
+                      onPress={() => {
+                        sfx.pop();
+                        setSelectedStrip(txToSheetRow(tx));
+                      }}
+                    >
+                      <View style={styles.bankTop}>
+                        <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                          <MerchantLogo
+                            merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+                            size={22}
+                            fallbackText="💳"
+                            logoUrl={tx.logoUrl}
+                            backgroundColor="transparent"
+                            borderColor="transparent"
+                          />
+                        </View>
+                      </View>
+                      <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+                        {tx.merchant || tx.rawDescription || "Purchase"}
+                      </Text>
+                      <Text style={styles.bankHint} numberOfLines={1}>
+                        {tx.dateStr || tx.date || "—"}
+                      </Text>
+                      <Text style={styles.bankAmt}>${Math.abs(Number(tx.amount)).toFixed(2)}</Text>
+                      <View style={styles.bankCta}>
+                        <Text style={styles.bankCtaText}>Split this</Text>
+                      </View>
+                    </Pressable>
+                  )}
+                />
+              ) : (
+                <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
+                    No bank charges yet. Pull to refresh after linking your bank.
+                  </Text>
+                </View>
+              )
             )}
           </View>
-        )}
+        ) : null}
 
-        {/* Recent transactions */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            {searchQuery.trim() ? "Results" : "Recent"}
-          </Text>
-          {!searchQuery.trim() && (
-            <Text style={styles.sectionMeta}>{transactions.length} transactions</Text>
+        {Platform.OS !== "web" ? (
+          <TouchableOpacity
+            style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => {
+              sfx.pop();
+              router.push("/(tabs)/tap-to-pay-education");
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={[ttpStyles.iconWrap, { backgroundColor: theme.primaryLight }]}>
+              <TapToPayButtonIcon color={theme.primary} size={22} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[ttpStyles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
+              <Text style={[ttpStyles.sub, { color: theme.textTertiary }]}>
+                Learn how it works — collect from an expense or settlement
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+
+        <View style={{ marginBottom: 12 }}>
+          <View style={styles.sectionRow}>
+            <SLabel>Friends & groups</SLabel>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/shared")} hitSlop={8}>
+              <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
+            </TouchableOpacity>
+          </View>
+          {!hasFriendsOrGroups ? (
+            <View style={[styles.emptyFriend, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="people-outline" size={28} color={theme.textTertiary} />
+              <Text style={[styles.emptyFriendTitle, { color: theme.text }]}>No friends or groups yet</Text>
+              <Text style={[styles.emptyFriendSub, { color: theme.textTertiary }]}>Open See all to add people and groups.</Text>
+            </View>
+          ) : (
+            <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {friends.map((f, i) => {
+                const nExp = friendExpenseCount(f.key);
+                const lines = friendBalanceLines(f);
+                const settled = lines.length === 0;
+                const pos =
+                  !settled &&
+                  lines.some((l) => l.amount > 0.005) &&
+                  lines.every((l) => l.amount >= -0.005);
+                const neg =
+                  !settled &&
+                  lines.some((l) => l.amount < -0.005) &&
+                  lines.every((l) => l.amount <= 0.005);
+                const mixed = !settled && !pos && !neg;
+                const expSuffix =
+                  nExp != null ? ` · ${nExp} expense${nExp !== 1 ? "s" : ""}` : "";
+                const meta = settled
+                  ? "settled up"
+                  : mixed
+                    ? `balances${expSuffix}`
+                    : pos
+                      ? `owes you${expSuffix}`
+                      : `you owe${expSuffix}`;
+                return (
+                  <View key={f.key}>
+                    <TouchableOpacity
+                      style={styles.friendRow}
+                      onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
+                      activeOpacity={0.75}
+                    >
+                      <FriendAvatar name={f.displayName} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={[styles.friendName, { color: theme.text }]}>{f.displayName}</Text>
+                        <Text style={[styles.friendMeta, { color: theme.textTertiary }]}>{meta}</Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        {settled ? (
+                          <Text style={[styles.friendAmt, { color: darkUI.labelMuted }]}>—</Text>
+                        ) : (
+                          lines.map((b) => {
+                            const p = b.amount > 0.005;
+                            const n = b.amount < -0.005;
+                            return (
+                              <Text
+                                key={b.currency}
+                                style={[
+                                  styles.friendAmt,
+                                  p && { color: prototype.green },
+                                  n && { color: prototype.red },
+                                ]}
+                              >
+                                {p ? "+" : n ? "−" : ""}
+                                {formatSplitCurrencyAmount(b.amount, b.currency)}
+                              </Text>
+                            );
+                          })
+                        )}
+                      </View>
+                      <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                    </TouchableOpacity>
+                    {i < friends.length - 1 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                  </View>
+                );
+              })}
+              {friends.length > 0 && groups.length > 0 ? <View style={[styles.sectionDivider, { backgroundColor: theme.borderLight }]} /> : null}
+              {groups.length > 0 ? (
+                <>
+                  <View
+                    style={[
+                      styles.inlineSectionLabel,
+                      friends.length > 0 ? styles.inlineSectionLabelAfterFriends : styles.inlineSectionLabelFirst,
+                    ]}
+                  >
+                    <Text style={styles.inlineSectionLabelText}>Groups</Text>
+                  </View>
+                  {groups.map((g, i) => (
+                    <View key={g.id}>
+                      {i > 0 ? <View style={styles.rowSep} /> : null}
+                      <TouchableOpacity
+                        style={styles.groupRow}
+                        onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.groupIcon}>
+                          <Ionicons name="people" size={18} color="#1F2937" />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.groupRowName}>{g.name}</Text>
+                          <Text style={styles.groupRowSub}>
+                            {g.memberCount} members · {timeAgo(g.lastActivityAt)}
+                          </Text>
+                        </View>
+                        {groupBalanceLines(g).length > 0 ? (
+                          <View style={{ alignItems: "flex-end" }}>
+                            {groupBalanceLines(g).map((b) => (
+                              <Text
+                                key={b.currency}
+                                style={[
+                                  styles.groupRowBal,
+                                  b.amount > 0 ? styles.balAmtIn : styles.balAmtOut,
+                                ]}
+                              >
+                                {b.amount > 0 ? "+" : "−"}
+                                {formatSplitCurrencyAmount(b.amount, b.currency)}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={[styles.groupRowBal, styles.balMuted]}>—</Text>
+                        )}
+                        <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+            </View>
           )}
         </View>
-
-        {semanticSearching ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#3D8E62" />
-            <Text style={styles.loadingText}>Searching...</Text>
-          </View>
-        ) : displayTransactions.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={40} color="#9CA3AF" />
-            <Text style={styles.emptyText}>
-              {searchQuery ? "No matches" : "No transactions yet"}
-            </Text>
-          </View>
-        ) : (
-          displayTransactions.slice(0, 15).map((tx) => (
-            <TransactionRow key={tx.id} tx={tx} />
-          ))
-        )}
       </ScrollView>
 
-      {/* FAB — only on Home tab */}
-      {isFocused && (
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => setShowFabMenu(true)}
-          activeOpacity={0.9}
-        >
-          <Ionicons name="add" size={28} color="#fff" />
-        </TouchableOpacity>
-      )}
-
-      <Modal
-        visible={showFabMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowFabMenu(false)}
-      >
-        <Pressable style={styles.fabOverlay} onPress={() => setShowFabMenu(false)}>
-          <View style={styles.fabMenu}>
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => {
-                setShowFabMenu(false);
-                router.push("/(tabs)/receipt");
-              }}
-            >
-              <Ionicons name="receipt" size={24} color="#3D8E62" />
-              <Text style={styles.fabMenuText}>Scan receipt</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => {
-                setShowFabMenu(false);
-                router.push("/(tabs)/add-expense");
-              }}
-            >
-              <Ionicons name="add-circle" size={24} color="#3D8E62" />
-              <Text style={styles.fabMenuText}>Add expense</Text>
-            </TouchableOpacity>
-          </View>
+      <Modal visible={!!selectedStrip} transparent animationType="slide" onRequestClose={() => setSelectedStrip(null)}>
+        <Pressable style={styles.sheetOverlay} onPress={() => setSelectedStrip(null)}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            {selectedStrip ? (
+              <ScrollView
+                style={styles.sheetScroll}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.sheetHead}>
+                  <View style={styles.sheetEmoji}>
+                    <MerchantLogo
+                      merchantName={selectedStrip.merchant}
+                      size={32}
+                      fallbackText={selectedStrip.emoji}
+                      logoUrl={selectedStrip.logoUrl}
+                      backgroundColor="transparent"
+                      borderColor="transparent"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sheetMerchant}>{selectedStrip.merchant}</Text>
+                    <Text style={styles.sheetDate}>{selectedStrip.sheetDateLine}</Text>
+                  </View>
+                  <Text style={styles.sheetAmt}>${selectedStrip.amount.toFixed(2)}</Text>
+                </View>
+                {selectedStrip.showReceiptBox ? (
+                  <View style={styles.emailBox}>
+                    <View style={styles.emailRow}>
+                      <Ionicons name="mail-outline" size={12} color={prototype.blue} />
+                      <Text style={styles.emailLbl}>MATCHED FROM EMAIL RECEIPT</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedStrip.receiptId ? (
+                  itemizedReceipt?.merchantType === "rideshare" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Trip details</Text>
+                      {itemizedReceipt.rideshare?.map_url ? (
+                        <Image
+                          source={{ uri: itemizedReceipt.rideshare.map_url }}
+                          style={styles.rideshareMap}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      <View style={styles.rideshareRoute}>
+                        <View style={styles.rideshareRouteDots}>
+                          <View style={[styles.routeDot, { backgroundColor: "#22c55e" }]} />
+                          <View style={styles.routeLine} />
+                          <View style={[styles.routeDot, { backgroundColor: "#ef4444" }]} />
+                        </View>
+                        <View style={{ flex: 1, gap: 12 }}>
+                          <View>
+                            <Text style={styles.rideshareLabel}>Pickup</Text>
+                            <Text style={styles.rideshareAddr}>{itemizedReceipt.rideshare?.pickup ?? "—"}</Text>
+                          </View>
+                          <View>
+                            <Text style={styles.rideshareLabel}>Dropoff</Text>
+                            <Text style={styles.rideshareAddr}>{itemizedReceipt.rideshare?.dropoff ?? "—"}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      {(itemizedReceipt.rideshare?.distance || itemizedReceipt.rideshare?.duration || itemizedReceipt.rideshare?.driver_name || itemizedReceipt.rideshare?.vehicle) ? (
+                        <Text style={styles.rideshareMeta}>
+                          {[
+                            itemizedReceipt.rideshare?.distance,
+                            itemizedReceipt.rideshare?.duration,
+                            itemizedReceipt.rideshare?.driver_name ? `Driver: ${itemizedReceipt.rideshare.driver_name}` : undefined,
+                            itemizedReceipt.rideshare?.vehicle,
+                          ].filter(Boolean).join(" · ")}
+                        </Text>
+                      ) : null}
+                      {itemizedReceipt.rideshare?.fare_breakdown ? (
+                        <View style={styles.rideshareBreakdown}>
+                          {Object.entries(itemizedReceipt.rideshare.fare_breakdown).map(([key, val]) => (
+                            <View key={key} style={styles.rideshareBreakdownRow}>
+                              <Text style={styles.rideshareBreakdownLabel}>
+                                {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                              </Text>
+                              <Text style={styles.rideshareBreakdownAmt}>${Number(val).toFixed(2)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                      <View style={styles.rideshareTotals}>
+                        {itemizedReceipt.subtotal > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Subtotal</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.subtotal.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        {itemizedReceipt.tax > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Tax</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.tax.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        {itemizedReceipt.tip > 0 ? (
+                          <View style={styles.rideshareBreakdownRow}>
+                            <Text style={styles.rideshareBreakdownLabel}>Tip</Text>
+                            <Text style={styles.rideshareBreakdownAmt}>${itemizedReceipt.tip.toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        <View style={[styles.rideshareBreakdownRow, styles.rideshareTotalRow]}>
+                          <Text style={styles.rideshareTotalLabel}>Total</Text>
+                          <Text style={styles.rideshareTotalAmt}>${itemizedReceipt.total.toFixed(2)}</Text>
+                        </View>
+                      </View>
+                    </>
+                  ) : itemizedReceipt?.merchantType === "food_delivery" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>
+                        {(itemizedReceipt.merchantDetails as Record<string, unknown>)?.restaurant_name
+                          ? String((itemizedReceipt.merchantDetails as Record<string, unknown>).restaurant_name)
+                          : "Order details"}
+                      </Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="food_delivery" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedReceipt?.merchantType === "saas" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Subscription</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="saas" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      {itemizedReceipt.items.length > 0 ? (
+                        <ItemizedReceiptPreview
+                          loading={itemizedLoading}
+                          error={itemizedError}
+                          merchantName={itemizedReceipt.merchantName}
+                          items={itemizedReceipt.items}
+                          subtotal={itemizedReceipt.subtotal}
+                          tax={itemizedReceipt.tax}
+                          tip={itemizedReceipt.tip}
+                          extras={itemizedReceipt.extras}
+                          total={itemizedReceipt.total}
+                        />
+                      ) : (
+                        <View style={styles.saasTotal}>
+                          {itemizedReceipt.tax > 0 ? (
+                            <View style={styles.saasTotalRow}>
+                              <Text style={styles.saasTotalLabel}>Tax</Text>
+                              <Text style={styles.saasTotalAmt}>${itemizedReceipt.tax.toFixed(2)}</Text>
+                            </View>
+                          ) : null}
+                          <View style={[styles.saasTotalRow, styles.saasTotalFinal]}>
+                            <Text style={styles.saasTotalLabelBold}>Total</Text>
+                            <Text style={styles.saasTotalAmtBold}>${itemizedReceipt.total.toFixed(2)}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </>
+                  ) : itemizedReceipt?.merchantType === "retail" ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Receipt</Text>
+                      {itemizedReceipt.merchantDetails ? (
+                        <MerchantEnrichmentCard merchantType="retail" merchantDetails={itemizedReceipt.merchantDetails} />
+                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedReceipt?.merchantType === "ecommerce" && itemizedReceipt.merchantDetails ? (
+                    <>
+                      <MerchantEnrichmentCard
+                        merchantType="ecommerce"
+                        merchantDetails={itemizedReceipt.merchantDetails}
+                      />
+                      {itemizedReceipt.items.length > 0 ? (
+                        <MerchantItemsList
+                          items={itemizedReceipt.items}
+                          estimatedDelivery={(itemizedReceipt.merchantDetails as Record<string, unknown>).estimated_delivery as string | undefined}
+                        />
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Itemized receipt</Text>
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt?.merchantName ?? ""}
+                        items={itemizedReceipt?.items ?? []}
+                        subtotal={itemizedReceipt?.subtotal ?? 0}
+                        tax={itemizedReceipt?.tax ?? 0}
+                        tip={itemizedReceipt?.tip ?? 0}
+                        extras={itemizedReceipt?.extras ?? []}
+                        total={itemizedReceipt?.total ?? selectedStrip.amount}
+                      />
+                    </>
+                  )
+                ) : selectedStrip.showReceiptBox && !selectedStrip.receiptId ? (
+                  <Text style={styles.receiptIdHint}>
+                    Line items appear when each transaction includes a receipt id from your backend (same id as web
+                    receipt split).
+                  </Text>
+                ) : null}
+                <TouchableOpacity
+                  style={styles.splitBtn}
+                  onPress={() => {
+                    const row = selectedStrip;
+                    setSelectedStrip(null);
+                    router.push({
+                      pathname: "/(tabs)/add-expense",
+                      params: {
+                        prefillDesc: row.merchant,
+                        prefillAmount: row.amount.toFixed(2),
+                        prefillNonce: String(Date.now()),
+                      },
+                    });
+                  }}
+                >
+                  <Ionicons name="git-branch-outline" size={18} color="#fff" />
+                  <Text style={styles.splitBtnText}>Split this charge</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.sheetClose} onPress={() => setSelectedStrip(null)}>
+                  <Text style={styles.sheetCloseText}>Close</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            ) : null}
+          </Pressable>
         </Pressable>
+      </Modal>
+      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+        <KeyboardAvoidingView
+          style={styles.sheetOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} />
+          <Pressable style={[styles.sheet, { maxHeight: "92%" }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.allBankHead}>
+              <Text style={styles.sheetMerchant}>Bank charges</Text>
+              <TouchableOpacity onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} hitSlop={8}>
+                <Ionicons name="close" size={18} color={darkUI.labelMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search / Ask tab toggle */}
+            <View style={searchStyles.tabRow}>
+              {([["keyword", "Search", "search"] as const, ["natural", "Ask", "sparkles"] as const]).map(([mode, label, icon]) => (
+                <TouchableOpacity
+                  key={mode}
+                  onPress={() => {
+                    setSearchMode(mode);
+                    setBankSearch("");
+                    askClear();
+                    setDatePreset("all");
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
+                    setShowCalendar(false);
+                  }}
+                  style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
+                >
+                  <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : darkUI.labelMuted} />
+                  <Text style={[searchStyles.tabText, searchMode === mode && searchStyles.tabTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Search input */}
+            <View style={[styles.sheetSearchWrap, searchMode === "natural" && bankSearch.trim() ? { borderColor: "#A78BFA60" } : {}]}>
+              <Ionicons
+                name={searchMode === "natural" ? "sparkles" : "search"}
+                size={16}
+                color={searchMode === "natural" && bankSearch.trim() ? "#A78BFA" : darkUI.labelMuted}
+              />
+              <TextInput
+                value={bankSearch}
+                onChangeText={(text) => {
+                  setBankSearch(text);
+                  if (searchMode === "natural" && text.trim()) {
+                    const dateOpts = dateFilterRange
+                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
+                      : undefined;
+                    askSearch(text, dateOpts);
+                  } else if (searchMode === "natural" && !text.trim()) {
+                    askClear();
+                  }
+                }}
+                onSubmitEditing={() => {
+                  if (searchMode === "natural" && bankSearch.trim()) {
+                    const dateOpts = dateFilterRange
+                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
+                      : undefined;
+                    askSearch(bankSearch, dateOpts);
+                  }
+                }}
+                placeholder={searchMode === "natural" ? "Ask in plain English..." : "Search by name, amount, etc."}
+                placeholderTextColor={darkUI.labelMuted}
+                style={styles.sheetSearchInput}
+                returnKeyType={searchMode === "natural" ? "search" : "done"}
+              />
+              {bankSearch.length > 0 && (
+                <TouchableOpacity onPress={() => { setBankSearch(""); askClear(); }} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={darkUI.labelMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Date filter presets */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
+              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"]] as const).map(([preset, label]) => (
+                <TouchableOpacity
+                  key={preset}
+                  onPress={() => {
+                    setDatePreset(preset);
+                    setShowCalendar(false);
+                    setCustomDateStart(null);
+                    setCustomDateEnd(null);
+                  }}
+                  style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
+                >
+                  <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={() => {
+                  setDatePreset("custom");
+                  setShowCalendar(true);
+                }}
+                style={[searchStyles.dateChip, datePreset === "custom" && searchStyles.dateChipActive]}
+              >
+                <Text style={[searchStyles.dateChipText, datePreset === "custom" && searchStyles.dateChipTextActive]}>
+                  {datePreset === "custom" && customDateStart && customDateEnd
+                    ? `${customDateStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customDateEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                    : "Custom"}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Calendar picker for Custom */}
+            {datePreset === "custom" && showCalendar ? (
+              <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+                <CalendarPicker
+                  startDate={customDateStart}
+                  endDate={customDateEnd}
+                  onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
+                />
+                <TouchableOpacity
+                  style={[searchStyles.applyBtn, (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled]}
+                  onPress={() => {
+                    if (customDateStart && customDateEnd) setShowCalendar(false);
+                  }}
+                  disabled={!customDateStart || !customDateEnd}
+                >
+                  <Text style={searchStyles.applyBtnText}>
+                    {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {/* Ask mode: AI answer banner */}
+            {searchMode === "natural" && askResults?.answer && !askLoading ? (
+              <View style={searchStyles.answerBanner}>
+                <Ionicons name="sparkles" size={18} color="#A78BFA" />
+                <Text style={searchStyles.answerText}>{askResults.answer}</Text>
+              </View>
+            ) : null}
+
+            {/* Ask mode: loading */}
+            {searchMode === "natural" && askLoading ? (
+              <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                <ActivityIndicator size="small" color="#A78BFA" />
+                <Text style={[searchStyles.loadingText, { color: darkUI.labelMuted }]}>Searching...</Text>
+              </View>
+            ) : null}
+
+            {/* Ask mode: error */}
+            {searchMode === "natural" && askError && !askLoading ? (
+              <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                <Text style={{ color: "#F87171", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
+              </View>
+            ) : null}
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {searchMode === "keyword" ? (
+                filteredAllBankRows.length === 0 ? (
+                  <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No charges found.</Text>
+                  </View>
+                ) : (
+                  <View style={styles.groupedCard}>
+                    {filteredAllBankRows.map((tx, i) => (
+                      <View key={tx.id}>
+                        <TouchableOpacity
+                          style={styles.friendRow}
+                          activeOpacity={0.75}
+                          onPress={() => {
+                            setShowAllBank(false);
+                            sfx.pop();
+                            setSelectedStrip(txToSheetRow(tx));
+                          }}
+                        >
+                          <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                            <MerchantLogo
+                              merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+                              size={22}
+                              fallbackText="💳"
+                              logoUrl={tx.logoUrl}
+                              backgroundColor="transparent"
+                              borderColor="transparent"
+                            />
+                          </View>
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={styles.friendName} numberOfLines={1}>
+                              {tx.merchant || tx.rawDescription || "Purchase"}
+                            </Text>
+                            <Text style={styles.friendMeta} numberOfLines={1}>
+                              {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
+                            </Text>
+                          </View>
+                          <Text style={[styles.friendAmt, styles.balAmtOut]}>
+                            ${Math.abs(Number(tx.amount)).toFixed(2)}
+                          </Text>
+                          {!tx.alreadySplit ? (
+                            <TouchableOpacity
+                              style={styles.bankSplitPill}
+                              hitSlop={8}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                sfx.toggle();
+                                setShowAllBank(false);
+                                router.push({
+                                  pathname: "/(tabs)/add-expense",
+                                  params: {
+                                    prefillDesc: tx.merchant || tx.rawDescription || "",
+                                    prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
+                                    prefillNonce: String(Date.now()),
+                                  },
+                                });
+                              }}
+                            >
+                              <Text style={styles.bankSplitPillText}>Split</Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </TouchableOpacity>
+                        {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
+                      </View>
+                    ))}
+                  </View>
+                )
+              ) : (
+                /* Ask mode: API search results */
+                !askLoading && !askError && askResults ? (
+                  askResults.transactions.length === 0 ? (
+                    <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                      <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No transactions found. Try a different question.</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={searchStyles.resultCount}>
+                        {askResults.count} transaction{askResults.count !== 1 ? "s" : ""}
+                        {askResults.date_range ? ` · ${askResults.date_range.earliest} – ${askResults.date_range.latest}` : ""}
+                      </Text>
+                      <View style={styles.groupedCard}>
+                        {askResults.transactions.map((tx: SearchTransaction, i: number) => {
+                          const merchant = tx.merchant_name || tx.normalized_merchant || tx.raw_name || "Purchase";
+                          const category = tx.detailed_category || tx.primary_category;
+                          const location = [tx.city, tx.region].filter(Boolean).join(", ");
+                          return (
+                            <View key={tx.id}>
+                              <View style={styles.friendRow}>
+                                <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                                  <MerchantLogo merchantName={merchant} size={22} fallbackText="💳" backgroundColor="transparent" borderColor="transparent" />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                  <Text style={styles.friendName} numberOfLines={1}>{merchant}</Text>
+                                  <Text style={styles.friendMeta} numberOfLines={1}>
+                                    {tx.date}{category ? ` · ${category}` : ""}{location ? ` · ${location}` : ""}
+                                  </Text>
+                                </View>
+                                <Text style={[styles.friendAmt, tx.amount < 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
+                                  {tx.amount < 0 ? "+" : "-"}${Math.abs(tx.amount).toFixed(2)}
+                                </Text>
+                              </View>
+                              {i < askResults.transactions.length - 1 ? <View style={styles.rowSep} /> : null}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </>
+                  )
+                ) : !askLoading && !askError && !askResults && bankSearch.trim() === "" ? (
+                  <View style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 24 }}>
+                    <Ionicons name="sparkles-outline" size={36} color={darkUI.labelMuted} />
+                    <Text style={[styles.emptyBankText, { color: darkUI.labelMuted, marginTop: 10, textAlign: "center" }]}>
+                      Ask about your transactions
+                    </Text>
+                    <Text style={{ color: darkUI.labelMuted, fontSize: 12, fontFamily: font.regular, textAlign: "center", marginTop: 6 }}>
+                      Try "how much on food this month" or "Uber rides last week"
+                    </Text>
+                  </View>
+                ) : null
+              )}
+            </ScrollView>
+            <TouchableOpacity style={styles.sheetClose} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+              <Text style={styles.sheetCloseText}>Close</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAF8" },
-  center: { justifyContent: "center", alignItems: "center" },
+  safe: { flex: 1, backgroundColor: "#F5F3F2" },
   scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100 },
-  header: {
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 132 },
+  header: { marginBottom: 16, paddingTop: 4, flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  title: { fontSize: 42, lineHeight: 44, fontFamily: font.black, color: "#1F2328", letterSpacing: -1.2 },
+  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#6B7280", marginTop: 2 },
+  sLabel: {
+    fontSize: 11,
+    fontFamily: font.extrabold,
+    color: "#9AA0A6",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  sectionRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 8,
+    paddingHorizontal: 2,
   },
-  greeting: { fontSize: 22, fontWeight: "700", color: "#1F2937" },
-  subGreeting: { fontSize: 14, color: "#6B7280", marginTop: 2 },
-  settingsBtn: { padding: 4 },
-  panels: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 24,
-  },
-  panel: {
-    flex: 1,
-    backgroundColor: "#fff",
+  seeAll: { fontSize: 13, fontFamily: font.semibold, color: "#1F2328" },
+  bankCard: {
+    width: 168,
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 14,
     borderWidth: 1,
-    borderColor: "#EEF7F2",
+    borderColor: "#E3DBD8",
+    paddingHorizontal: 13,
+    paddingTop: 13,
+    paddingBottom: 11,
+    ...shadow.sm,
   },
-  panelIcon: {
+  bankCardEmail: { borderColor: "#D9D7F0" },
+  bankTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 9 },
+  bankEmojiWrap: {
     width: 36,
     height: 36,
     borderRadius: 10,
+    backgroundColor: "#F6F2EF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
   },
-  panelValue: { fontSize: 17, fontWeight: "700", color: "#1F2937" },
-  panelValueGreen: { color: "#059669" },
-  panelValueAmber: { color: "#B45309" },
-  panelLabel: { fontSize: 11, color: "#6B7280", marginTop: 2 },
-  searchSection: { marginBottom: 20 },
-  searchBar: {
-    flexDirection: "row",
+  mailDot: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: prototype.blue,
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
+    justifyContent: "center",
+  },
+  bankMerchant: { fontSize: 13, fontFamily: font.bold, color: "#1F2328", marginBottom: 2 },
+  bankHint: { fontSize: 10, fontFamily: font.regular, color: "#81868D", marginBottom: 7 },
+  bankEmailLine: { fontSize: 10, fontFamily: font.regular, color: prototype.blue, marginBottom: 7 },
+  bankAmt: {
+    fontSize: 20,
+    fontFamily: font.black,
+    color: "#1F2328",
+    letterSpacing: -0.8,
+    marginBottom: 9,
+  },
+  bankCta: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#D8D0CB",
+    backgroundColor: "#F6F2EF",
+    borderRadius: 9,
+    paddingVertical: 8,
+    alignItems: "center",
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#1F2937", padding: 0 },
-  searchIconBtn: {
-    padding: 6,
-  },
-  searchModeRow: { flexDirection: "row", gap: 8, marginTop: 10 },
-  modeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: "#E5E7EB",
-  },
-  modeChipActive: { backgroundColor: "#3D8E62" },
-  modeChipText: { fontSize: 13, fontWeight: "500", color: "#6B7280" },
-  modeChipTextActive: { color: "#fff" },
-  searchHint: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    marginTop: 6,
-  },
-  answerBanner: {
-    backgroundColor: "#EEF7F2",
-    borderRadius: 14,
+  bankCtaText: { fontSize: 13, fontFamily: font.extrabold, color: "#24292E" },
+  emptyBank: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#D1EAE0",
+    borderColor: "#E3DBD8",
     padding: 16,
-    marginBottom: 16,
   },
-  answerText: {
-    fontSize: 15,
-    color: "#2D5A44",
-    lineHeight: 22,
+  emptyBankText: { fontSize: 13, fontFamily: font.regular, color: "#6B7280", lineHeight: 18 },
+  emptyBankLoading: { alignItems: "center", paddingVertical: 24 },
+  groupedCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    overflow: "hidden",
   },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-    marginBottom: 12,
-  },
-  sectionTitle: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  sectionMeta: { fontSize: 12, color: "#9CA3AF" },
-  txRow: {
+  friendRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  avatar: {
+  friendName: { fontSize: 15, fontFamily: font.bold, color: "#1F2328" },
+  friendMeta: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
+  friendAmt: { fontSize: 16, fontFamily: font.black, marginRight: 4, letterSpacing: -0.3 },
+  rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 70 },
+  sectionDivider: { height: 1, backgroundColor: "#EEE8E4" },
+  inlineSectionLabel: {
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  inlineSectionLabelAfterFriends: { paddingTop: 12 },
+  inlineSectionLabelFirst: {
+    paddingTop: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#EEE8E4",
+  },
+  inlineSectionLabelText: {
+    fontSize: 11,
+    fontFamily: font.extrabold,
+    color: "#8A9098",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  groupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  groupIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: radii.md,
+    backgroundColor: "rgba(0,0,0,0.05)",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  txInfo: { flex: 1, marginLeft: 12, minWidth: 0 },
-  txMerchant: { fontSize: 15, fontWeight: "500", color: "#1F2937" },
-  txCategory: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  txRight: { alignItems: "flex-end" },
-  txAmount: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
-  txDate: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
-  emptyState: {
+  groupRowName: { fontSize: 16, fontFamily: font.semibold, color: "#1F2328" },
+  groupRowSub: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 1 },
+  groupRowBal: { fontSize: 16, fontFamily: font.extrabold, letterSpacing: -0.3, marginRight: 4 },
+  balAmtIn: { color: prototype.green },
+  balAmtOut: { color: prototype.red },
+  balMuted: { color: "#8A9098" },
+  emptyFriend: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
     alignItems: "center",
-    padding: 32,
   },
-  emptyText: { fontSize: 14, color: "#9CA3AF", marginTop: 12 },
-  loadingRow: {
+  emptyFriendTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 10 },
+  emptyFriendSub: { fontSize: 13, fontFamily: font.regular, color: "#7A8088", marginTop: 4, textAlign: "center" },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 8,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#D8D4CF",
+    marginBottom: 16,
+  },
+  allBankHead: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  sheetSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    borderRadius: 16,
+    backgroundColor: "#F7F3F0",
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 10,
+  },
+  sheetSearchInput: {
+    flex: 1,
+    color: "#1F2328",
+    fontSize: 14,
+    fontFamily: font.regular,
+    paddingVertical: 0,
+  },
+  sheetFilterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sheetFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#F7F3F0",
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+  },
+  sheetFilterChipActive: {
+    backgroundColor: "#1F2328",
+    borderColor: "#1F2328",
+  },
+  sheetFilterText: {
+    fontSize: 13,
+    fontFamily: font.semibold,
+    color: "#7A8088",
+  },
+  sheetFilterTextActive: {
+    color: "#fff",
+  },
+  sheetHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
+  sheetEmoji: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#F7F3F0",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+  },
+  sheetMerchant: { fontSize: 17, fontFamily: font.extrabold, color: "#1F2328" },
+  sheetDate: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
+  sheetAmt: { fontSize: 22, fontFamily: font.black, color: "#1F2328", letterSpacing: -1 },
+  emailBox: {
+    backgroundColor: "#F7F3F0",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    marginBottom: 14,
+  },
+  emailRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+  emailLbl: {
+    fontSize: 10,
+    fontFamily: font.bold,
+    color: prototype.blue,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  emailSnippet: { fontSize: 13, fontFamily: font.regular, color: "#3F464F" },
+  splitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    marginBottom: 12,
+  },
+  splitBtnText: { fontSize: 16, fontFamily: font.bold, color: "#fff" },
+  bankSplitPill: {
+    marginLeft: 8,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: `${prototype.amber}22`,
+    borderWidth: 1,
+    borderColor: `${prototype.amber}50`,
+  },
+  bankSplitPillText: {
+    fontSize: 11,
+    fontFamily: font.bold,
+    color: prototype.amber,
+  },
+  sheetScroll: { maxHeight: 520 },
+  itemizedSectionTitle: {
+    fontSize: 11,
+    fontFamily: font.extrabold,
+    color: "#8A9098",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  saasTotal: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 4,
+    paddingTop: 8,
+    gap: 4,
+  },
+  saasTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  saasTotalFinal: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+  },
+  saasTotalLabel: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalAmt: { fontSize: 13, fontFamily: font.regular, color: "#6b7280" },
+  saasTotalLabelBold: { fontSize: 15, fontFamily: font.semibold, color: "#1f2937" },
+  saasTotalAmtBold: { fontSize: 15, fontFamily: font.bold, color: "#1f2937" },
+  receiptIdHint: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: "#7A8088",
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  rideshareMap: {
+    width: "100%",
+    height: 160,
+    borderRadius: radii.md,
+    marginBottom: 12,
+    backgroundColor: "#f0f0f0",
+  },
+  rideshareRoute: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 8,
+  },
+  rideshareRouteDots: {
+    alignItems: "center",
+    paddingTop: 4,
+    gap: 0,
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  routeLine: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#d1d5db",
+  },
+  rideshareLabel: {
+    fontSize: 11,
+    fontFamily: font.medium,
+    color: "#9ca3af",
+    marginBottom: 2,
+  },
+  rideshareAddr: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: "#1f2937",
+    lineHeight: 18,
+  },
+  rideshareMeta: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  rideshareBreakdown: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 8,
+    paddingTop: 8,
+    gap: 4,
+  },
+  rideshareBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  rideshareBreakdownLabel: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+  },
+  rideshareBreakdownAmt: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    color: "#6b7280",
+  },
+  rideshareTotals: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+    marginTop: 8,
+    paddingTop: 8,
+    gap: 4,
+  },
+  rideshareTotalRow: {
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e7eb",
+  },
+  rideshareTotalLabel: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#1f2937",
+  },
+  rideshareTotalAmt: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#1f2937",
+  },
+  sheetClose: { alignItems: "center", paddingVertical: 10 },
+  sheetCloseText: { fontSize: 15, fontFamily: font.semibold, color: "#3F464F" },
+  homeLoadingWrap: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    padding: 24,
   },
-  loadingText: { fontSize: 14, color: "#6B7280", marginTop: 12 },
-  connectCard: {
-    flex: 1,
-    margin: 20,
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 32,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#EEF7F2",
-  },
-  connectTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginTop: 20 },
-  connectAccountEmail: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 6,
-    textAlign: "center",
-  },
-  connectAccountId: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  connectSubtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  connectHintImportant: {
+  homeLoadingText: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#B45309",
-    textAlign: "center",
-    marginTop: 12,
-    lineHeight: 20,
-    paddingHorizontal: 12,
+    fontFamily: font.medium,
+    color: "#7A8088",
   },
-  connectErrorText: {
-    fontSize: 12,
-    color: "#DC2626",
-    textAlign: "center",
-    marginTop: 10,
-    lineHeight: 18,
-    paddingHorizontal: 8,
+  contactsBanner: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 18,
+    gap: 12,
   },
-  connectHint: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    textAlign: "center",
-    marginTop: 12,
-    lineHeight: 18,
-    paddingHorizontal: 8,
-  },
-  connectButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#3D8E62",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginTop: 28,
-  },
-  connectButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  connectRefreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 16,
-    paddingVertical: 10,
-  },
-  connectRefreshText: { color: "#3D8E62", fontSize: 14, fontWeight: "500" },
-  connectSignOutButton: {
-    marginTop: 16,
-    paddingVertical: 10,
-  },
-  connectSignOutText: { color: "#6B7280", fontSize: 14, textDecorationLine: "underline" },
-  fab: {
-    position: "absolute",
-    bottom: 100,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#3D8E62",
+  contactsIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  fabOverlay: {
+  contactsBannerTitle: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+  },
+  contactsBannerSub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    marginTop: 2,
+  },
+  contactsBannerBtn: {
+    borderRadius: radii.md,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  contactsBannerBtnTxt: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: font.semibold,
+  },
+});
+
+const searchStyles = StyleSheet.create({
+  tabRow: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: "#2a2d2e",
+    borderRadius: 14,
+    padding: 3,
+    gap: 3,
+  },
+  tab: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-    paddingBottom: 120,
-    paddingHorizontal: 20,
-  },
-  fabMenu: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
     paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    borderRadius: 11,
   },
-  fabMenuItem: {
+  tabActive: {
+    backgroundColor: "#3d4043",
+  },
+  tabText: {
+    fontSize: 12,
+    fontFamily: font.bold,
+    fontWeight: "700",
+    color: "#7a7d80",
+  },
+  tabTextActive: {
+    color: "#fff",
+  },
+  dateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#3d4043",
+    backgroundColor: "#2a2d2e",
+  },
+  dateChipActive: {
+    borderColor: "#ffffff40",
+    backgroundColor: "#3d4043",
+  },
+  dateChipText: {
+    fontSize: 11,
+    fontFamily: font.bold,
+    fontWeight: "700",
+    color: "#7a7d80",
+  },
+  dateChipTextActive: {
+    color: "#fff",
+  },
+  answerBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "#1E1040",
+    borderWidth: 1,
+    borderColor: "#7C3AED40",
+  },
+  answerText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: font.semibold,
+    color: "#fff",
+    lineHeight: 22,
+    letterSpacing: -0.1,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontFamily: font.medium,
+    marginTop: 8,
+  },
+  resultCount: {
+    fontSize: 11,
+    fontFamily: font.semibold,
+    color: "#7a7d80",
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  applyBtn: {
+    marginTop: 10,
+    backgroundColor: "#3D8E62",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyBtnDisabled: {
+    backgroundColor: "#3d4043",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#fff",
+  },
+});
+
+const ttpStyles = StyleSheet.create({
+  card: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    padding: 16,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    marginBottom: 18,
   },
-  fabMenuText: { fontSize: 16, fontWeight: "600", color: "#1F2937" },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  sub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    marginTop: 2,
+  },
 });
