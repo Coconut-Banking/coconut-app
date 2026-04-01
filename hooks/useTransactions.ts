@@ -37,7 +37,6 @@ export function useTransactions() {
     const timeout = setTimeout(() => controller.abort(), 10000);
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
-        clearTimeout(timeout);
         if (cancelled) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
@@ -50,6 +49,7 @@ export function useTransactions() {
             return null;
           }
           console.log("[useTransactions] 425 max retries, setting loading=false");
+          transientRetryCount.current = 0;
           setLoading(false);
           return null;
         }
@@ -57,10 +57,12 @@ export function useTransactions() {
         if (r.status === 401 || r.status === 404) {
           // 404 = Clerk's protect() for unauthenticated; 401 = our middleware
           setStatus("unauthorized");
+          setLinked(false);
           setLoading(false);
           return null;
         }
         if (!r.ok) {
+          setLinked(false);
           setLoading(false);
           return null;
         }
@@ -71,12 +73,13 @@ export function useTransactions() {
         if (!data.linked) {
           console.log("[useTransactions] not linked, loading=false");
           setStatus("not_linked");
+          setLinked(false);
           setLoading(false);
           return null;
         }
         console.log("[useTransactions] linked! fetching transactions");
         setLinked(true);
-        return apiFetch("/api/plaid/transactions");
+        return apiFetch("/api/plaid/transactions", { signal: controller.signal });
       })
       .then((r) => {
         if (cancelled || !r || !r.ok) return null;
@@ -92,10 +95,6 @@ export function useTransactions() {
           hasShownInitialLoad.current = true;
           setLoading(false);
         }
-      })
-      .catch(() => {
-        clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
       });
   }, [apiFetch]);
 
