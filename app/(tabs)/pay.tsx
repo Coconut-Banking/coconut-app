@@ -14,6 +14,7 @@ import type { Reader } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useApiFetch } from "../../lib/api";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
 
@@ -59,7 +60,11 @@ export default function PayScreen() {
 
   useEffect(() => {
     if (!isInitialized) return;
-    discoverReaders({ discoveryMethod: "tapToPay" });
+    discoverReaders({ discoveryMethod: "tapToPay" }).then((result) => {
+      if (result?.error) {
+        Alert.alert("Discovery failed", result.error.message ?? "Could not start reader discovery");
+      }
+    });
   }, [isInitialized, discoverReaders]);
 
   const connectTapToPay = useCallback(async () => {
@@ -77,6 +82,12 @@ export default function PayScreen() {
     setConnecting(true);
     try {
       const locRes = await apiFetch("/api/stripe/terminal/location");
+      if (!locRes.ok) {
+        const err = await locRes.json().catch(() => ({}));
+        Alert.alert("Error", (err as { error?: string }).error ?? "Could not get Terminal location");
+        setConnecting(false);
+        return;
+      }
       const locData = await locRes.json();
       const locationId = locData.locationId;
 
@@ -121,7 +132,7 @@ export default function PayScreen() {
 
     setCollecting(true);
     try {
-      const body: Record<string, unknown> = { amount: amt };
+      const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
       if (params.groupId && params.payerMemberId && params.receiverMemberId) {
         body.groupId = params.groupId;
         body.payerMemberId = params.payerMemberId;
@@ -131,6 +142,10 @@ export default function PayScreen() {
         method: "POST",
         body,
       });
+      if (!piRes.ok) {
+        const err = await piRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? `Payment failed (${piRes.status})`);
+      }
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
 
@@ -194,7 +209,7 @@ export default function PayScreen() {
   const isConnected = !!connectedReader;
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <Text style={styles.title}>Tap to Pay</Text>
       <Text style={styles.subtitle}>
         Accept contactless payments with your phone. No reader required.
@@ -281,7 +296,7 @@ export default function PayScreen() {
         Requires a development build (expo run:ios / expo run:android). iOS: iPhone XS or later.
         Android: NFC device, API 26+.
       </Text>
-    </View>
+    </SafeAreaView>
   );
 }
 
