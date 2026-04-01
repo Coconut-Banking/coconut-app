@@ -96,7 +96,7 @@ export default function AddExpenseScreen() {
       });
       const data = await res.json();
       if (res.ok) {
-        router.back();
+        router.replace("/(tabs)");
       } else {
         setError(data.error ?? "Failed to add expense");
       }
@@ -126,7 +126,7 @@ export default function AddExpenseScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+          <TouchableOpacity onPress={() => router.replace("/(tabs)")} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color="#374151" />
           </TouchableOpacity>
           <Text style={styles.title}>Add an expense</Text>
