@@ -139,6 +139,7 @@ export default function AddExpenseScreen() {
   const [splitMethod, setSplitMethod] = useState<SplitMethod>("equal");
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
   const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
@@ -192,6 +193,7 @@ export default function AddExpenseScreen() {
     setRetryCount(0);
     savedRef.current = false;
     touchedSplitKeysRef.current = new Set();
+    setJustSaved(false);
   }, []);
 
   // Reset form when screen gains focus without fresh prefill params
@@ -1002,18 +1004,30 @@ export default function AddExpenseScreen() {
 
             <View style={s.footer}>
               <TouchableOpacity
-                style={[s.primaryBtnDark, saving && { opacity: 0.6 }]}
+                style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: "#3A7D44" }]}
                 onPress={async () => {
                   await save();
                   if (savedRef.current) {
-                    resetForm();
-                    nav.replace("/(tabs)");
+                    setJustSaved(true);
+                    setTimeout(() => {
+                      resetForm();
+                      nav.replace("/(tabs)");
+                    }, 650);
                   }
                 }}
-                disabled={saving}
+                disabled={saving || justSaved}
                 activeOpacity={0.85}
               >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryBtnText}>Done</Text>}
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : justSaved ? (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={s.primaryBtnText}>Saved!</Text>
+                  </>
+                ) : (
+                  <Text style={s.primaryBtnText}>Done</Text>
+                )}
               </TouchableOpacity>
             </View>
           </>

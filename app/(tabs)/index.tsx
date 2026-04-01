@@ -1213,9 +1213,25 @@ export default function BalancesPrototypeScreen() {
                             ${Math.abs(Number(tx.amount)).toFixed(2)}
                           </Text>
                           {!tx.alreadySplit ? (
-                            <View style={styles.bankSplitPill}>
+                            <TouchableOpacity
+                              style={styles.bankSplitPill}
+                              hitSlop={8}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                sfx.toggle();
+                                setShowAllBank(false);
+                                router.push({
+                                  pathname: "/(tabs)/add-expense",
+                                  params: {
+                                    prefillDesc: tx.merchant || tx.rawDescription || "",
+                                    prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
+                                    prefillNonce: String(Date.now()),
+                                  },
+                                });
+                              }}
+                            >
                               <Text style={styles.bankSplitPillText}>Split</Text>
-                            </View>
+                            </TouchableOpacity>
                           ) : null}
                         </TouchableOpacity>
                         {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
