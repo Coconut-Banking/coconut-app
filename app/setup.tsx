@@ -17,7 +17,6 @@ import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useTheme } from "../lib/theme-context";
 import { useApiFetch } from "../lib/api";
 import { useSetup } from "../lib/setup-context";
-import { useDemoMode } from "../lib/demo-mode-context";
 import { font, radii, shadow } from "../lib/theme";
 import { CoconutMark } from "../components/brand/CoconutMark";
 
@@ -30,7 +29,6 @@ const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 export default function SetupScreen() {
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
-  const { isDemoOn } = useDemoMode();
   const [currentStep, setCurrentStep] = useState(0);
 
   const handleComplete = () => {
@@ -44,11 +42,6 @@ export default function SetupScreen() {
       handleComplete();
     }
   };
-
-  if (isDemoOn) {
-    handleComplete();
-    return null;
-  }
 
   const step = STEPS[currentStep];
   const progress = (currentStep + 1) / TOTAL_STEPS;

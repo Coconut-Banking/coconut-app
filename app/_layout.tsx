@@ -105,15 +105,10 @@ function AuthSwitch() {
       <BiometricLockGate />
       {!needsSetup && <BiometricFirstTimePrompt />}
       <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
-        {needsSetup ? (
-          <Stack.Screen name="setup" options={{ headerShown: false }} />
-        ) : (
-          <>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="connected" options={{ headerShown: false }} />
-            <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
-          </>
-        )}
+        {needsSetup && <Stack.Screen name="setup" options={{ headerShown: false }} />}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="connected" options={{ headerShown: false }} />
+        <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
       </Stack>
     </BiometricLockProvider>
   );
