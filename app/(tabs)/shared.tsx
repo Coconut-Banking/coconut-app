@@ -249,12 +249,13 @@ export default function SharedScreen() {
 
   if (selectedPersonKey && personDetail) {
     return (
-      <ScrollView
-        style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
-        }
-      >
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <ScrollView
+          style={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D8E62" />
+          }
+        >
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={20} color="#6B7280" />
           <Text style={styles.backText}>Back</Text>
@@ -330,7 +331,8 @@ export default function SharedScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
