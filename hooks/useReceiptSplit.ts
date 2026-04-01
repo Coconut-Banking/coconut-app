@@ -75,6 +75,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   const [personShares, setPersonShares] = useState<PersonShare[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const uploadReceipt = useCallback(
     async (
@@ -229,7 +230,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         }
         if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
 
-        setSaveError(null);
+        setConfirmError(null);
 
         const serverItems = (data.receipt_items ?? [])
           .sort(
@@ -263,7 +264,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         setItemsWithExtras(withExtras);
         setStep("assign");
       } catch (e) {
-        setSaveError(
+        setConfirmError(
           e instanceof Error ? e.message : "Failed to save changes. Please try again."
         );
       } finally {
@@ -469,6 +470,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     setAssignments(new Map());
     setItemsWithExtras([]);
     setPersonShares([]);
+    setConfirmError(null);
   }, []);
 
   return {
