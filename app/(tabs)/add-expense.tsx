@@ -23,6 +23,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme";
@@ -129,6 +130,7 @@ export default function AddExpenseScreen() {
   const toast = useToast();
   const { summary: realSummary, loading } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
+  const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
 
   // ── State ──
   const [targets, setTargets] = useState<Target[]>([]);
@@ -314,8 +316,22 @@ export default function AddExpenseScreen() {
     return true;
   });
   const filteredGroups = q ? visibleGroups.filter((g) => g.name.toLowerCase().includes(q)) : visibleGroups;
+
+  const filteredDeviceContacts = useMemo(() => {
+    if (contactsPerm !== "granted" || !q) return [];
+    const friendEmails = new Set(friends.map((f) => (f as { email?: string }).email?.toLowerCase()).filter(Boolean));
+    const eligible = deviceContacts.filter((c) => {
+      if (c.email && friendEmails.has(c.email.toLowerCase())) return false;
+      return true;
+    });
+    return eligible
+      .filter((c) => c.name.toLowerCase().includes(q) || (c.email?.toLowerCase().includes(q) ?? false))
+      .slice(0, 20);
+  }, [deviceContacts, contactsPerm, friends, q]);
+
   const selectedKeys = new Set(targets.map((t) => t.key));
-  const noMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
+  const noApiMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
+  const noMatches = noApiMatches && filteredDeviceContacts.length === 0;
   const showDropdown = searchFocused && (q.length > 0 || targets.length === 0);
 
   const myMemberId = useMemo(() => {
@@ -488,9 +504,9 @@ export default function AddExpenseScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, apiFetch, isDemoOn, retryCount]);
 
-  const startAddFriend = () => {
-    setNewFriendName(query.trim());
-    setNewFriendEmail("");
+  const startAddFriend = (contact?: DeviceContact) => {
+    setNewFriendName(contact?.name ?? query.trim());
+    setNewFriendEmail(contact?.email ?? "");
     setShowAddFriend(true);
   };
 
@@ -805,14 +821,52 @@ export default function AddExpenseScreen() {
                 </>
               )}
 
+              {/* Device contacts */}
+              {contactsPerm === "granted" && filteredDeviceContacts.length > 0 && (
+                <>
+                  <Text style={[s.secLabel, { marginTop: 16 }]}>From your contacts</Text>
+                  <View style={s.listCard}>
+                    {filteredDeviceContacts.map((c, i) => (
+                      <TouchableOpacity
+                        key={`dc-${c.id}`}
+                        style={[s.listRow, i < filteredDeviceContacts.length - 1 && s.listRowBorder]}
+                        onPress={() => startAddFriend(c)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
+                          <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.listRowTitle}>{c.name}</Text>
+                          {c.email ? (
+                            <Text style={s.listRowSub}>{c.email}</Text>
+                          ) : c.phone ? (
+                            <Text style={s.listRowSub}>{c.phone}</Text>
+                          ) : null}
+                        </View>
+                        <Ionicons name="person-add-outline" size={16} color={darkUI.labelMuted} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {contactsPerm === "undetermined" && q.length > 0 && filteredFriends.length === 0 && (
+                <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={requestContactsAccess}>
+                  <Ionicons name="people-circle-outline" size={20} color={colors.primary} />
+                  <Text style={s.addFriendTxt}>Search your contacts</Text>
+                  <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} />
+                </TouchableOpacity>
+              )}
+
               {noMatches && (
-                <TouchableOpacity style={s.addFriendRow} onPress={startAddFriend}>
+                <TouchableOpacity style={s.addFriendRow} onPress={() => startAddFriend()}>
                   <Ionicons name="person-add" size={18} color={colors.primary} />
                   <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
                 </TouchableOpacity>
               )}
               {!noMatches && q.length > 1 && (
-                <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={startAddFriend}>
+                <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={() => startAddFriend()}>
                   <Ionicons name="person-add" size={18} color={colors.primary} />
                   <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
                 </TouchableOpacity>
