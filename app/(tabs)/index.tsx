@@ -257,8 +257,7 @@ export default function HomeScreen() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      // AuthSwitch will switch to (auth) automatically; router ensures we land on sign-in
-      router.replace("/(auth)/sign-in");
+      // AuthSwitch reactively mounts (auth) stack when isSignedIn becomes false
     } catch (e) {
       console.error("[home] signOut failed:", e);
     }
