@@ -120,12 +120,16 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             ? rawScheme[0] ?? "coconut"
             : "coconut";
       const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
+      const callbackUrl = `${scheme}://connected`;
 
-      await WebBrowser.openBrowserAsync(connectUrl);
+      // openAuthSessionAsync auto-dismisses when the web page redirects to
+      // the callback URL — no lingering Safari / SFSafariVC.
+      const result = await WebBrowser.openAuthSessionAsync(connectUrl, callbackUrl);
 
-      // Browser was dismissed — either by the coconut://connected deep link
-      // (connected.tsx calls dismissBrowser + router.back) or by the user
-      // swiping it away. Poll to check if the bank was linked.
+      if (result.type === "cancel" || result.type === "dismiss") {
+        // User manually closed the browser — still poll in case they finished.
+      }
+
       const linked = await pollPlaidStatus(apiFetch);
       if (linked) {
         setSuccess(true);
@@ -230,49 +234,62 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
           : Array.isArray(rawScheme)
             ? rawScheme[0] ?? "coconut"
             : "coconut";
-      const qs = new URLSearchParams({ app: "1", scheme });
-      const res = await apiFetch(`/api/splitwise/auth-url?${qs.toString()}`);
-      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        const serverErr = (data as { error?: string }).error?.trim();
-        if (serverErr?.toLowerCase().includes("not configured")) {
-          Alert.alert("Splitwise not configured", "The server doesn't have Splitwise API keys set up yet.");
-        } else {
-          Alert.alert("Error", serverErr ?? "Could not connect to Splitwise.");
+      // Check if Splitwise is already authorized (avoids forcing re-auth on retries)
+      let alreadyConnected = false;
+      try {
+        const statusRes = await apiFetch("/api/splitwise/status");
+        if (statusRes.ok) {
+          const sd = (await statusRes.json().catch(() => ({}))) as { connected?: boolean };
+          alreadyConnected = Boolean(sd.connected);
         }
-        return;
-      }
+      } catch { /* proceed with auth flow */ }
 
-      const url = (data as { url?: string }).url;
-      if (!url || typeof url !== "string") {
-        Alert.alert("Error", "Server did not return an authorization URL.");
-        return;
-      }
+      if (!alreadyConnected) {
+        const qs = new URLSearchParams({ app: "1", scheme });
+        const res = await apiFetch(`/api/splitwise/auth-url?${qs.toString()}`);
+        const data = await res.json().catch(() => ({}));
 
-      const callbackUrl = `${scheme}://splitwise-callback`;
-      await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
-
-      let result: WebBrowser.WebBrowserAuthSessionResult;
-      try {
-        result = await WebBrowser.openAuthSessionAsync(url, callbackUrl, {
-          preferEphemeralSession: true,
-        });
-      } catch {
-        Alert.alert("Error", "Could not open Splitwise authorization.");
-        return;
-      }
-
-      if (result.type !== "success") return;
-
-      try {
-        const returned = new URL(result.url);
-        if (returned.searchParams.get("error")) {
-          Alert.alert("Splitwise", "Authorization was cancelled or denied.");
+        if (!res.ok) {
+          const serverErr = (data as { error?: string }).error?.trim();
+          if (serverErr?.toLowerCase().includes("not configured")) {
+            Alert.alert("Splitwise not configured", "The server doesn't have Splitwise API keys set up yet.");
+          } else {
+            Alert.alert("Error", serverErr ?? "Could not connect to Splitwise.");
+          }
           return;
         }
-      } catch {
-        /* ignore */
+
+        const url = (data as { url?: string }).url;
+        if (!url || typeof url !== "string") {
+          Alert.alert("Error", "Server did not return an authorization URL.");
+          return;
+        }
+
+        const callbackUrl = `${scheme}://splitwise-callback`;
+        await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
+
+        let result: WebBrowser.WebBrowserAuthSessionResult;
+        try {
+          result = await WebBrowser.openAuthSessionAsync(url, callbackUrl, {
+            preferEphemeralSession: true,
+          });
+        } catch {
+          Alert.alert("Error", "Could not open Splitwise authorization.");
+          return;
+        }
+
+        if (result.type !== "success") return;
+
+        try {
+          const returned = new URL(result.url);
+          if (returned.searchParams.get("error")) {
+            Alert.alert("Splitwise", "Authorization was cancelled or denied.");
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
       }
 
       setConnecting(false);
@@ -280,19 +297,24 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
 
       let members: UninvitedMember[] = [];
       const importRes = await apiFetch("/api/splitwise/import", { method: "POST" });
-      if (importRes.ok) {
-        const importData = await importRes.json().catch(() => ({}));
-        const d = importData as {
-          stats?: { groups?: number; members?: number; expenses?: number };
-          uninvitedMembers?: UninvitedMember[];
-        };
-        setImportStats({
-          groups: d.stats?.groups ?? 0,
-          friends: d.stats?.members ?? 0,
-          expenses: d.stats?.expenses ?? 0,
-        });
-        members = d.uninvitedMembers ?? [];
+      if (!importRes.ok) {
+        const errData = await importRes.json().catch(() => ({}));
+        Alert.alert("Import Error", (errData as { error?: string }).error ?? "Import failed. Please try again.");
+        return;
       }
+
+      const importData = await importRes.json().catch(() => ({}));
+      const d = importData as {
+        stats?: { groups?: number; members?: number; expenses?: number };
+        totals?: { groups?: number; friends?: number; expenses?: number };
+        uninvitedMembers?: UninvitedMember[];
+      };
+      setImportStats({
+        groups: d.totals?.groups ?? d.stats?.groups ?? 0,
+        friends: d.totals?.friends ?? d.stats?.members ?? 0,
+        expenses: d.totals?.expenses ?? d.stats?.expenses ?? 0,
+      });
+      members = d.uninvitedMembers ?? [];
 
       setImporting(false);
       setSuccess(true);

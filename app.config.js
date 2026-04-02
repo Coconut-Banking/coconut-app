@@ -98,6 +98,13 @@ export default {
             "Coconut uses your contacts to help you quickly add friends to split expenses with.",
         },
       ],
+      [
+        "expo-local-authentication",
+        {
+          faceIDPermission:
+            "Coconut uses Face ID to securely unlock the app and protect your financial data.",
+        },
+      ],
       ["expo-build-properties", { android: { minSdkVersion: 26 } }],
     ],
     experiments: { typedRoutes: true },

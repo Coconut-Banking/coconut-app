@@ -6,11 +6,13 @@ import { useSetup } from "../lib/setup-context";
 /**
  * Handles coconut://connected deep link from web connect flow.
  *
- * During setup: dismisses SFSafariViewController and navigates back so the
- * setup screen (which was pushed underneath) is restored WITHOUT remounting.
- * BankStep's connectBank resumes after openBrowserAsync resolves.
+ * During setup the auth session auto-dismisses (openAuthSessionAsync detects
+ * the callback URL), so this route is mainly a no-op — the setup screen's
+ * BankStep resumes via the resolved promise. We still dismiss any lingering
+ * browser as a safety net.
  *
- * After setup: dismisses browser and goes to the home tabs.
+ * After setup (e.g. reconnecting from Settings): dismisses browser and
+ * navigates to the home tabs.
  */
 export default function ConnectedScreen() {
   const { setupComplete } = useSetup();
@@ -18,14 +20,12 @@ export default function ConnectedScreen() {
   useEffect(() => {
     WebBrowser.dismissBrowser().catch(() => {});
 
-    if (!setupComplete) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/setup");
-      }
-    } else {
+    if (setupComplete) {
       router.replace("/(tabs)");
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/setup");
     }
   }, [setupComplete]);
 

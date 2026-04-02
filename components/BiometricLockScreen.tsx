@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBiometricLock } from "../lib/biometric-lock-context";
@@ -10,11 +11,19 @@ export function BiometricLockScreen() {
   const { theme } = useTheme();
   const { unlock, biometricType } = useBiometricLock();
   const label = getBiometricLabel(biometricType);
+  const autoTriggered = useRef(false);
 
   const handleUnlock = async () => {
     const result = await authenticate(`Unlock Coconut with ${label}`);
     if (result.success) unlock();
   };
+
+  useEffect(() => {
+    if (autoTriggered.current) return;
+    autoTriggered.current = true;
+    const timer = setTimeout(handleUnlock, 300);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.container, { backgroundColor: theme.background }]}>

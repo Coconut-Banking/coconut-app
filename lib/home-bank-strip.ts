@@ -51,14 +51,11 @@ export function demoChargeToStripRow(tx: PrototypeBankCharge): HomeBankStripRow 
 }
 
 /**
- * Live: purchases not yet split, with a receipt match and/or split suggestion from API.
+ * Convert any debit transaction into a strip row, tagging receipt-matched ones.
  */
 export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | null {
-  if (tx.alreadySplit) return null;
   const amt = Number(tx.amount);
   if (!(amt < 0)) return null;
-  const matched = Boolean(tx.hasReceipt || tx.hasSplitSuggestion);
-  if (!matched) return null;
 
   const amount = Math.abs(amt);
   const receiptSnippet = (tx.receiptMatchLine?.trim() ?? "") || "";
@@ -82,13 +79,15 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
   };
 }
 
+/**
+ * All recent debit transactions for the home strip.
+ * Receipt-matched ones are tagged (hasMailBadge, showReceiptBox) but all are included.
+ */
 export function buildLiveMatchedStrip(transactions: Transaction[]): HomeBankStripRow[] {
   const eligible: Transaction[] = [];
   for (const tx of transactions) {
-    if (tx.alreadySplit) continue;
     const amt = Number(tx.amount);
     if (!(amt < 0)) continue;
-    if (!(tx.hasReceipt || tx.hasSplitSuggestion)) continue;
     eligible.push(tx);
   }
   eligible.sort((a, b) => b.date.localeCompare(a.date));

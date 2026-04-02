@@ -22,7 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
-import { useApiFetch } from "../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { usePlaidLinked } from "../../hooks/usePlaidLinked";
 import { useLocalSearchParams, useRouter, router as globalRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -893,7 +893,21 @@ export default function SettingsScreen() {
   };
 
   const base = API_URL.replace(/\/$/, "");
-  const connectUrl = `${base}/connect?from_app=1`;
+  const rawScheme = Constants.expoConfig?.scheme;
+  const appScheme =
+    typeof rawScheme === "string"
+      ? rawScheme
+      : Array.isArray(rawScheme)
+        ? rawScheme[0] ?? "coconut"
+        : "coconut";
+  const connectUrl = `${base}/connect?from_app=1&scheme=${appScheme}`;
+
+  const openBankConnect = async (url: string) => {
+    const callbackUrl = `${appScheme}://connected`;
+    await WebBrowser.openAuthSessionAsync(url, callbackUrl);
+    invalidateApiCache("/api/plaid/status");
+    fetchAccounts(true);
+  };
 
   const toggleInvite = (idx: number) => {
     setSelectedInvites((prev) => {
@@ -1165,7 +1179,7 @@ export default function SettingsScreen() {
                 <Ionicons name="refresh-outline" size={16} color={accountsLoading ? theme.textTertiary : theme.textSecondary} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => Linking.openURL(connectUrl)} hitSlop={8}>
+            <TouchableOpacity onPress={() => openBankConnect(connectUrl)} hitSlop={8}>
               <Text style={[styles.link, { color: theme.primary }]}>{linked ? "Add account" : "Connect"}</Text>
             </TouchableOpacity>
           </View>
@@ -1221,7 +1235,7 @@ export default function SettingsScreen() {
           )}
           {linked ? (
             <>
-              <TouchableOpacity style={styles.linkRow} onPress={() => Linking.openURL(`${base}/connect?update=1&from_app=1`)}>
+              <TouchableOpacity style={styles.linkRow} onPress={() => openBankConnect(`${base}/connect?update=1&from_app=1&scheme=${appScheme}`)}>
                 <Ionicons name="refresh-outline" size={18} color={theme.primary} />
                 <Text style={[styles.linkInline, { color: theme.primary }]}>Update bank connection</Text>
               </TouchableOpacity>
@@ -1506,7 +1520,7 @@ export default function SettingsScreen() {
                 style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
                 onPress={() => {
                   resetSetup();
-                  Alert.alert("Setup reset", "You'll see the onboarding flow next time you sign in.");
+                  router.replace("/setup");
                 }}
               >
                 <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>

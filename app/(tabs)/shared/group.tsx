@@ -82,7 +82,7 @@ export default function GroupScreen() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      Alert.alert("Couldn’t update group", (err as { error?: string }).error ?? "Try again.");
+      Alert.alert("Couldn't update group", (err as { error?: string }).error ?? "Try again.");
       return;
     }
     DeviceEventEmitter.emit("groups-updated");
@@ -102,7 +102,6 @@ export default function GroupScreen() {
   const hasActivity = (detail.activity?.length ?? 0) > 0;
   const allSettled = (detail.balances?.filter((b) => Math.abs(b.total) >= 0.005).length ?? 0) === 0;
   const isArchived = Boolean(detail.archivedAt);
-  const memberNameById = new Map(detail.members.map((m) => [m.id, m.display_name]));
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -148,88 +147,9 @@ export default function GroupScreen() {
           </View>
         ) : null}
 
-        <Text style={[s.section, { color: theme.textTertiary }]}>Balances</Text>
-        <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-          {allSettled ? (
-            <Text style={[s.balanceRowText, { color: theme.textQuaternary, padding: 14 }]}>
-              Everyone is settled up in this group.
-            </Text>
-          ) : (
-            (detail.balances ?? [])
-              .filter((b) => Math.abs(b.total) >= 0.005)
-              .map((b, i, arr) => (
-                <View
-                  key={`${b.memberId}-${b.currency}`}
-                  style={[
-                    s.balanceRow,
-                    i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
-                  ]}
-                >
-                  <Text style={[s.balanceRowName, { color: theme.text }]}>
-                    {memberNameById.get(b.memberId) ?? "Member"}{" "}
-                    <Text style={{ color: theme.textQuaternary, fontSize: 12 }}>({b.currency})</Text>
-                  </Text>
-                  <Text
-                    style={[
-                      s.balanceRowAmt,
-                      { color: b.total > 0 ? theme.positive : b.total < 0 ? "#C94C4C" : theme.textQuaternary },
-                    ]}
-                  >
-                    {b.total > 0
-                      ? `Gets back ${formatSplitCurrencyAmount(b.total, b.currency)}`
-                      : b.total < 0
-                        ? `Owes ${formatSplitCurrencyAmount(b.total, b.currency)}`
-                        : "Settled"}
-                  </Text>
-                </View>
-              ))
-          )}
-        </View>
-
-        <Text style={[s.section, { color: theme.textTertiary }]}>Transactions</Text>
-        {!hasActivity ? (
-          <View style={[s.empty, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            <View style={[s.emptyIcon, { backgroundColor: theme.surfaceTertiary }]}>
-              <Ionicons name="receipt-outline" size={28} color={theme.textQuaternary} />
-            </View>
-            <Text style={[s.emptyTitle, { color: theme.textSecondary }]}>No transactions yet</Text>
-            <Text style={[s.emptySubtext, { color: theme.textQuaternary }]}>Add an expense or split a receipt to start tracking.</Text>
-          </View>
-        ) : (
-          <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            {(detail.activity ?? []).map((a, i) => (
-              <TouchableOpacity
-                key={a.id}
-                style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}
-                activeOpacity={0.7}
-                onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
-              >
-                {a.receiptUrl ? (
-                  <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
-                ) : (
-                  <MerchantLogo
-                    merchantName={a.merchant}
-                    size={36}
-                    backgroundColor={theme.surfaceTertiary}
-                    borderColor={theme.borderLight}
-                    style={{ marginRight: 12 }}
-                  />
-                )}
-                <View style={s.txInfo}>
-                  <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
-                  <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
-                </View>
-                <Text style={[s.txAmount, { color: theme.text }]}>
-                  {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {detail.suggestions && detail.suggestions.length > 0 && (
+        {detail.suggestions && detail.suggestions.length > 0 ? (
           <>
-            <Text style={[s.section, { marginTop: 24, color: theme.textTertiary }]}>Settle up</Text>
+            <Text style={[s.section, { color: theme.textTertiary }]}>Settle up</Text>
             {detail.suggestions.map((su) => {
               const fromName = detail.members.find((m) => m.id === su.fromMemberId)?.display_name ?? "?";
               const toName = detail.members.find((m) => m.id === su.toMemberId)?.display_name ?? "?";
@@ -289,7 +209,7 @@ export default function GroupScreen() {
                           Alert.alert(
                             "Mark as paid",
                             detail.isOwner && !theyPayMe && !iPayThem
-                              ? `Record that ${who} settled $${su.amount.toFixed(2)}? (You’re the group owner.)`
+                              ? `Record that ${who} settled $${su.amount.toFixed(2)}? (You're the group owner.)`
                               : `Mark $${su.amount.toFixed(2)} as paid?`,
                             [
                             { text: "Cancel", style: "cancel" },
@@ -326,12 +246,51 @@ export default function GroupScreen() {
               );
             })}
           </>
-        )}
-
-        {hasActivity && allSettled && (
-          <View style={[s.settledBadge, { marginTop: 16, backgroundColor: theme.primaryLight }]}>
+        ) : hasActivity && allSettled ? (
+          <View style={[s.settledBadge, { marginBottom: 16, backgroundColor: theme.primaryLight }]}>
             <Ionicons name="checkmark-circle" size={20} color={theme.primaryDark} />
             <Text style={[s.settledBadgeText, { color: theme.primaryDark }]}>All settled up</Text>
+          </View>
+        ) : null}
+
+        <Text style={[s.section, { color: theme.textTertiary }]}>Transactions</Text>
+        {!hasActivity ? (
+          <View style={[s.empty, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <View style={[s.emptyIcon, { backgroundColor: theme.surfaceTertiary }]}>
+              <Ionicons name="receipt-outline" size={28} color={theme.textQuaternary} />
+            </View>
+            <Text style={[s.emptyTitle, { color: theme.textSecondary }]}>No transactions yet</Text>
+            <Text style={[s.emptySubtext, { color: theme.textQuaternary }]}>Add an expense or split a receipt to start tracking.</Text>
+          </View>
+        ) : (
+          <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            {(detail.activity ?? []).map((a, i) => (
+              <TouchableOpacity
+                key={a.id}
+                style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}
+                activeOpacity={0.7}
+                onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
+              >
+                {a.receiptUrl ? (
+                  <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
+                ) : (
+                  <MerchantLogo
+                    merchantName={a.merchant}
+                    size={36}
+                    backgroundColor={theme.surfaceTertiary}
+                    borderColor={theme.borderLight}
+                    style={{ marginRight: 12 }}
+                  />
+                )}
+                <View style={s.txInfo}>
+                  <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
+                  <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
+                </View>
+                <Text style={[s.txAmount, { color: theme.text }]}>
+                  {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
@@ -371,7 +330,6 @@ const s = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
   txRow: { flexDirection: "row", alignItems: "center", padding: 14 },
   txThumb: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F7F3F0", marginRight: 12 },
-  txBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
   txInfo: { flex: 1 },
   txMerchant: { fontSize: 15, fontWeight: "600", fontFamily: font.semibold, color: colors.text },
   txMeta: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 2 },
@@ -387,8 +345,6 @@ const s = StyleSheet.create({
   suggAmount: { fontSize: 15, fontWeight: "700", fontFamily: font.bold, marginTop: 2 },
   suggActions: { flexDirection: "row", gap: 6 },
   miniBtn: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: radii.sm },
-  miniBtnPrimary: { backgroundColor: colors.primary },
-  miniBtnSecondary: { borderWidth: 1, borderColor: colors.border },
   miniBtnText: { color: "#fff", fontWeight: "600", fontFamily: font.semibold, fontSize: 13 },
   miniBtnSecondaryText: { color: colors.textSecondary, fontWeight: "500", fontFamily: font.medium, fontSize: 13 },
   settledBadge: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.primaryLight, padding: 14, borderRadius: radii.md },
@@ -405,19 +361,8 @@ const s = StyleSheet.create({
   },
   archivedBannerText: { flex: 1, fontSize: 13, fontFamily: font.regular },
   archivedRestore: { fontSize: 14, fontFamily: font.semibold },
-  balanceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  balanceRowName: { fontSize: 15, fontFamily: font.semibold, flex: 1 },
-  balanceRowAmt: { fontSize: 14, fontFamily: font.semibold, marginLeft: 8 },
-  balanceRowText: { fontSize: 14, fontFamily: font.regular },
   archiveLink: { fontSize: 14, fontFamily: font.medium, textAlign: "center" },
   bold: { fontWeight: "700", fontFamily: font.bold },
-  green: { color: colors.green },
   avatar: { justifyContent: "center", alignItems: "center" },
   avatarText: { color: "#fff", fontWeight: "700", fontFamily: font.bold },
 });

@@ -621,53 +621,11 @@ export default function BalancesPrototypeScreen() {
                 <Text style={[styles.emptyBankText, { marginTop: 10 }]}>Loading bank charges…</Text>
               </View>
             ) : (
-              allLinkedBankRows.length > 0 ? (
-                <FlatList
-                  horizontal
-                  data={allLinkedBankRows.slice(0, 12)}
-                  keyExtractor={(tx) => `live-${tx.id}`}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-                  renderItem={({ item: tx }) => (
-                    <Pressable
-                      style={styles.bankCard}
-                      onPress={() => {
-                        sfx.pop();
-                        setSelectedStrip(txToSheetRow(tx));
-                      }}
-                    >
-                      <View style={styles.bankTop}>
-                        <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                          <MerchantLogo
-                            merchantName={tx.merchant || tx.rawDescription || "Purchase"}
-                            size={22}
-                            fallbackText="💳"
-                            logoUrl={tx.logoUrl}
-                            backgroundColor="transparent"
-                            borderColor="transparent"
-                          />
-                        </View>
-                      </View>
-                      <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
-                        {tx.merchant || tx.rawDescription || "Purchase"}
-                      </Text>
-                      <Text style={styles.bankHint} numberOfLines={1}>
-                        {tx.dateStr || tx.date || "—"}
-                      </Text>
-                      <Text style={styles.bankAmt}>${Math.abs(Number(tx.amount)).toFixed(2)}</Text>
-                      <View style={styles.bankCta}>
-                        <Text style={styles.bankCtaText}>Split this</Text>
-                      </View>
-                    </Pressable>
-                  )}
-                />
-              ) : (
-                <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
-                    No bank charges yet. Pull to refresh after linking your bank.
-                  </Text>
-                </View>
-              )
+              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
+                  No bank charges yet. Pull to refresh after linking your bank.
+                </Text>
+              </View>
             )}
           </View>
         ) : null}
