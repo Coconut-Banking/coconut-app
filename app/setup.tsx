@@ -26,7 +26,31 @@ const TOTAL_STEPS = 4;
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
 const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 
+const POLL_ATTEMPTS = 4;
+const POLL_INTERVAL = 1500;
+
+async function pollPlaidStatus(
+  apiFetch: (path: string) => Promise<Response>,
+): Promise<boolean> {
+  for (let i = 0; i < POLL_ATTEMPTS; i++) {
+    try {
+      const res = await apiFetch("/api/plaid/status");
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.linked) return true;
+      }
+    } catch {
+      // keep polling
+    }
+    if (i < POLL_ATTEMPTS - 1) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+    }
+  }
+  return false;
+}
+
 export default function SetupScreen() {
+  console.log("[SetupScreen] rendering");
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
   const [currentStep, setCurrentStep] = useState(0);
@@ -86,22 +110,20 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             : "coconut";
       const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
 
-      const result = await WebBrowser.openAuthSessionAsync(
+      await WebBrowser.openAuthSessionAsync(
         connectUrl,
         `${scheme}://connected`,
         { preferEphemeralSession: false }
       );
 
-      if (result.type === "success") {
-        const res = await apiFetch("/api/plaid/status");
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.linked) {
-            setSuccess(true);
-            setTimeout(onDone, 1200);
-            return;
-          }
-        }
+      // Always check if the bank was linked after the browser closes — for
+      // OAuth banks (Chase etc.) the auth session may dismiss without
+      // returning a success callback, but the web flow may have completed.
+      const linked = await pollPlaidStatus(apiFetch);
+      if (linked) {
+        setSuccess(true);
+        setTimeout(onDone, 1200);
+        return;
       }
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
