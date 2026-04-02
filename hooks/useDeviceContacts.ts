@@ -12,11 +12,17 @@ export type DeviceContact = {
 type PermissionStatus = "undetermined" | "granted" | "denied";
 
 let _Contacts: typeof import("expo-contacts") | null = null;
+let _contactsChecked = false;
 
 async function getContacts() {
   if (_Contacts) return _Contacts;
+  if (_contactsChecked) return null;
+  _contactsChecked = true;
   try {
-    _Contacts = await import("expo-contacts");
+    const mod = await import("expo-contacts");
+    const available = await mod.isAvailableAsync();
+    if (!available) return null;
+    _Contacts = mod;
     return _Contacts;
   } catch {
     return null;
@@ -67,8 +73,6 @@ export function useDeviceContacts() {
       try {
         const mod = await getContacts();
         if (!mod || cancelled) return;
-        const available = await mod.isAvailableAsync();
-        if (!available || cancelled) return;
         const { status } = await mod.getPermissionsAsync();
         if (cancelled) return;
         setPermissionStatus(status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined");
@@ -87,8 +91,6 @@ export function useDeviceContacts() {
     try {
       const mod = await getContacts();
       if (!mod) return false;
-      const available = await mod.isAvailableAsync();
-      if (!available) return false;
       const { status } = await mod.requestPermissionsAsync();
       const granted = status === "granted";
       setPermissionStatus(granted ? "granted" : "denied");

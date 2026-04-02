@@ -627,34 +627,6 @@ function TapToPayStep({ onContinue }: { onContinue: () => void }) {
 
 function EmailStep({ onComplete }: { onComplete: () => void }) {
   const { theme } = useTheme();
-  const apiFetch = useApiFetch();
-  const [connecting, setConnecting] = useState(false);
-
-  const connectGmail = async () => {
-    setConnecting(true);
-    try {
-      const rawScheme = Constants.expoConfig?.scheme;
-      const scheme =
-        typeof rawScheme === "string"
-          ? rawScheme
-          : Array.isArray(rawScheme)
-            ? rawScheme[0] ?? "coconut"
-            : "coconut";
-      const redirect = `${scheme}://settings?connected=true`;
-      const res = await apiFetch(`/api/gmail/auth?redirect=${encodeURIComponent(redirect)}`);
-      const data = await res.json().catch(() => ({}));
-      const authUrl = (data as { authUrl?: string }).authUrl;
-      if (authUrl) {
-        void Linking.openURL(authUrl);
-      } else {
-        Alert.alert("Gmail", "Could not start Gmail connection.");
-      }
-    } catch {
-      Alert.alert("Gmail", "Could not start Gmail connection.");
-    } finally {
-      setConnecting(false);
-    }
-  };
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
@@ -679,7 +651,8 @@ function EmailStep({ onComplete }: { onComplete: () => void }) {
       <View style={styles.stepContent}>
         <Text style={[styles.stepTitle, { color: theme.text }]}>Auto-import receipts from Gmail</Text>
         <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
-          We scan your inbox for receipts and automatically attach them to your bank transactions.
+          Since you signed in with Google, we'll automatically scan your inbox for receipts and
+          attach them to your transactions.
         </Text>
 
         <View style={styles.benefits}>
@@ -696,36 +669,14 @@ function EmailStep({ onComplete }: { onComplete: () => void }) {
         </View>
       </View>
 
-      <View style={{ gap: 8 }}>
-        <TouchableOpacity
-          style={[styles.primaryBtn, { backgroundColor: theme.primary }, connecting && styles.disabled]}
-          onPress={() => {
-            void connectGmail();
-            onComplete();
-          }}
-          disabled={connecting}
-          activeOpacity={0.9}
-        >
-          {connecting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="mail-outline" size={20} color="#fff" />
-              <Text style={styles.primaryBtnText}>Connect Gmail</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={onComplete}
-          style={styles.secondaryBtn}
-          hitSlop={8}
-        >
-          <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
-            Start Using Coconut
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+        onPress={onComplete}
+        activeOpacity={0.9}
+      >
+        <Ionicons name="sparkles" size={20} color="#fff" />
+        <Text style={styles.primaryBtnText}>Start Using Coconut</Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
