@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Stack, Redirect } from "expo-router";
+import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
@@ -97,7 +97,7 @@ function AuthSwitch() {
     <BiometricLockProvider isSignedIn={!showAuth}>
       {signedInAndReady && !needsSetup && <BiometricLockGate />}
       {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
-      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
+      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }} initialRouteName="(auth)">
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
         <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
@@ -106,16 +106,19 @@ function AuthSwitch() {
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
       </Stack>
-      <OnceRedirect target={target} />
+      <NavigateOnChange target={target} />
     </BiometricLockProvider>
   );
 }
 
-function OnceRedirect({ target }: { target: string | null }) {
+function NavigateOnChange({ target }: { target: string | null }) {
   const lastTarget = useRef<string | null>(null);
-  if (!target || target === lastTarget.current) return null;
-  lastTarget.current = target;
-  return <Redirect href={target as any} />;
+  useLayoutEffect(() => {
+    if (!target || target === lastTarget.current) return;
+    lastTarget.current = target;
+    router.replace(target as any);
+  }, [target]);
+  return null;
 }
 
 function BiometricLockGate() {
