@@ -89,9 +89,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: formData,
         });
-        const data = await res.json();
-
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
+        let data: any = {};
+        try { data = await res.json(); } catch { /* non-JSON body */ }
+        if (!res.ok) throw new Error(data?.error ?? `Parse failed (HTTP ${res.status})`);
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
