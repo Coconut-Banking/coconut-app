@@ -61,7 +61,7 @@ export default function ReceiptScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.keyboardView}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         style={styles.container}
@@ -151,12 +151,9 @@ function UploadStep({
   apiFetch: (path: string, opts?: object) => Promise<Response>;
 }) {
   const pickAndUpload = async (useCamera: boolean) => {
-    const { status: libStatus } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    const { status: camStatus } =
-      await ImagePicker.requestCameraPermissionsAsync();
-
     if (useCamera) {
+      const { status: camStatus } =
+        await ImagePicker.requestCameraPermissionsAsync();
       if (camStatus !== "granted") {
         Alert.alert(
           "Permission needed",
@@ -165,6 +162,8 @@ function UploadStep({
         return;
       }
     } else {
+      const { status: libStatus } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (libStatus !== "granted") {
         Alert.alert(
           "Permission needed",
