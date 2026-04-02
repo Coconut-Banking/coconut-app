@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Redirect } from "expo-router";
 import {
   View,
   Text,
@@ -205,11 +204,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Auto-redirect to sign-up when auth is loaded but user is not signed in (skip when SKIP_AUTH)
-  if (!SKIP_AUTH && authLoaded && !isSignedIn) {
-    return <Redirect href="/(auth)/sign-up" />;
-  }
-
   const openConnect = async () => {
     setConnectError(null);
     if (!isSignedIn) {
@@ -257,8 +251,7 @@ export default function HomeScreen() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      // AuthSwitch will switch to (auth) automatically; router ensures we land on sign-in
-      router.replace("/(auth)/sign-in");
+      // AuthSwitch in _layout.tsx handles routing to (auth) automatically
     } catch (e) {
       console.error("[home] signOut failed:", e);
     }
