@@ -79,9 +79,12 @@ export function useApiFetch() {
       } else {
         body = undefined;
       }
-      return fetch(url, { ...opts, headers, body });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const signal = opts?.signal ?? controller.signal;
+      return fetch(url, { ...opts, headers, body, signal }).finally(() => clearTimeout(timeoutId));
     },
-    []
+    [getToken]
   );
 }
 
