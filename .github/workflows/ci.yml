@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: TypeScript & Expo Build Check
+    name: TypeScript, Tests & Expo Build Check
     runs-on: ubuntu-latest
 
     steps:
@@ -24,6 +24,9 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
 
       - name: Validate Expo config
         run: npx expo config --type public
