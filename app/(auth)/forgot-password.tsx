@@ -122,7 +122,7 @@ export default function ForgotPasswordScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Pressable onPress={() => router.replace("/(auth)/sign-in")} style={styles.backBtn}>
             <Text style={[styles.backText, { color: theme.primary }]}>Back</Text>
           </Pressable>
 

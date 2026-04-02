@@ -255,7 +255,7 @@ export default function SignInScreen() {
                 Auth is loading slowly. Try the browser option below.
               </Text>
             )}
-            <Pressable onPress={() => router.push("/(auth)/forgot-password")}>
+            <Pressable onPress={() => router.replace("/(auth)/forgot-password")}>
               <Text style={[styles.forgotText, { color: theme.primary }]}>Forgot password?</Text>
             </Pressable>
             <TouchableOpacity

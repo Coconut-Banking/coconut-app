@@ -29,7 +29,7 @@ export default function WelcomeScreen() {
         <Animated.View entering={FadeInDown.delay(800).duration(800)} style={styles.ctaWrap}>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
-            onPress={() => router.push("/(auth)/sign-in")}
+            onPress={() => router.replace("/(auth)/sign-in")}
             activeOpacity={0.9}
           >
             <Text style={styles.primaryBtnText}>Get Started</Text>
