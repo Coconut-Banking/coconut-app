@@ -213,8 +213,12 @@ export default function BalancesPrototypeScreen() {
     AsyncStorage.setItem("coconut.contacts.banner.dismissed", "true");
   }, []);
   const handleConnectContacts = useCallback(async () => {
-    const granted = await requestContactsAccess();
-    if (granted) dismissContactsBanner();
+    try {
+      const granted = await requestContactsAccess();
+      if (granted) dismissContactsBanner();
+    } catch {
+      dismissContactsBanner();
+    }
   }, [requestContactsAccess, dismissContactsBanner]);
   const showContactsBanner =
     !contactsBannerDismissed &&

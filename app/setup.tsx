@@ -50,7 +50,6 @@ async function pollPlaidStatus(
 }
 
 export default function SetupScreen() {
-  console.log("[SetupScreen] rendering");
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
   const [currentStep, setCurrentStep] = useState(0);

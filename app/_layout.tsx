@@ -93,8 +93,6 @@ function AuthSwitch() {
 
   const target = showAuth ? "/(auth)" : needsSetup ? "/setup" : signedInAndReady ? "/(tabs)" : null;
 
-  console.log(`[AuthSwitch:render] target=${target} signedIn=${isSignedIn} setup=${setupComplete}`);
-
   return (
     <BiometricLockProvider isSignedIn={!showAuth}>
       {signedInAndReady && !needsSetup && <BiometricLockGate />}
@@ -117,7 +115,6 @@ function OnceRedirect({ target }: { target: string | null }) {
   const lastTarget = useRef<string | null>(null);
   if (!target || target === lastTarget.current) return null;
   lastTarget.current = target;
-  console.log(`[OnceRedirect] → ${target}`);
   return <Redirect href={target as any} />;
 }
 

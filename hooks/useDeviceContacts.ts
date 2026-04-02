@@ -64,30 +64,38 @@ export function useDeviceContacts() {
     if (fetched.current) return;
     let cancelled = false;
     (async () => {
-      const mod = await getContacts();
-      if (!mod || cancelled) return;
-      const { status } = await mod.getPermissionsAsync();
-      if (cancelled) return;
-      setPermissionStatus(status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined");
-      if (status === "granted") {
-        fetched.current = true;
-        await loadContacts();
+      try {
+        const mod = await getContacts();
+        if (!mod || cancelled) return;
+        const { status } = await mod.getPermissionsAsync();
+        if (cancelled) return;
+        setPermissionStatus(status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined");
+        if (status === "granted") {
+          fetched.current = true;
+          await loadContacts();
+        }
+      } catch {
+        /* native module may not be available */
       }
     })();
     return () => { cancelled = true; };
   }, [loadContacts]);
 
   const requestAccess = useCallback(async (): Promise<boolean> => {
-    const mod = await getContacts();
-    if (!mod) return false;
-    const { status } = await mod.requestPermissionsAsync();
-    const granted = status === "granted";
-    setPermissionStatus(granted ? "granted" : "denied");
-    if (granted) {
-      fetched.current = true;
-      await loadContacts();
+    try {
+      const mod = await getContacts();
+      if (!mod) return false;
+      const { status } = await mod.requestPermissionsAsync();
+      const granted = status === "granted";
+      setPermissionStatus(granted ? "granted" : "denied");
+      if (granted) {
+        fetched.current = true;
+        await loadContacts();
+      }
+      return granted;
+    } catch {
+      return false;
     }
-    return granted;
   }, [loadContacts]);
 
   return { contacts, permissionStatus, requestAccess, loading };
