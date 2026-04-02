@@ -197,7 +197,7 @@ export function useGroupDetail(id: string | null) {
           setDetail(data);
         } else setDetail(null);
       } finally {
-        if (!silent) setLoading(false);
+        setLoading(false);
       }
     },
     [id, apiFetch]
@@ -237,7 +237,7 @@ export function usePersonDetail(key: string | null) {
           setDetail(data);
         } else setDetail(null);
       } finally {
-        if (!silent) setLoading(false);
+        setLoading(false);
       }
     },
     [key, apiFetch]
