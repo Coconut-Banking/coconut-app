@@ -74,8 +74,10 @@ export default function ConnectedScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <ActivityIndicator size="large" color="#3D8E62" />
-        <Text style={styles.text}>Bank connected!</Text>
+        {status !== "timeout" && <ActivityIndicator size="large" color="#3D8E62" />}
+        <Text style={styles.text}>
+          {status === "timeout" ? "Still syncing\u2026" : "Bank connected!"}
+        </Text>
         <Text style={styles.subtext}>{subtext}</Text>
         {showSkip && status === "polling" && (
           <TouchableOpacity style={styles.skipBtn} onPress={goHome}>
