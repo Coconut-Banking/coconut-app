@@ -91,7 +91,7 @@ function AuthSwitch() {
   const signedInAndReady = !showAuth && setupHydrated;
   const needsSetup = signedInAndReady && !isDemoOn && !setupComplete;
 
-  const target = showAuth ? "/(auth)" : needsSetup ? "/setup" : signedInAndReady ? "/(tabs)" : null;
+  const target = showAuth ? "/(auth)/index" : needsSetup ? "/setup" : signedInAndReady ? "/(tabs)" : null;
 
   return (
     <BiometricLockProvider isSignedIn={!showAuth}>
