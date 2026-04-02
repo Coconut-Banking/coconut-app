@@ -67,6 +67,8 @@ export function useDeviceContacts() {
       try {
         const mod = await getContacts();
         if (!mod || cancelled) return;
+        const available = await mod.isAvailableAsync();
+        if (!available || cancelled) return;
         const { status } = await mod.getPermissionsAsync();
         if (cancelled) return;
         setPermissionStatus(status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined");
@@ -85,6 +87,8 @@ export function useDeviceContacts() {
     try {
       const mod = await getContacts();
       if (!mod) return false;
+      const available = await mod.isAvailableAsync();
+      if (!available) return false;
       const { status } = await mod.requestPermissionsAsync();
       const granted = status === "granted";
       setPermissionStatus(granted ? "granted" : "denied");

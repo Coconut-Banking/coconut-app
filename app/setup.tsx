@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,15 +8,19 @@ import {
   Linking,
   Alert,
   InteractionManager,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
+import { useUser } from "@clerk/expo";
 import { useTheme } from "../lib/theme-context";
-import { useApiFetch } from "../lib/api";
+import { useApiFetch, invalidateApiCache } from "../lib/api";
 import { useSetup } from "../lib/setup-context";
+import { useToast } from "../components/Toast";
+import { sendEmailInvite, shareInvite } from "../lib/invite";
 import { font, radii, shadow } from "../lib/theme";
 import { CoconutMark } from "../components/brand/CoconutMark";
 
@@ -29,6 +33,12 @@ const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 // Survives unmount/remount from deep link navigation during setup
 let _savedSetupStep = 0;
 
+// Tracks whether the user opened the Plaid browser flow.
+// The coconut://connected deep link causes Expo Router to navigate to connected.tsx,
+// which redirects back to /setup — remounting BankStep and losing its state.
+// This flag lets the remounted BankStep resume polling.
+let _awaitingBankLink = false;
+
 const POLL_ATTEMPTS = 4;
 const POLL_INTERVAL = 1500;
 
@@ -37,6 +47,7 @@ async function pollPlaidStatus(
 ): Promise<boolean> {
   for (let i = 0; i < POLL_ATTEMPTS; i++) {
     try {
+      invalidateApiCache("/api/plaid/status");
       const res = await apiFetch("/api/plaid/status");
       if (res.ok) {
         const data = await res.json();
@@ -99,8 +110,32 @@ export default function SetupScreen() {
 function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   const { theme } = useTheme();
   const apiFetch = useApiFetch();
+  const toast = useToast();
   const [connecting, setConnecting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  // When remounted after the coconut://connected deep link round-trip,
+  // resume polling so the user sees the success state.
+  useEffect(() => {
+    if (!_awaitingBankLink) return;
+    _awaitingBankLink = false;
+    let cancelled = false;
+    setConnecting(true);
+    pollPlaidStatus(apiFetch).then((linked) => {
+      if (cancelled) return;
+      if (linked) {
+        setSuccess(true);
+        toast.show("Bank connected!", "success");
+        setTimeout(() => onDoneRef.current(), 1200);
+      }
+    }).finally(() => {
+      if (!cancelled) setConnecting(false);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; apiFetch is stable
+  }, []);
 
   const connectBank = async () => {
     setConnecting(true);
@@ -114,6 +149,8 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             ? rawScheme[0] ?? "coconut"
             : "coconut";
       const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
+
+      _awaitingBankLink = true;
 
       // Use SFSafariViewController instead of ASWebAuthenticationSession —
       // ASWebAuthenticationSession breaks with OAuth banks (Chase etc.)
@@ -132,13 +169,16 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
 
       const linked = await pollPlaidStatus(apiFetch);
       if (linked) {
+        _awaitingBankLink = false;
         setSuccess(true);
+        toast.show("Bank connected!", "success");
         setTimeout(onDone, 1200);
         return;
       }
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
     } finally {
+      _awaitingBankLink = false;
       setConnecting(false);
     }
   };
@@ -207,13 +247,21 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
 // STEP 2: SPLITWISE IMPORT
 // ────────────────────────────────────────────────────────────────────────────
 
+type UninvitedMember = { displayName: string; email: string | null; groupName: string };
+
 function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   const { theme } = useTheme();
+  const { user } = useUser();
   const apiFetch = useApiFetch();
   const [connecting, setConnecting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [importStats, setImportStats] = useState<{ groups: number; friends: number; expenses: number } | null>(null);
+
+  const [uninvited, setUninvited] = useState<UninvitedMember[]>([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [selectedInvites, setSelectedInvites] = useState<Set<number>>(new Set());
+  const [sendingInvites, setSendingInvites] = useState(false);
 
   const connectSplitwise = async () => {
     setConnecting(true);
@@ -273,20 +321,32 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
       setConnecting(false);
       setImporting(true);
 
+      let members: UninvitedMember[] = [];
       const importRes = await apiFetch("/api/splitwise/import", { method: "POST" });
       if (importRes.ok) {
         const importData = await importRes.json().catch(() => ({}));
-        const stats = importData as { groups?: number; friends?: number; expenses?: number };
+        const d = importData as {
+          stats?: { groups?: number; members?: number; expenses?: number };
+          uninvitedMembers?: UninvitedMember[];
+        };
         setImportStats({
-          groups: stats.groups ?? 0,
-          friends: stats.friends ?? 0,
-          expenses: stats.expenses ?? 0,
+          groups: d.stats?.groups ?? 0,
+          friends: d.stats?.members ?? 0,
+          expenses: d.stats?.expenses ?? 0,
         });
+        members = d.uninvitedMembers ?? [];
       }
 
       setImporting(false);
       setSuccess(true);
-      setTimeout(onDone, 1500);
+
+      if (members.length > 0) {
+        setUninvited(members);
+        setSelectedInvites(new Set(members.map((_, i) => i)));
+        setTimeout(() => setShowInvite(true), 1500);
+      } else {
+        setTimeout(onDone, 1500);
+      }
     } catch (e) {
       if (__DEV__) console.warn("[setup:splitwise]", e);
       Alert.alert("Error", "Something went wrong. Please try again.");
@@ -295,6 +355,128 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
       setImporting(false);
     }
   };
+
+  const toggleInvite = (idx: number) => {
+    setSelectedInvites((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedInvites.size === uninvited.length) {
+      setSelectedInvites(new Set());
+    } else {
+      setSelectedInvites(new Set(uninvited.map((_, i) => i)));
+    }
+  };
+
+  const handleSendInvites = async () => {
+    if (selectedInvites.size === 0) return;
+    setSendingInvites(true);
+    const senderName = user?.fullName || user?.username || undefined;
+    const selected = uninvited.filter((_, i) => selectedInvites.has(i));
+    const emails = selected.filter((m) => m.email).map((m) => m.email!);
+    try {
+      if (emails.length > 0) {
+        await sendEmailInvite(emails, senderName);
+      } else {
+        await shareInvite(senderName);
+      }
+    } catch {
+      /* user cancelled compose — non-fatal */
+    } finally {
+      setSendingInvites(false);
+      onDone();
+    }
+  };
+
+  if (showInvite) {
+    return (
+      <Animated.View entering={FadeInDown.duration(400)} style={styles.stepContainer}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.stepTitle, { color: theme.text, marginTop: 8 }]}>
+            Invite friends to Coconut
+          </Text>
+          <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
+            {uninvited.length} {uninvited.length === 1 ? "person" : "people"} from your Splitwise
+            groups {uninvited.length === 1 ? "isn't" : "aren't"} on Coconut yet.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.inviteSelectAll}
+            onPress={toggleAll}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={selectedInvites.size === uninvited.length ? "checkbox" : "square-outline"}
+              size={22}
+              color={selectedInvites.size === uninvited.length ? theme.primary : theme.textTertiary}
+            />
+            <Text style={[styles.inviteSelectAllTxt, { color: theme.text }]}>
+              {selectedInvites.size === uninvited.length ? "Deselect all" : "Select all"}
+            </Text>
+          </TouchableOpacity>
+
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            {uninvited.map((m, i) => {
+              const checked = selectedInvites.has(i);
+              return (
+                <TouchableOpacity
+                  key={`${m.email ?? m.displayName}-${i}`}
+                  style={[styles.inviteRow, { borderBottomColor: theme.borderLight }]}
+                  onPress={() => toggleInvite(i)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={checked ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={checked ? theme.primary : theme.textTertiary}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.inviteName, { color: theme.text }]}>{m.displayName}</Text>
+                    <Text style={[styles.inviteMeta, { color: theme.textQuaternary }]}>
+                      {m.email ?? "No email"} · {m.groupName}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        <View style={{ gap: 8, paddingTop: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              { backgroundColor: theme.primary },
+              (selectedInvites.size === 0 || sendingInvites) && styles.disabled,
+            ]}
+            onPress={handleSendInvites}
+            disabled={selectedInvites.size === 0 || sendingInvites}
+            activeOpacity={0.9}
+          >
+            {sendingInvites ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnText}>
+                Invite {selectedInvites.size > 0 ? `${selectedInvites.size} ` : ""}
+                {selectedInvites.size === 1 ? "person" : "people"}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onDone} style={styles.secondaryBtn} hitSlop={8}>
+            <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
+              Skip for now
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+  }
 
   if (success) {
     return (
@@ -514,24 +696,36 @@ function EmailStep({ onComplete }: { onComplete: () => void }) {
         </View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.primaryBtn, { backgroundColor: theme.primary }, connecting && styles.disabled]}
-        onPress={() => {
-          void connectGmail();
-          onComplete();
-        }}
-        disabled={connecting}
-        activeOpacity={0.9}
-      >
-        {connecting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Ionicons name="sparkles" size={20} color="#fff" />
-            <Text style={styles.primaryBtnText}>Start Using Coconut</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      <View style={{ gap: 8 }}>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: theme.primary }, connecting && styles.disabled]}
+          onPress={() => {
+            void connectGmail();
+            onComplete();
+          }}
+          disabled={connecting}
+          activeOpacity={0.9}
+        >
+          {connecting ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="mail-outline" size={20} color="#fff" />
+              <Text style={styles.primaryBtnText}>Connect Gmail</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onComplete}
+          style={styles.secondaryBtn}
+          hitSlop={8}
+        >
+          <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
+            Start Using Coconut
+          </Text>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }
@@ -806,6 +1000,35 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
+    fontFamily: font.regular,
+  },
+  inviteSelectAll: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  inviteSelectAllTxt: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  inviteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inviteName: {
+    fontSize: 16,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  inviteMeta: {
+    fontSize: 13,
     fontFamily: font.regular,
   },
 });
