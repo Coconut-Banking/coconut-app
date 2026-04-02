@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Linking,
   Alert,
   InteractionManager,
   ScrollView,
@@ -31,15 +30,8 @@ const TOTAL_STEPS = 4;
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
 const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 
-// Survives unmount/remount from deep link navigation during setup.
-// Reset to 0 on module load so each fresh app launch starts at step 0.
+// Survives unmount/remount so hot reload preserves the current step.
 let _savedSetupStep = 0;
-
-// Tracks whether the user opened the Plaid browser flow.
-// The coconut://connected deep link causes Expo Router to navigate to connected.tsx,
-// which redirects back to /setup — remounting BankStep and losing its state.
-// This flag lets the remounted BankStep resume polling.
-let _awaitingBankLink = false;
 
 const POLL_ATTEMPTS = 4;
 const POLL_INTERVAL = 1500;
@@ -115,29 +107,6 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
   const toast = useToast();
   const [connecting, setConnecting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
-
-  // When remounted after the coconut://connected deep link round-trip,
-  // resume polling so the user sees the success state.
-  useEffect(() => {
-    if (!_awaitingBankLink) return;
-    _awaitingBankLink = false;
-    let cancelled = false;
-    setConnecting(true);
-    pollPlaidStatus(apiFetch).then((linked) => {
-      if (cancelled) return;
-      if (linked) {
-        setSuccess(true);
-        toast.show("Bank connected!", "success");
-        setTimeout(() => onDoneRef.current(), 1200);
-      }
-    }).finally(() => {
-      if (!cancelled) setConnecting(false);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; apiFetch is stable
-  }, []);
 
   const connectBank = async () => {
     setConnecting(true);
@@ -152,26 +121,13 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             : "coconut";
       const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
 
-      _awaitingBankLink = true;
+      await WebBrowser.openBrowserAsync(connectUrl);
 
-      // Use SFSafariViewController instead of ASWebAuthenticationSession —
-      // ASWebAuthenticationSession breaks with OAuth banks (Chase etc.)
-      // because the redirect chain through cdn.plaid.com causes it to dismiss.
-      const linkSub = Linking.addEventListener("url", ({ url }) => {
-        if (url.includes("connected")) {
-          WebBrowser.dismissBrowser();
-        }
-      });
-
-      try {
-        await WebBrowser.openBrowserAsync(connectUrl);
-      } finally {
-        linkSub.remove();
-      }
-
+      // Browser was dismissed — either by the coconut://connected deep link
+      // (connected.tsx calls dismissBrowser + router.back) or by the user
+      // swiping it away. Poll to check if the bank was linked.
       const linked = await pollPlaidStatus(apiFetch);
       if (linked) {
-        _awaitingBankLink = false;
         setSuccess(true);
         toast.show("Bank connected!", "success");
         setTimeout(onDone, 1200);
@@ -180,7 +136,6 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
     } finally {
-      _awaitingBankLink = false;
       setConnecting(false);
     }
   };

@@ -1,134 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { router, Redirect } from "expo-router";
-import { useApiFetch } from "../lib/api";
-import { useTheme } from "../lib/theme-context";
+import { useEffect } from "react";
+import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useSetup } from "../lib/setup-context";
-import { colors, font, radii } from "../lib/theme";
-
-const POLL_INTERVAL_MS = 2000;
-const MAX_WAIT_MS = 45000;
-const SHOW_SKIP_AFTER_MS = 8000;
 
 /**
  * Handles coconut://connected deep link from web connect flow.
- * During setup, redirects back — BankStep handles polling directly.
+ *
+ * During setup: dismisses SFSafariViewController and navigates back so the
+ * setup screen (which was pushed underneath) is restored WITHOUT remounting.
+ * BankStep's connectBank resumes after openBrowserAsync resolves.
+ *
+ * After setup: dismisses browser and goes to the home tabs.
  */
 export default function ConnectedScreen() {
-  const { setupComplete, setupHydrated } = useSetup();
-  const { theme } = useTheme();
-
-  if (setupHydrated && !setupComplete) {
-    return <Redirect href="/setup" />;
-  }
-  const apiFetch = useApiFetch();
-  const [status, setStatus] = useState<"polling" | "linked" | "timeout">("polling");
-  const [showSkip, setShowSkip] = useState(false);
-  const startRef = useRef(Date.now());
-
-  const goHome = () => router.replace("/(tabs)");
+  const { setupComplete } = useSetup();
 
   useEffect(() => {
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
-    let skipId: ReturnType<typeof setTimeout>;
+    WebBrowser.dismissBrowser().catch(() => {});
 
-    skipId = setTimeout(() => {
-      if (!cancelled) setShowSkip(true);
-    }, SHOW_SKIP_AFTER_MS);
-
-    const poll = async () => {
-      if (cancelled) return;
-      const elapsed = Date.now() - startRef.current;
-      if (elapsed >= MAX_WAIT_MS) {
-        setStatus("timeout");
-        return;
+    if (!setupComplete) {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/setup");
       }
-      try {
-        const res = await apiFetch("/api/plaid/status");
-        const data = await res.json().catch(() => null);
-        if (cancelled) return;
-        // 425 from app client means auth/token still warming up — keep polling.
-        if (res.status === 425) {
-          if (!cancelled) timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
-          return;
-        }
-        if (data?.linked) {
-          setStatus("linked");
-          goHome();
-          return;
-        }
-      } catch {
-        // keep polling
-      }
-      if (!cancelled) {
-        timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
-      }
-    };
+    } else {
+      router.replace("/(tabs)");
+    }
+  }, [setupComplete]);
 
-    poll();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-      clearTimeout(skipId);
-    };
-  }, [apiFetch]);
-
-  const subtext =
-    status === "timeout"
-      ? "Still syncing. You can continue now, or wait and we'll keep checking."
-      : "Importing your transactions…";
-
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.primaryLight }]}>
-      <View style={styles.content}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.text, { color: theme.text }]}>Bank connected!</Text>
-        <Text style={[styles.subtext, { color: theme.textTertiary }]}>{subtext}</Text>
-        {showSkip && status === "polling" && (
-          <TouchableOpacity style={[styles.skipBtn, { backgroundColor: theme.border }]} onPress={goHome}>
-            <Text style={[styles.skipBtnText, { color: theme.textSecondary }]}>Continue to app</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </SafeAreaView>
-  );
+  return null;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.primaryLight,
-  },
-  content: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  text: {
-    fontFamily: font.semibold,
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  subtext: {
-    fontFamily: font.regular,
-    fontSize: 14,
-    color: colors.textTertiary,
-  },
-  skipBtn: {
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: radii.md,
-    backgroundColor: colors.border,
-  },
-  skipBtnText: {
-    fontFamily: font.semibold,
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-});
