@@ -1,9 +1,7 @@
-/**
- * App mark — matches web `app/icon.svg` (rounded square + coconut silhouette).
- * Use instead of the 🥥 emoji so the login screen always shows a real logo.
- */
-import { View, StyleSheet, Platform } from "react-native";
-import Svg, { Path, Rect } from "react-native-svg";
+import { View, Image, StyleSheet, Platform } from "react-native";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const logoSource = require("../../assets/coconut-mark.jpg") as number;
 
 type Props = {
   size?: number;
@@ -14,13 +12,11 @@ type Props = {
 export function CoconutMark({ size = 72, elevated = false }: Props) {
   return (
     <View style={[styles.shadowHost, elevated && styles.elevated, { width: size, height: size }]}>
-      <Svg width={size} height={size} viewBox="0 0 32 32" fill="none" accessibilityLabel="Coconut logo">
-        <Rect width={32} height={32} rx={8} fill="#1F2328" />
-        <Path
-          d="M16 8c-2 4-4 8-4 12 0 4 2 6 4 8 2-2 4-4 4-8s-2-8-4-12z"
-          fill="#FFFFFF"
-        />
-      </Svg>
+      <Image
+        source={logoSource}
+        style={{ width: size, height: size, borderRadius: size * 0.22 }}
+        accessibilityLabel="Coconut logo"
+      />
     </View>
   );
 }
