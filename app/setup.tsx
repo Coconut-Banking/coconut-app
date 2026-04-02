@@ -26,6 +26,9 @@ const TOTAL_STEPS = 4;
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
 const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 
+// Survives unmount/remount from deep link navigation during setup
+let _savedSetupStep = 0;
+
 const POLL_ATTEMPTS = 4;
 const POLL_INTERVAL = 1500;
 
@@ -52,15 +55,18 @@ async function pollPlaidStatus(
 export default function SetupScreen() {
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(_savedSetupStep);
 
   const handleComplete = () => {
+    _savedSetupStep = 0;
     markSetupComplete();
   };
 
   const goNext = () => {
     if (currentStep < TOTAL_STEPS - 1) {
-      setCurrentStep((s) => s + 1);
+      const next = currentStep + 1;
+      _savedSetupStep = next;
+      setCurrentStep(next);
     } else {
       handleComplete();
     }
@@ -109,15 +115,21 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             : "coconut";
       const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
 
-      await WebBrowser.openAuthSessionAsync(
-        connectUrl,
-        `${scheme}://connected`,
-        { preferEphemeralSession: false }
-      );
+      // Use SFSafariViewController instead of ASWebAuthenticationSession —
+      // ASWebAuthenticationSession breaks with OAuth banks (Chase etc.)
+      // because the redirect chain through cdn.plaid.com causes it to dismiss.
+      const linkSub = Linking.addEventListener("url", ({ url }) => {
+        if (url.includes("connected")) {
+          WebBrowser.dismissBrowser();
+        }
+      });
 
-      // Always check if the bank was linked after the browser closes — for
-      // OAuth banks (Chase etc.) the auth session may dismiss without
-      // returning a success callback, but the web flow may have completed.
+      try {
+        await WebBrowser.openBrowserAsync(connectUrl);
+      } finally {
+        linkSub.remove();
+      }
+
       const linked = await pollPlaidStatus(apiFetch);
       if (linked) {
         setSuccess(true);

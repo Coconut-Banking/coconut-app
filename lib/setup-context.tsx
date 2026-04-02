@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SETUP_KEY = "coconut_setup_complete_v1";
+const FORCE_SETUP = process.env.EXPO_PUBLIC_FORCE_SETUP === "true";
 
 interface SetupContextValue {
   setupComplete: boolean;
@@ -22,6 +23,12 @@ export function SetupProvider({ children }: { children: React.ReactNode }) {
   const [setupHydrated, setSetupHydrated] = useState(false);
 
   useEffect(() => {
+    if (FORCE_SETUP) {
+      void AsyncStorage.removeItem(SETUP_KEY);
+      setSetupComplete(false);
+      setSetupHydrated(true);
+      return;
+    }
     AsyncStorage.getItem(SETUP_KEY)
       .then((v) => setSetupComplete(v === "true"))
       .catch(() => {})

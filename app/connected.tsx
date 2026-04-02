@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, Redirect } from "expo-router";
 import { useApiFetch } from "../lib/api";
 import { useTheme } from "../lib/theme-context";
+import { useSetup } from "../lib/setup-context";
 import { colors, font, radii } from "../lib/theme";
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_WAIT_MS = 45000; // Give auth/token + first sync enough time
-const SHOW_SKIP_AFTER_MS = 8000; // Show manual continue after 8s
+const MAX_WAIT_MS = 45000;
+const SHOW_SKIP_AFTER_MS = 8000;
 
 /**
  * Handles coconut://connected deep link from web connect flow.
- * Polls /api/plaid/status until linked, then navigates to Home.
+ * During setup, redirects back — BankStep handles polling directly.
  */
 export default function ConnectedScreen() {
+  const { setupComplete, setupHydrated } = useSetup();
   const { theme } = useTheme();
+
+  if (setupHydrated && !setupComplete) {
+    return <Redirect href="/setup" />;
+  }
   const apiFetch = useApiFetch();
   const [status, setStatus] = useState<"polling" | "linked" | "timeout">("polling");
   const [showSkip, setShowSkip] = useState(false);
