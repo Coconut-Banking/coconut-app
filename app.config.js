@@ -35,7 +35,7 @@ export default {
       },
       package: "com.coconut.app",
       minSdkVersion: 24,
-      permissions: ["INTERNET"],
+      permissions: ["INTERNET", "NFC"],
     },
     plugins: [
       "expo-router",
