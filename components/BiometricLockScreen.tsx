@@ -14,8 +14,17 @@ export function BiometricLockScreen() {
   const autoTriggered = useRef(false);
 
   const handleUnlock = async () => {
-    const result = await authenticate(`Unlock Coconut with ${label}`);
-    if (result.success) unlock();
+    // Try biometric-only first so the Face ID prompt appears
+    const bioResult = await authenticate(`Unlock Coconut with ${label}`, { biometricOnly: true });
+    if (bioResult.success) {
+      unlock();
+      return;
+    }
+    // If biometric fails (cancelled, not recognized), fall back to device auth (passcode)
+    if (bioResult.error !== "user_cancel" && bioResult.errorCode !== "user_cancel") {
+      const fallback = await authenticate(`Unlock Coconut`);
+      if (fallback.success) unlock();
+    }
   };
 
   useEffect(() => {

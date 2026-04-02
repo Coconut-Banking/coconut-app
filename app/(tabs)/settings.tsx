@@ -1023,7 +1023,7 @@ export default function SettingsScreen() {
                   if (biometricEnabled) {
                     setBiometricEnabled(false);
                   } else {
-                    const result = await authenticate(`Verify ${biometricLabel} to enable`);
+                    const result = await authenticate(`Verify ${biometricLabel} to enable`, { biometricOnly: true });
                     if (result.success) setBiometricEnabled(true);
                   }
                 }}
@@ -1516,20 +1516,23 @@ export default function SettingsScreen() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
-                onPress={() => {
-                  resetSetup();
-                  router.replace("/setup");
-                }}
-              >
-                <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
-                  Reset onboarding setup
-                </Text>
-              </TouchableOpacity>
             </View>
           ) : null}
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.signOutButton,
+            { borderColor: theme.border, backgroundColor: theme.surfaceSecondary },
+          ]}
+          onPress={() => {
+            resetSetup();
+            router.replace("/setup");
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.signOutText, { color: theme.textSecondary }]}>Re-run new user setup</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[

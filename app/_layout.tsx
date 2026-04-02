@@ -129,7 +129,7 @@ function BiometricLockGate() {
   return <BiometricLockScreen />;
 }
 
-const BIOMETRIC_PROMPT_SHOWN_KEY = "coconut.biometric_prompt_shown_v1";
+const BIOMETRIC_PROMPT_SHOWN_KEY = "coconut.biometric_prompt_shown_v2";
 
 function BiometricFirstTimePrompt() {
   const { biometricAvailable, enabled, hydrated } = useBiometricLock();
@@ -142,7 +142,6 @@ function BiometricFirstTimePrompt() {
       try {
         const shown = await SecureStore.getItemAsync(BIOMETRIC_PROMPT_SHOWN_KEY);
         if (cancelled || shown === "true") return;
-        // Short delay so the home screen loads first
         setTimeout(() => {
           if (!cancelled) setShowPrompt(true);
         }, 1200);
@@ -155,11 +154,15 @@ function BiometricFirstTimePrompt() {
 
   const handleDismiss = () => {
     setShowPrompt(false);
+  };
+
+  const handleDecline = () => {
+    setShowPrompt(false);
     void SecureStore.setItemAsync(BIOMETRIC_PROMPT_SHOWN_KEY, "true");
   };
 
   if (!showPrompt) return null;
-  return <BiometricEnablePrompt visible onDismiss={handleDismiss} />;
+  return <BiometricEnablePrompt visible onDismiss={handleDismiss} onDecline={handleDecline} />;
 }
 
 export default function RootLayout() {
