@@ -32,6 +32,7 @@ export function useTransactions() {
     const isFirstLoad = !hasShownInitialLoad.current;
     console.log(`[useTransactions] fetchData started silent=${silent} isFirstLoad=${isFirstLoad}`);
     setStatus("ok");
+    setLinked(false);
     if (!silent && isFirstLoad) setLoading(true);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -76,7 +77,7 @@ export function useTransactions() {
         }
         console.log("[useTransactions] linked! fetching transactions");
         setLinked(true);
-        return apiFetch("/api/plaid/transactions");
+        return apiFetch("/api/plaid/transactions", { signal: controller.signal });
       })
       .then((r) => {
         if (cancelled || !r || !r.ok) return null;
