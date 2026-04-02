@@ -9,6 +9,7 @@ import {
   Alert,
   InteractionManager,
   ScrollView,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -627,6 +628,60 @@ function TapToPayStep({ onContinue }: { onContinue: () => void }) {
 
 function EmailStep({ onComplete }: { onComplete: () => void }) {
   const { theme } = useTheme();
+  const { user } = useUser();
+  const apiFetch = useApiFetch();
+  const [emailScanEnabled, setEmailScanEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const hasGoogle = user?.externalAccounts?.some(
+    (a) => a.provider === "google",
+  ) ?? false;
+
+  const handleComplete = async () => {
+    if (hasGoogle) {
+      setSaving(true);
+      try {
+        await apiFetch("/api/gmail/toggle", {
+          method: "POST",
+          body: { enabled: emailScanEnabled },
+        });
+      } catch {
+        // Non-blocking — preference can be changed in Settings
+      } finally {
+        setSaving(false);
+      }
+    }
+    onComplete();
+  };
+
+  if (!hasGoogle) {
+    return (
+      <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
+        <View style={styles.illustrationWrap}>
+          <View style={[styles.iconBox, { backgroundColor: "#EA4335" }]}>
+            <Ionicons name="mail-outline" size={48} color="#fff" />
+          </View>
+        </View>
+
+        <View style={styles.stepContent}>
+          <Text style={[styles.stepTitle, { color: theme.text }]}>Email receipts</Text>
+          <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
+            Sign in with Google to automatically scan your Gmail for receipts and match them to
+            your transactions. You can set this up later in Settings.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+          onPress={onComplete}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="sparkles" size={20} color="#fff" />
+          <Text style={styles.primaryBtnText}>Start Using Coconut</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
@@ -649,33 +704,54 @@ function EmailStep({ onComplete }: { onComplete: () => void }) {
       </View>
 
       <View style={styles.stepContent}>
-        <Text style={[styles.stepTitle, { color: theme.text }]}>Auto-import receipts from Gmail</Text>
+        <Text style={[styles.stepTitle, { color: theme.text }]}>Email receipts</Text>
         <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
-          Since you signed in with Google, we'll automatically scan your inbox for receipts and
-          attach them to your transactions.
+          Automatically scan your Gmail for receipts and match them to your transactions.
         </Text>
 
-        <View style={styles.benefits}>
-          <BenefitRow icon="mail-outline" text="Scans your Gmail automatically" theme={theme} />
-          <BenefitRow icon="sparkles-outline" text="Smart merchant matching" theme={theme} />
-          <BenefitRow icon="attach-outline" text="Auto-attach to transactions" theme={theme} />
+        <View
+          style={[
+            styles.toggleRow,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.toggleLabel, { color: theme.text }]}>Scan Gmail for receipts</Text>
+            <Text style={[styles.toggleSub, { color: theme.textTertiary }]}>
+              Only reads receipts and order confirmations
+            </Text>
+          </View>
+          <Switch
+            value={emailScanEnabled}
+            onValueChange={setEmailScanEnabled}
+            trackColor={{ false: theme.border, true: theme.primary }}
+            thumbColor="#fff"
+          />
         </View>
 
         <View style={[styles.privacyNote, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
           <Ionicons name="shield-checkmark-outline" size={18} color={theme.primary} />
           <Text style={[styles.privacyText, { color: theme.textTertiary }]}>
             We only read receipts and order confirmations. All other emails are ignored.
+            You can change this anytime in Settings.
           </Text>
         </View>
       </View>
 
       <TouchableOpacity
-        style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
-        onPress={onComplete}
+        style={[styles.primaryBtn, { backgroundColor: theme.primary }, saving && styles.disabled]}
+        onPress={handleComplete}
+        disabled={saving}
         activeOpacity={0.9}
       >
-        <Ionicons name="sparkles" size={20} color="#fff" />
-        <Text style={styles.primaryBtnText}>Start Using Coconut</Text>
+        {saving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <Ionicons name="sparkles" size={20} color="#fff" />
+            <Text style={styles.primaryBtnText}>Start Using Coconut</Text>
+          </>
+        )}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -881,6 +957,25 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     marginTop: 16,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  toggleLabel: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  toggleSub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    lineHeight: 17,
   },
   privacyText: {
     fontSize: 13,
