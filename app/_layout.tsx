@@ -64,12 +64,14 @@ function AuthSwitch() {
   }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
 
   useEffect(() => {
-    if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || !isSignedIn || hasClearedSession.current) return;
-    console.log("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
+    if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || hasClearedSession.current) return;
     hasClearedSession.current = true;
-    signOut?.()
-      .then(() => console.log("[AuthSwitch] FORCE_SIGN_OUT: signOut() done"))
-      .catch((e: unknown) => console.warn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
+    if (isSignedIn) {
+      console.log("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
+      signOut?.()
+        .then(() => console.log("[AuthSwitch] FORCE_SIGN_OUT: signOut() done"))
+        .catch((e: unknown) => console.warn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
+    }
   }, [isLoaded, isSignedIn, signOut]);
 
   if (SKIP_AUTH) {
