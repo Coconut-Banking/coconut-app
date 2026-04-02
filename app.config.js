@@ -71,7 +71,7 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#EEF7F2",
+        backgroundColor: "#F5F3F2",
         foregroundImage: "./assets/android-icon-foreground.png",
         backgroundImage: "./assets/android-icon-background.png",
       },

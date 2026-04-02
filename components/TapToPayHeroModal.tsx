@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 24,
-    backgroundColor: "#EEF7F2",
+    backgroundColor: "#F5F3F2",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#C3E0D3",
+    borderColor: "#E3DBD8",
   },
   secondaryBtnText: {
     color: palette.primary,

@@ -1038,7 +1038,7 @@ export default function SettingsScreen() {
             </Text>
 
             {contactsPerm === "granted" ? (
-              <View style={[styles.resultBox, { backgroundColor: "#EEF7F2", borderColor: "#C3E0D3" }]}>
+              <View style={[styles.resultBox, { backgroundColor: "#F5F3F2", borderColor: "#E3DBD8" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
                   <Text style={[styles.resultTitle, { color: theme.text }]}>Contacts connected</Text>
@@ -1107,7 +1107,7 @@ export default function SettingsScreen() {
           {connectLoading && connectStatus === null ? (
             <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
           ) : connectStatus?.onboardingComplete ? (
-            <View style={[styles.resultBox, { backgroundColor: "#EEF7F2", borderColor: "#C3E0D3" }]}>
+            <View style={[styles.resultBox, { backgroundColor: "#F5F3F2", borderColor: "#E3DBD8" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
                 <Text style={[styles.resultTitle, { color: theme.text }]}>Payments enabled</Text>
@@ -1251,8 +1251,8 @@ export default function SettingsScreen() {
               style={[
                 styles.resultBox,
                 {
-                  backgroundColor: splitwiseResult.ok ? "#EEF7F2" : "#FEE2E2",
-                  borderColor: splitwiseResult.ok ? "#C3E0D3" : theme.errorLight,
+                  backgroundColor: splitwiseResult.ok ? "#F5F3F2" : "#FEE2E2",
+                  borderColor: splitwiseResult.ok ? "#E3DBD8" : theme.errorLight,
                 },
               ]}
             >
@@ -1353,8 +1353,8 @@ export default function SettingsScreen() {
               style={[
                 styles.resultBox,
                 {
-                  backgroundColor: gmailScanResult.ok ? "#EEF7F2" : "#FEE2E2",
-                  borderColor: gmailScanResult.ok ? "#C3E0D3" : theme.errorLight,
+                  backgroundColor: gmailScanResult.ok ? "#F5F3F2" : "#FEE2E2",
+                  borderColor: gmailScanResult.ok ? "#E3DBD8" : theme.errorLight,
                 },
               ]}
             >

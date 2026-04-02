@@ -7,7 +7,7 @@
 Supporting tokens live in the same file (`C` object). In the Expo app we mirror those as:
 
 - `lib/theme.ts` → `darkUI`, `prototype` (warm charcoal shell, money green/red, grouped cards)
-- Brand CTAs stay **`#3D8E62`** (`colors.primary`), not the prototype’s gold accent.
+- Brand CTAs stay **`#1e2021`** (`colors.primary`), not the prototype’s gold accent.
 
 ## Screen map (prototype → app route)
 

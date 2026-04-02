@@ -49,7 +49,7 @@ export const colors = {
   primaryDark: "#1F2328",
 
   // Surfaces
-  bg: "#F7FAF8",
+  bg: "#F5F3F2",
   surface: "#FFFFFF",
   surfaceRaised: "#FAFAFA",
   surfaceSecondary: "#F9FAFB",

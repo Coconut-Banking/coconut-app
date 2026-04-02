@@ -86,7 +86,7 @@ export default function InsightsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#3D8E62" />
+        <ActivityIndicator size="large" color="#1e2021" />
         <Text style={styles.loadingText}>Loading insights...</Text>
       </View>
     );

@@ -447,7 +447,7 @@ export default function BalancesPrototypeScreen() {
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
-              <View style={[styles.contactsIconWrap, { backgroundColor: "#EEF7F2" }]}>
+              <View style={[styles.contactsIconWrap, { backgroundColor: "#F5F3F2" }]}>
                 <Ionicons name="people-circle" size={24} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
@@ -1898,7 +1898,7 @@ const searchStyles = StyleSheet.create({
   },
   applyBtn: {
     marginTop: 10,
-    backgroundColor: "#3D8E62",
+    backgroundColor: "#1e2021",
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",

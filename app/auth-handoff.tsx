@@ -127,7 +127,7 @@ export default function AuthHandoffScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7FAF8", padding: 24 },
+  container: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F3F2", padding: 24 },
   errorText: { color: "#4B5563", textAlign: "center", marginBottom: 16 },
   link: { color: "#1F2328", fontWeight: "500" },
   statusText: { color: "#4B5563", marginTop: 16 },
