@@ -31,7 +31,8 @@ const TOTAL_STEPS = 4;
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
 const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 
-// Survives unmount/remount from deep link navigation during setup
+// Survives unmount/remount from deep link navigation during setup.
+// Reset to 0 on module load so each fresh app launch starts at step 0.
 let _savedSetupStep = 0;
 
 // Tracks whether the user opened the Plaid browser flow.
