@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
+import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useUser } from "@clerk/expo";
@@ -23,6 +24,8 @@ import { useToast } from "../components/Toast";
 import { sendEmailInvite, shareInvite } from "../lib/invite";
 import { font, radii, shadow } from "../lib/theme";
 import { CoconutMark } from "../components/brand/CoconutMark";
+
+export const PENDING_FULL_RESET_KEY = "coconut.pending_full_reset";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 const TOTAL_STEPS = 4;
@@ -60,7 +63,38 @@ async function pollPlaidStatus(
 export default function SetupScreen() {
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
+  const apiFetch = useApiFetch();
   const [currentStep, setCurrentStep] = useState(_savedSetupStep);
+  const [resetting, setResetting] = useState(false);
+  const didCheckReset = useRef(false);
+
+  useEffect(() => {
+    if (didCheckReset.current) return;
+    didCheckReset.current = true;
+    SecureStore.getItemAsync(PENDING_FULL_RESET_KEY).then(async (val) => {
+      if (val !== "true") return;
+      setResetting(true);
+      try {
+        await Promise.allSettled([
+          apiFetch("/api/plaid/disconnect", { method: "POST" }),
+          apiFetch("/api/splitwise/clear", { method: "POST", body: { disconnectToken: true } }),
+          apiFetch("/api/gmail/disconnect", { method: "POST" }),
+          apiFetch("/api/groups/clear-all", { method: "POST" }),
+        ]);
+        invalidateApiCache("/api/plaid/status");
+        invalidateApiCache("/api/splitwise/status");
+        invalidateApiCache("/api/gmail/status");
+        invalidateApiCache("/api/groups/summary");
+      } catch (e) {
+        if (__DEV__) console.warn("[setup] full reset failed:", e);
+      } finally {
+        await SecureStore.deleteItemAsync(PENDING_FULL_RESET_KEY);
+        setResetting(false);
+        _savedSetupStep = 0;
+        setCurrentStep(0);
+      }
+    }).catch(() => {});
+  }, [apiFetch]);
 
   const handleComplete = () => {
     _savedSetupStep = 0;
@@ -79,6 +113,22 @@ export default function SetupScreen() {
 
   const step = STEPS[currentStep];
   const progress = (currentStep + 1) / TOTAL_STEPS;
+
+  if (resetting) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
+        <View style={styles.centerFull}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.successTitle, { color: theme.text, marginTop: 16 }]}>
+            Resetting your account...
+          </Text>
+          <Text style={[styles.successSub, { color: theme.textTertiary }]}>
+            Disconnecting services and clearing data
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>

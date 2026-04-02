@@ -41,15 +41,23 @@ if (!publishableKey) {
 
 const FORCE_SIGN_OUT_ON_LAUNCH = process.env.EXPO_PUBLIC_FORCE_SIGN_OUT === "true";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
-let _forceSignOutDone = false;
-
+const FORCE_SIGN_OUT_KEY = "coconut.force_signout_done";
 
 function AuthSwitch() {
   const { isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
   const { isDemoOn, demoModeHydrated } = useDemoMode();
   const { setupComplete, setupHydrated } = useSetup();
-  const hasClearedSession = { get current() { return _forceSignOutDone; }, set current(v: boolean) { _forceSignOutDone = v; } };
+  const [forceSignOutDone, setForceSignOutDone] = useState(false);
+  const checkedStore = useRef(false);
+
+  useEffect(() => {
+    if (!FORCE_SIGN_OUT_ON_LAUNCH || checkedStore.current) return;
+    checkedStore.current = true;
+    SecureStore.getItemAsync(FORCE_SIGN_OUT_KEY).then((val) => {
+      if (val === "true") setForceSignOutDone(true);
+    }).catch(() => {});
+  }, []);
   const instance = useMemo(() => {
     if (!publishableKey) return "missing";
     const [, env, encoded = ""] = publishableKey.match(/^pk_(test|live)_(.+)$/) ?? [];
@@ -64,15 +72,16 @@ function AuthSwitch() {
   }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
 
   useEffect(() => {
-    if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || hasClearedSession.current) return;
-    hasClearedSession.current = true;
+    if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || forceSignOutDone) return;
+    setForceSignOutDone(true);
+    void SecureStore.setItemAsync(FORCE_SIGN_OUT_KEY, "true");
     if (isSignedIn) {
       console.log("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
       signOut?.()
         .then(() => console.log("[AuthSwitch] FORCE_SIGN_OUT: signOut() done"))
         .catch((e: unknown) => console.warn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
     }
-  }, [isLoaded, isSignedIn, signOut]);
+  }, [isLoaded, isSignedIn, signOut, forceSignOutDone]);
 
   if (SKIP_AUTH) {
     return (
@@ -86,7 +95,7 @@ function AuthSwitch() {
   }
 
   const waitingDemoHydration = !demoModeHydrated;
-  const forceAuthWhileSignedIn = FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn && !hasClearedSession.current;
+  const forceAuthWhileSignedIn = FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn && !forceSignOutDone;
   const needRealSignIn = !isSignedIn && !isDemoOn;
 
   const showAuth = waitingDemoHydration || !isLoaded || needRealSignIn || forceAuthWhileSignedIn;

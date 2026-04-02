@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import {
   View,
   Text,
@@ -1525,8 +1526,10 @@ export default function SettingsScreen() {
             styles.signOutButton,
             { borderColor: theme.border, backgroundColor: theme.surfaceSecondary },
           ]}
-          onPress={() => {
+          onPress={async () => {
             resetSetup();
+            try { await SecureStore.setItemAsync("coconut.pending_full_reset", "true"); } catch {}
+            try { await SecureStore.deleteItemAsync("coconut.force_signout_done"); } catch {}
             router.replace("/setup");
           }}
           activeOpacity={0.85}

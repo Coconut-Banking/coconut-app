@@ -11,16 +11,19 @@ import {
   Linking,
   ScrollView,
   Pressable,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSignIn } from "@clerk/expo/legacy";
 import { useSSO } from "@clerk/expo";
-import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { useDemoMode } from "../../lib/demo-mode-context";
-import { clerkRejectedGoogleOneTap } from "../../lib/clerk-google";
+import { useSetup } from "../../lib/setup-context";
+import * as SecureStore from "expo-secure-store";
+import { PENDING_FULL_RESET_KEY } from "../setup";
+
 import { colors, font, fontSize, shadow, radii } from "../../lib/theme";
 import { CoconutMark } from "../../components/brand/CoconutMark";
 
@@ -52,13 +55,13 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 export default function SignInScreen() {
   const { theme } = useTheme();
   const { setIsDemoOn } = useDemoMode();
+  const { resetSetup } = useSetup();
   // Clerk v3 types changed but runtime still provides these properties
   const { isLoaded, signIn, setActive } = useSignIn() as unknown as {
     isLoaded: boolean;
     signIn: { create: (params: { identifier: string; password: string }) => Promise<{ createdSessionId?: string }> } | undefined;
     setActive: ((opts: { session: string }) => Promise<void>) | undefined;
   };
-  const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const { startSSOFlow } = useSSO();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -66,6 +69,7 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [clerkStuckHint, setClerkStuckHint] = useState(false);
+  const [newUserMode, setNewUserMode] = useState(false);
 
   useEffect(() => {
     if (isLoaded) return;
@@ -84,6 +88,10 @@ export default function SignInScreen() {
         "Google OAuth (browser)"
       );
       if (result.createdSessionId && result.setActive) {
+        if (newUserMode) {
+          resetSetup();
+          await SecureStore.setItemAsync(PENDING_FULL_RESET_KEY, "true");
+        }
         await withTimeout(
           result.setActive({ session: result.createdSessionId }),
           SIGN_IN_TIMEOUT_MS,
@@ -127,6 +135,10 @@ export default function SignInScreen() {
       );
       const result = res as { createdSessionId?: string };
       if (result?.createdSessionId && setActive) {
+        if (newUserMode) {
+          resetSetup();
+          await SecureStore.setItemAsync(PENDING_FULL_RESET_KEY, "true");
+        }
         await withTimeout(
           setActive({ session: result.createdSessionId }),
           SIGN_IN_TIMEOUT_MS,
@@ -287,6 +299,22 @@ export default function SignInScreen() {
           >
             <Text style={[styles.browserText, { color: theme.textQuaternary }]}>Open login in browser</Text>
           </Pressable>
+
+          {/* New user mode toggle */}
+          <View style={[styles.newUserToggle, { borderColor: newUserMode ? theme.accent : theme.border, backgroundColor: newUserMode ? theme.accentMuted : theme.surfaceSecondary }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.newUserToggleTitle, { color: theme.text }]}>New user setup</Text>
+              <Text style={[styles.newUserToggleSub, { color: theme.textTertiary }]}>
+                Run full onboarding after sign-in
+              </Text>
+            </View>
+            <Switch
+              value={newUserMode}
+              onValueChange={setNewUserMode}
+              trackColor={{ false: theme.border, true: theme.accent }}
+              thumbColor="#fff"
+            />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -466,5 +494,25 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     color: colors.textMuted,
     textDecorationLine: "underline",
+  },
+  newUserToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 32,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+  },
+  newUserToggleTitle: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  newUserToggleSub: {
+    fontSize: 12,
+    fontFamily: font.regular,
+    marginTop: 2,
   },
 });
