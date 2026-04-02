@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
@@ -41,6 +41,7 @@ if (!publishableKey) {
 
 const FORCE_SIGN_OUT_ON_LAUNCH = process.env.EXPO_PUBLIC_FORCE_SIGN_OUT === "true";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
+let _forceSignOutDone = false;
 
 
 function AuthSwitch() {
@@ -48,7 +49,7 @@ function AuthSwitch() {
   const { signOut } = useClerk();
   const { isDemoOn, demoModeHydrated } = useDemoMode();
   const { setupComplete, setupHydrated } = useSetup();
-  const hasClearedSession = useRef(false);
+  const hasClearedSession = { get current() { return _forceSignOutDone; }, set current(v: boolean) { _forceSignOutDone = v; } };
   const instance = useMemo(() => {
     if (!publishableKey) return "missing";
     const [, env, encoded = ""] = publishableKey.match(/^pk_(test|live)_(.+)$/) ?? [];
@@ -83,35 +84,41 @@ function AuthSwitch() {
   }
 
   const waitingDemoHydration = !demoModeHydrated;
-  const forceAuthWhileSignedIn = FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn;
+  const forceAuthWhileSignedIn = FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn && !hasClearedSession.current;
   const needRealSignIn = !isSignedIn && !isDemoOn;
-  if (waitingDemoHydration || !isLoaded || needRealSignIn || forceAuthWhileSignedIn) {
-    return (
+
+  const showAuth = waitingDemoHydration || !isLoaded || needRealSignIn || forceAuthWhileSignedIn;
+  const signedInAndReady = !showAuth && setupHydrated;
+  const needsSetup = signedInAndReady && !isDemoOn && !setupComplete;
+
+  const target = showAuth ? "/(auth)" : needsSetup ? "/setup" : signedInAndReady ? "/(tabs)" : null;
+
+  console.log(`[AuthSwitch:render] target=${target} signedIn=${isSignedIn} setup=${setupComplete}`);
+
+  return (
+    <BiometricLockProvider isSignedIn={!showAuth}>
+      {signedInAndReady && !needsSetup && <BiometricLockGate />}
+      {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
       <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
         <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
-      </Stack>
-    );
-  }
-
-  if (!setupHydrated) return null;
-
-  // Demo mode skips setup, real users must complete it first
-  const needsSetup = !isDemoOn && !setupComplete;
-
-  return (
-    <BiometricLockProvider isSignedIn>
-      <BiometricLockGate />
-      {!needsSetup && <BiometricFirstTimePrompt />}
-      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
-        {needsSetup && <Stack.Screen name="setup" options={{ headerShown: false }} />}
+        <Stack.Screen name="setup" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
       </Stack>
+      <OnceRedirect target={target} />
     </BiometricLockProvider>
   );
+}
+
+function OnceRedirect({ target }: { target: string | null }) {
+  const lastTarget = useRef<string | null>(null);
+  if (!target || target === lastTarget.current) return null;
+  lastTarget.current = target;
+  console.log(`[OnceRedirect] → ${target}`);
+  return <Redirect href={target as any} />;
 }
 
 function BiometricLockGate() {
