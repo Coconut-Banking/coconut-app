@@ -846,6 +846,9 @@ export default function GroupScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  topBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  backRow: { flexDirection: "row", alignItems: "center", gap: 2 },
+  backText: { fontSize: 16, fontFamily: font.medium },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   topBar: {
     paddingHorizontal: 8,
