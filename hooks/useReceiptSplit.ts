@@ -63,6 +63,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const [itemsWithExtras, setItemsWithExtras] = useState<ReceiptItemWithExtras[]>([]);
   const [personShares, setPersonShares] = useState<PersonShare[]>([]);
   const [saving, setSaving] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const uploadReceipt = useCallback(
     async (
@@ -135,6 +136,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const confirmItems = useCallback(
     async () => {
       if (!receiptId) return;
+      setConfirmError(null);
       setSaving(true);
       try {
         const res = await apiFetch(`/api/receipt/${receiptId}/items`, {
@@ -188,8 +190,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        setConfirmError(e instanceof Error ? e.message : "Save failed");
       } finally {
         setSaving(false);
       }
@@ -321,10 +323,14 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Save failed");
+        }
       } finally {
         setSaving(false);
       }
@@ -374,6 +380,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     editMerchant,
     setEditMerchant,
     confirmItems,
+    confirmError,
     people,
     addPerson,
     removePerson,

@@ -367,6 +367,9 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </View>
       </View>
 
+      {rs.confirmError && (
+        <Text style={styles.errorText}>{rs.confirmError}</Text>
+      )}
       <View style={styles.navRow}>
         <TouchableOpacity
           style={styles.navButton}
@@ -611,7 +614,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
+            try {
+              await rs.saveAssignments();
+            } catch {
+              Alert.alert("Error", "Failed to save assignments. Please try again.");
+              return;
+            }
             rs.computeSummary();
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
