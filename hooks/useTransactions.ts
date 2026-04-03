@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState, DeviceEventEmitter } from "react-native";
-import { useApiFetch } from "../lib/api";
+import { useApiFetch, getPersistedResponse } from "../lib/api";
 
 export interface Transaction {
   id: string;
@@ -206,11 +206,52 @@ export function useTransactions() {
     [apiFetch, fetchData]
   );
 
-  // Initial load: GET only (fast). POST sync runs on pull-to-refresh or throttled foreground return.
+  // Initial load: serve persisted data instantly, then GET (fast). POST sync on pull-to-refresh.
   useEffect(() => {
     fetchCancelledRef.current = false;
-    void fetchData(false);
+    let cancelled = false;
+
+    (async () => {
+      const [statusCache, txCache] = await Promise.all([
+        getPersistedResponse("/api/plaid/status"),
+        getPersistedResponse("/api/plaid/transactions"),
+      ]);
+
+      if (cancelled) return;
+
+      if (statusCache) {
+        try {
+          const statusData = JSON.parse(statusCache.body);
+          if (statusData.linked) {
+            linkedRef.current = true;
+            setLinked(true);
+            setStatus("ok");
+            if (txCache) {
+              try {
+                const txData = JSON.parse(txCache.body);
+                if (Array.isArray(txData)) {
+                  const mapped = (txData as unknown[]).map((raw) => {
+                    const t = raw as Record<string, unknown>;
+                    const rid = t.receipt_id ?? t.receiptId;
+                    const base = { ...t } as unknown as Transaction;
+                    if (rid != null && rid !== "") base.receiptId = String(rid);
+                    return base;
+                  });
+                  setTransactions(mapped);
+                  hasShownInitialLoad.current = true;
+                  setLoading(false);
+                }
+              } catch { /* corrupt */ }
+            }
+          }
+        } catch { /* corrupt */ }
+      }
+
+      if (!cancelled) void fetchData(hasShownInitialLoad.current);
+    })();
+
     return () => {
+      cancelled = true;
       fetchCancelledRef.current = true;
     };
   }, [fetchData]);

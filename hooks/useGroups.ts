@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useApiFetch } from "../lib/api";
+import { useApiFetch, getPersistedResponse } from "../lib/api";
 
 export interface GroupSummary {
   id: string;
@@ -110,6 +110,11 @@ export interface PersonDetail {
     amount: number;
     currency: string;
   }>;
+  p2pHandles?: {
+    venmo_username: string | null;
+    cashapp_cashtag: string | null;
+    paypal_username: string | null;
+  };
 }
 
 export type UseGroupsSummaryOptions = {
@@ -168,8 +173,25 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
 
   useEffect(() => {
     retryCount.current = 0;
-    fetchSummary(true);
-    return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
+    let cancelled = false;
+
+    (async () => {
+      const cached = await getPersistedResponse(summaryPath);
+      if (cached && !cancelled && !summary) {
+        try {
+          const data = JSON.parse(cached.body);
+          setSummary(data);
+          setLoading(false);
+        } catch { /* corrupt cache */ }
+      }
+      if (!cancelled) fetchSummary(!cached);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSummary]);
 
   return { summary, loading, refetch: fetchSummary };

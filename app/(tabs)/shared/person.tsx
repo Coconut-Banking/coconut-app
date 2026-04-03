@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Modal,
   Pressable,
   Image,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +27,7 @@ import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
+import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -62,6 +64,20 @@ export default function PersonScreen() {
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [settleSheetOpen, setSettleSheetOpen] = useState(false);
+  const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appStateRef.current.match(/inactive|background/) && next === "active" && pendingP2PPlatform) {
+        setConfirmPaymentOpen(true);
+        setPendingP2PPlatform(null);
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [pendingP2PPlatform]);
 
   useEffect(() => {
     if (detail && key) {
@@ -203,6 +219,42 @@ export default function PersonScreen() {
         receiverMemberId: se.toMemberId,
       },
     });
+  };
+
+  const handles = detail.p2pHandles;
+  const hasVenmo = !!handles?.venmo_username;
+  const hasPayPal = !!handles?.paypal_username;
+  const hasCashApp = !!handles?.cashapp_cashtag;
+  const hasAnyP2P = hasVenmo || hasPayPal || hasCashApp;
+  const settleAmount = firstLine ? Math.abs(firstLine.amount) : 0;
+  const settleNote = `Coconut – ${detail.displayName}`;
+
+  const handleP2P = async (platform: "venmo" | "paypal" | "cashapp") => {
+    if (isDemoOn) {
+      const names = { venmo: "Venmo", paypal: "PayPal", cashapp: "Cash App" };
+      Alert.alert("Demo", `Opening ${names[platform]}...`);
+      return;
+    }
+    setSettleSheetOpen(false);
+    setPendingP2PPlatform(platform);
+    try {
+      if (platform === "venmo") {
+        await openVenmo(settleAmount, handles?.venmo_username, settleNote);
+      } else if (platform === "paypal") {
+        await openPayPal(settleAmount, handles?.paypal_username);
+      } else {
+        await openCashApp(settleAmount, handles?.cashapp_cashtag);
+      }
+    } catch {
+      setPendingP2PPlatform(null);
+      const names = { venmo: "Venmo", paypal: "PayPal", cashapp: "Cash App" };
+      Alert.alert("Could not open app", `Make sure ${names[platform]} is installed.`);
+    }
+  };
+
+  const handleConfirmP2PPayment = () => {
+    setConfirmPaymentOpen(false);
+    handleMarkPaid();
   };
 
   return (
@@ -388,21 +440,57 @@ export default function PersonScreen() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={[s.sheetBtnOutline, { opacity: 0.45 }]} disabled activeOpacity={0.8}>
-              <Ionicons name="logo-venmo" size={18} color="#1F2328" />
-              <View style={{ flex: 1 }}>
-                <Text style={s.sheetBtnOutlineText}>Venmo</Text>
-                <Text style={s.sheetBtnOutlineSub}>Coming soon</Text>
-              </View>
-            </TouchableOpacity>
+            {hasVenmo && (
+              <TouchableOpacity
+                style={s.sheetBtnOutline}
+                onPress={() => handleP2P("venmo")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="logo-venmo" size={18} color="#3D95CE" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>Venmo</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Pay @{handles!.venmo_username}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity style={[s.sheetBtnOutline, { opacity: 0.45 }]} disabled activeOpacity={0.8}>
-              <Ionicons name="logo-paypal" size={18} color="#1F2328" />
-              <View style={{ flex: 1 }}>
-                <Text style={s.sheetBtnOutlineText}>PayPal</Text>
-                <Text style={s.sheetBtnOutlineSub}>Coming soon</Text>
+            {hasPayPal && (
+              <TouchableOpacity
+                style={s.sheetBtnOutline}
+                onPress={() => handleP2P("paypal")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="logo-paypal" size={18} color="#003087" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>PayPal</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Pay {handles!.paypal_username}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {hasCashApp && (
+              <TouchableOpacity
+                style={s.sheetBtnOutline}
+                onPress={() => handleP2P("cashapp")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cash-outline" size={18} color="#00D632" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>Cash App</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Pay {handles!.cashapp_cashtag}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {!hasAnyP2P && (
+              <View style={[s.sheetBtnOutline, { opacity: 0.45 }]}>
+                <Ionicons name="logo-venmo" size={18} color="#1F2328" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>Venmo / PayPal</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Add handles in group settings</Text>
+                </View>
               </View>
-            </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={s.sheetBtnOutline}
@@ -419,6 +507,27 @@ export default function PersonScreen() {
 
             <TouchableOpacity style={s.sheetDone} onPress={() => setSettleSheetOpen(false)}>
               <Text style={s.sheetDoneText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={confirmPaymentOpen} transparent animationType="fade" onRequestClose={() => setConfirmPaymentOpen(false)}>
+        <Pressable style={s.confirmOverlay} onPress={() => setConfirmPaymentOpen(false)}>
+          <Pressable style={s.confirmCard} onPress={(e) => e.stopPropagation()}>
+            <View style={s.confirmIcon}>
+              <Ionicons name="checkmark-circle" size={44} color={prototype.green} />
+            </View>
+            <Text style={s.confirmTitle}>Payment sent?</Text>
+            <Text style={s.confirmSub}>
+              If you completed the payment, mark it as settled in Coconut.
+            </Text>
+            <TouchableOpacity style={s.confirmBtn} onPress={handleConfirmP2PPayment} activeOpacity={0.8}>
+              <Ionicons name="checkmark-done" size={18} color="#fff" />
+              <Text style={s.confirmBtnText}>Mark as paid</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.confirmDismiss} onPress={() => setConfirmPaymentOpen(false)}>
+              <Text style={s.confirmDismissText}>Not yet</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -549,4 +658,33 @@ const s = StyleSheet.create({
   sheetBtnOutlineSub: { fontFamily: font.regular, fontSize: 12, color: "#7A8088", marginTop: 1 },
   sheetDone: { alignItems: "center", marginTop: 8, paddingVertical: 12 },
   sheetDoneText: { fontFamily: font.semibold, fontSize: 15, color: "#7A8088" },
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
+  confirmCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    marginHorizontal: 32,
+    paddingHorizontal: 28,
+    paddingTop: 28,
+    paddingBottom: 24,
+    alignItems: "center",
+    alignSelf: "center",
+  },
+  confirmIcon: { marginBottom: 12 },
+  confirmTitle: { fontFamily: font.black, fontSize: 20, color: "#1F2328", marginBottom: 6, textAlign: "center" },
+  confirmSub: { fontFamily: font.regular, fontSize: 14, color: "#7A8088", textAlign: "center", marginBottom: 20, lineHeight: 20 },
+  confirmBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: prototype.green,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: radii.md,
+    width: "100%",
+    marginBottom: 10,
+  },
+  confirmBtnText: { fontFamily: font.bold, fontSize: 15, color: "#fff" },
+  confirmDismiss: { paddingVertical: 10 },
+  confirmDismissText: { fontFamily: font.semibold, fontSize: 15, color: "#7A8088" },
 });

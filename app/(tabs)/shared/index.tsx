@@ -136,7 +136,7 @@ export default function SharedIndex() {
   }, [isDemoOn, refetch, apiFetch]);
 
   useEffect(() => {
-    // Friends tab should always use real data.
+    // Shared tab should always use real data.
     if (isDemoOn) setIsDemoOn(false);
   }, [isDemoOn, setIsDemoOn]);
 
@@ -479,7 +479,7 @@ export default function SharedIndex() {
           </View>
         ) : null}
 
-        <SLabel>Friends</SLabel>
+        <SLabel>People</SLabel>
         {!friends.length ? (
           <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />

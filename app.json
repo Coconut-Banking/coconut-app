@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.coconut.app"
+      "bundleIdentifier": "com.coconut.app",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["venmo"]
+      }
     },
     "android": {
       "adaptiveIcon": {

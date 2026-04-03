@@ -72,6 +72,15 @@ export default function GroupScreen() {
     return () => setExpensePrefillTarget(null);
   }, [id, detail?.name]);
 
+  useEffect(() => {
+    if (isDemoOn) return;
+    const subs = [
+      DeviceEventEmitter.addListener("groups-updated", () => refetch(true)),
+      DeviceEventEmitter.addListener("expense-added", () => refetch(true)),
+    ];
+    return () => subs.forEach((sub) => sub.remove());
+  }, [isDemoOn, refetch]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try { await refetch(true); } finally { setRefreshing(false); }

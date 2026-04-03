@@ -16,6 +16,7 @@ import { SetupProvider, useSetup } from "../lib/setup-context";
 import { BiometricLockProvider, useBiometricLock } from "../lib/biometric-lock-context";
 import { BiometricLockScreen } from "../components/BiometricLockScreen";
 import { BiometricEnablePrompt } from "../components/BiometricEnablePrompt";
+import { RealtimeSyncProvider } from "../lib/realtime-sync";
 import {
   useFonts,
   Inter_400Regular,
@@ -135,10 +136,15 @@ function AuthSwitch() {
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
       </Stack>
       <NavigateOnChange target={target} />
+      {signedInAndReady && <RealtimeSyncWrapper />}
       {signedInAndReady && !needsSetup && <BiometricLockGate />}
       {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
     </BiometricLockProvider>
   );
+}
+
+function RealtimeSyncWrapper() {
+  return <RealtimeSyncProvider>{null}</RealtimeSyncProvider>;
 }
 
 function NavigateOnChange({ target }: { target: string | null }) {

@@ -217,6 +217,55 @@ export function PersonSkeletonScreen() {
   );
 }
 
+export function HomeSkeletonScreen() {
+  const { theme } = useTheme();
+  return (
+    <View style={[sk.container, { backgroundColor: theme.background }]}>
+      <View style={sk.pad}>
+        <Skeleton width={200} height={40} borderRadius={8} style={{ marginBottom: 6 }} />
+        <Skeleton width={260} height={14} borderRadius={6} style={{ marginBottom: 20 }} />
+
+        {/* Balance hero skeleton */}
+        <View style={[sk.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          <View style={sk.cardRow}>
+            <View>
+              <Skeleton width={60} height={12} />
+              <Skeleton width={80} height={24} borderRadius={4} style={{ marginTop: 4 }} />
+            </View>
+            <View>
+              <Skeleton width={50} height={12} />
+              <Skeleton width={70} height={24} borderRadius={4} style={{ marginTop: 4 }} />
+            </View>
+          </View>
+        </View>
+
+        {/* Bank strip skeleton */}
+        <Skeleton width={100} height={12} borderRadius={4} style={{ marginBottom: 10 }} />
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
+          {[0, 1].map((i) => (
+            <Skeleton key={i} width={168} height={160} borderRadius={16} />
+          ))}
+        </View>
+
+        {/* Friends & groups skeleton */}
+        <Skeleton width={120} height={12} borderRadius={4} style={{ marginBottom: 10 }} />
+        <View style={[{ backgroundColor: theme.surface, borderRadius: 18, borderWidth: 1, borderColor: theme.borderLight, overflow: "hidden" }]}>
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={{ flexDirection: "row", alignItems: "center", padding: 14, gap: 12 }}>
+              <Skeleton width={42} height={42} borderRadius={21} />
+              <View style={{ flex: 1 }}>
+                <Skeleton width={110 + i * 12} height={16} />
+                <Skeleton width={70} height={12} style={{ marginTop: 6 }} />
+              </View>
+              <Skeleton width={50} height={18} borderRadius={4} />
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const sk = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   pad: { padding: 20 },

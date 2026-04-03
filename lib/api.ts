@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { useAuth } from "@clerk/expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
@@ -37,6 +38,39 @@ function getCacheTtl(path: string): number {
     if (path === prefix || path.startsWith(prefix + "?")) return ttl;
   }
   return 0;
+}
+
+const PERSIST_PATHS = new Set([
+  "/api/groups/summary",
+  "/api/plaid/transactions",
+  "/api/plaid/status",
+  "/api/plaid/accounts",
+]);
+
+function shouldPersist(path: string): boolean {
+  for (const p of PERSIST_PATHS) {
+    if (path === p || path.startsWith(p + "?")) return true;
+  }
+  return false;
+}
+
+const PERSIST_PREFIX = "coconut.api.cache.";
+
+function persistToStorage(path: string, body: string, status: number) {
+  AsyncStorage.setItem(
+    PERSIST_PREFIX + path,
+    JSON.stringify({ body, status, ts: Date.now() })
+  ).catch(() => {});
+}
+
+export async function getPersistedResponse(path: string): Promise<{ body: string; status: number; ts: number } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PERSIST_PREFIX + path);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export function invalidateApiCache(path?: string) {
@@ -294,10 +328,15 @@ export function useApiFetch() {
           try {
             const res = await executeFetch();
             const ttl = getCacheTtl(path);
-            if (ttl > 0 && res.ok) {
+            if (res.ok) {
               const clone = res.clone();
               clone.text().then((body) => {
-                _responseCache.set(path, { body, status: res.status, ts: Date.now() });
+                if (ttl > 0) {
+                  _responseCache.set(path, { body, status: res.status, ts: Date.now() });
+                }
+                if (shouldPersist(path)) {
+                  persistToStorage(path, body, res.status);
+                }
               }).catch(() => {});
             }
             return res;

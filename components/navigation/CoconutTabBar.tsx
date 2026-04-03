@@ -119,14 +119,14 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
             style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
             accessibilityRole="button"
             accessibilityState={{ selected: friendsActive }}
-            accessibilityLabel="Friends"
+            accessibilityLabel="Shared"
           >
             <Ionicons
-              name={friendsActive ? "people" : "people-outline"}
+              name={friendsActive ? "git-network" : "git-network-outline"}
               size={22}
               color={friendsActive ? activeColor : inactiveColor}
             />
-            <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Friends</Text>
+            <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Shared</Text>
           </Pressable>
 
           <View style={styles.centerSpacer} />

@@ -41,6 +41,7 @@ import { useTheme } from "../../lib/theme-context";
 import { BalanceHero } from "../../components/split/BalanceHero";
 import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
+import { HomeSkeletonScreen } from "../../components/ui";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
 import { DEMO_HOME_DISPLAY_NAME, formatHomeGreetingLine } from "../../lib/home-greeting";
 import {
@@ -77,7 +78,7 @@ function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: stri
 
 const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
-function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
+const FriendAvatar = React.memo(function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
   const hue = FRIEND_HUES[name.charCodeAt(0) % FRIEND_HUES.length];
   return (
     <View
@@ -97,12 +98,12 @@ function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
       </Text>
     </View>
   );
-}
+});
 
-function SLabel({ children }: { children: React.ReactNode }) {
+const SLabel = React.memo(function SLabel({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
   return <Text style={[styles.sLabel, { color: theme.textTertiary }]}>{children}</Text>;
-}
+});
 
 function timeAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -413,10 +414,7 @@ export default function BalancesPrototypeScreen() {
   if (initialHomeLoading) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
-        <View style={styles.homeLoadingWrap}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[styles.homeLoadingText, { color: theme.textTertiary }]}>Loading your home…</Text>
-        </View>
+        <HomeSkeletonScreen />
       </SafeAreaView>
     );
   }
