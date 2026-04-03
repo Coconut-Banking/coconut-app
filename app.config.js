@@ -61,13 +61,12 @@ export default {
         NSFaceIDUsageDescription:
           "Coconut uses Face ID to securely unlock the app and protect your financial data.",
       },
-      ...(ENABLE_TAP_TO_PAY_IOS
-        ? {
-            entitlements: {
-              "com.apple.developer.proximity-reader.payment.acceptance": true,
-            },
-          }
-        : {}),
+      entitlements: {
+        "com.apple.developer.associated-domains": ["applinks:coconut-app.dev"],
+        ...(ENABLE_TAP_TO_PAY_IOS
+          ? { "com.apple.developer.proximity-reader.payment.acceptance": true }
+          : {}),
+      },
     },
     android: {
       adaptiveIcon: {
@@ -82,6 +81,7 @@ export default {
     plugins: [
       "expo-router",
       "@clerk/expo", // Reads EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME from env for native Google Sign-In
+      "react-native-plaid-link-sdk",
       [
         "@stripe/stripe-terminal-react-native/app.plugin",
         {
