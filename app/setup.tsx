@@ -15,8 +15,19 @@ import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
-import { create, open, dismissLink } from "react-native-plaid-link-sdk";
 import type { LinkSuccess, LinkExit } from "react-native-plaid-link-sdk";
+
+// Lazy-load the Plaid SDK so Metro can bundle without it in Expo Go
+let _plaid: typeof import("react-native-plaid-link-sdk") | null = null;
+async function getPlaid() {
+  if (_plaid) return _plaid;
+  try { _plaid = await import("react-native-plaid-link-sdk"); } catch { _plaid = null; }
+  return _plaid;
+}
+const plaidCreate = (...args: Parameters<typeof import("react-native-plaid-link-sdk")["create"]>) =>
+  getPlaid().then((p) => p?.create(...args));
+const plaidOpen = (...args: Parameters<typeof import("react-native-plaid-link-sdk")["open"]>) =>
+  getPlaid().then((p) => p?.open(...args));
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useUser } from "@clerk/expo";
 import { useTheme } from "../lib/theme-context";
@@ -160,7 +171,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
       }
 
       // 2. Create + open native Plaid Link
-      create({ token: linkToken });
+      await plaidCreate({ token: linkToken });
 
       const onSuccess = async (success: LinkSuccess) => {
         if (__DEV__) console.log("[setup:bank] plaid link success:", success.publicToken);
@@ -198,7 +209,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
         }
       };
 
-      open({ onSuccess, onExit });
+      await plaidOpen({ onSuccess, onExit });
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
       setError("Something went wrong. Please try again.");

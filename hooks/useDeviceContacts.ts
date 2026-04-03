@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { NativeModules } from "react-native";
 
 export type DeviceContact = {
   id: string;
@@ -18,9 +19,13 @@ async function getContacts() {
   if (_Contacts) return _Contacts;
   if (_contactsChecked) return null;
   _contactsChecked = true;
+  // Guard: native module not registered (e.g. Expo Go) — skip to avoid crash
+  if (!NativeModules.ExpoContacts) return null;
   try {
     const mod = await import("expo-contacts");
-    const available = await mod.isAvailableAsync();
+    const available = typeof mod.isAvailableAsync === "function"
+      ? await mod.isAvailableAsync().catch(() => false)
+      : false;
     if (!available) return null;
     _Contacts = mod;
     return _Contacts;

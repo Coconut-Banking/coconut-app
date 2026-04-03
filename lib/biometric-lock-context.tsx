@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, NativeModules, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ENABLED_KEY = "coconut.biometric_lock_enabled_v1";
@@ -30,6 +30,8 @@ let _LocalAuthentication: typeof import("expo-local-authentication") | null = nu
 
 async function getLocalAuth() {
   if (_LocalAuthentication) return _LocalAuthentication;
+  // Guard: native module is not registered in Expo Go — skip to avoid crash
+  if (!NativeModules.ExpoLocalAuthentication) return null;
   try {
     _LocalAuthentication = await import("expo-local-authentication");
     return _LocalAuthentication;
@@ -64,25 +66,31 @@ export function BiometricLockProvider({
       setEnabledState(isEnabled);
 
       if (localAuth) {
-        const hasHw = await localAuth.hasHardwareAsync().catch(() => false);
-        const enrolled = hasHw ? await localAuth.isEnrolledAsync().catch(() => false) : false;
-        if (!cancelled) {
-          setBiometricAvailable(hasHw && enrolled);
-          if (hasHw && enrolled) {
-            const types = await localAuth.supportedAuthenticationTypesAsync().catch(() => [] as number[]);
-            const FACIAL = localAuth.AuthenticationType.FACIAL_RECOGNITION as number;
-            const FINGER = localAuth.AuthenticationType.FINGERPRINT as number;
-            const IRIS = localAuth.AuthenticationType.IRIS as number;
-            if (!cancelled) {
-              if (types.includes(FACIAL)) {
-                setBiometricType("facial");
-              } else if (types.includes(FINGER)) {
-                setBiometricType("fingerprint");
-              } else if (types.includes(IRIS)) {
-                setBiometricType("iris");
+        try {
+          const hasHw = typeof localAuth.hasHardwareAsync === "function"
+            ? await localAuth.hasHardwareAsync().catch(() => false)
+            : false;
+          const enrolled = hasHw ? await localAuth.isEnrolledAsync().catch(() => false) : false;
+          if (!cancelled) {
+            setBiometricAvailable(hasHw && enrolled);
+            if (hasHw && enrolled) {
+              const types = await localAuth.supportedAuthenticationTypesAsync().catch(() => [] as number[]);
+              const FACIAL = localAuth.AuthenticationType.FACIAL_RECOGNITION as number;
+              const FINGER = localAuth.AuthenticationType.FINGERPRINT as number;
+              const IRIS = localAuth.AuthenticationType.IRIS as number;
+              if (!cancelled) {
+                if (types.includes(FACIAL)) {
+                  setBiometricType("facial");
+                } else if (types.includes(FINGER)) {
+                  setBiometricType("fingerprint");
+                } else if (types.includes(IRIS)) {
+                  setBiometricType("iris");
+                }
               }
             }
           }
+        } catch {
+          // Native biometric module unavailable (e.g. Expo Go)
         }
       }
 
