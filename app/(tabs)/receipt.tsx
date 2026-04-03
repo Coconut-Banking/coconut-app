@@ -282,7 +282,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
       {/* Merchant */}
       <View>
         <Text style={[st.label, { color: theme.textTertiary }]}>Merchant</Text>
-        <TextInput style={[st.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={rs.editMerchant} onChangeText={rs.setEditMerchant} placeholder="Restaurant name" placeholderTextColor={theme.inputPlaceholder} />
+        <TextInput style={[st.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={rs.editMerchant} onChangeText={rs.setEditMerchant} placeholder="Restaurant name" placeholderTextColor={theme.inputPlaceholder} maxLength={500} />
       </View>
 
       {/* Editable items */}
@@ -297,6 +297,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
                 onChangeText={(v) => rs.updateItem(item.id, { name: v })}
                 placeholder="Item name"
                 placeholderTextColor={theme.inputPlaceholder}
+                maxLength={500}
               />
               <TouchableOpacity onPress={() => rs.removeItem(item.id)} hitSlop={8}>
                 <Ionicons name="trash-outline" size={18} color={theme.error} />
@@ -400,6 +401,7 @@ function DecimalInput({ numValue, onValueChange, style }: { numValue: number; on
       }}
       keyboardType="decimal-pad"
       selectTextOnFocus
+      maxLength={500}
     />
   );
 }
@@ -442,6 +444,7 @@ function ItemSearch({ value, onChange, theme }: { value: string; onChange: (v: s
         placeholderTextColor={theme.inputPlaceholder}
         autoCorrect={false}
         clearButtonMode="while-editing"
+        maxLength={500}
       />
     </View>
   );
@@ -545,7 +548,7 @@ function AssignStep({
           ))}
         </View>
         <View style={st.addPersonRow}>
-          <TextInput style={[st.searchInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={search} onChangeText={setSearch} placeholder="Search contacts or type a name" placeholderTextColor={theme.inputPlaceholder} onSubmitEditing={addNew} />
+          <TextInput style={[st.searchInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={search} onChangeText={setSearch} placeholder="Search contacts or type a name" placeholderTextColor={theme.inputPlaceholder} onSubmitEditing={addNew} maxLength={500} />
           <TouchableOpacity style={[st.addBtn, { backgroundColor: theme.primary }, !search.trim() && st.btnOff]} onPress={addNew} disabled={!search.trim()}>
             <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>

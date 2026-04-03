@@ -149,6 +149,7 @@ export default function ForgotPasswordScreen() {
                 keyboardType="email-address"
                 autoComplete="email"
                 editable={!formDisabled}
+                maxLength={254}
               />
               {error ? <Text style={[styles.error, { color: theme.error }]}>{error}</Text> : null}
               <TouchableOpacity
@@ -176,6 +177,7 @@ export default function ForgotPasswordScreen() {
                 autoCapitalize="none"
                 keyboardType="number-pad"
                 autoComplete="one-time-code"
+                maxLength={10}
               />
               <TextInput
                 style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.inputText }]}
@@ -185,6 +187,7 @@ export default function ForgotPasswordScreen() {
                 onChangeText={setNewPassword}
                 secureTextEntry
                 autoComplete="password-new"
+                maxLength={128}
               />
               {error ? <Text style={[styles.error, { color: theme.error }]}>{error}</Text> : null}
               <TouchableOpacity

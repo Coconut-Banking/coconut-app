@@ -34,6 +34,7 @@ import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview"
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
 import { useGroupsSummary } from "../../hooks/useGroups";
+import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -76,29 +77,6 @@ function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: stri
   };
 }
 
-const FRIEND_HUES = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
-
-const FriendAvatar = React.memo(function FriendAvatar({ name, size = 42 }: { name: string; size?: number }) {
-  const hue = FRIEND_HUES[name.charCodeAt(0) % FRIEND_HUES.length];
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: `${hue}33`,
-        alignItems: "center",
-        justifyContent: "center",
-        borderWidth: 1,
-        borderColor: `${hue}55`,
-      }}
-    >
-      <Text style={{ color: hue, fontFamily: font.bold, fontSize: size * 0.3 }}>
-        {name.slice(0, 2).toUpperCase()}
-      </Text>
-    </View>
-  );
-});
 
 const SLabel = React.memo(function SLabel({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
@@ -694,7 +672,7 @@ export default function BalancesPrototypeScreen() {
                       onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
                       activeOpacity={0.75}
                     >
-                      <FriendAvatar name={f.displayName} />
+                      <MemberAvatar name={f.displayName} size={42} imageUrl={null} variant="soft" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={[styles.friendName, { color: theme.text }]}>{f.displayName}</Text>
                         <Text style={[styles.friendMeta, { color: theme.textTertiary }]}>{meta}</Text>

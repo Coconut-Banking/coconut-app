@@ -217,6 +217,7 @@ export default function SignUpScreen() {
               keyboardType="email-address"
               autoComplete="email"
               editable={!formDisabled}
+              maxLength={254}
             />
             {pendingVerification ? (
               <>
@@ -231,6 +232,7 @@ export default function SignUpScreen() {
                   keyboardType="number-pad"
                   autoComplete="one-time-code"
                   editable={!formDisabled}
+                  maxLength={10}
                 />
               </>
             ) : (
@@ -243,6 +245,7 @@ export default function SignUpScreen() {
                 secureTextEntry
                 autoComplete="password-new"
                 editable={!formDisabled}
+                maxLength={128}
               />
             )}
             {error ? <Text style={[styles.error, { color: theme.error }]}>{error}</Text> : null}

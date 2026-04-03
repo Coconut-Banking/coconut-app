@@ -381,7 +381,7 @@ export default function SettingsScreen() {
     setGmailScanResult(null);
     const isFirstScan = !gmailStatus?.lastScanAt;
     // Always use at least 90 days on first scan, or when explicitly requested
-    const days = daysBack ?? (isFirstScan ? 90 : 7);
+    const days = daysBack ?? (isFirstScan ? 90 : 30);
     try {
       const body = { daysBack: days };
       if (__DEV__) console.log("[gmail:scan] starting — daysBack:", days, "body:", JSON.stringify(body));

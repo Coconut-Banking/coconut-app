@@ -18,12 +18,14 @@ import {
   Platform,
   Pressable,
   FlatList,
+  ActionSheetIOS,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
+import * as ImagePicker from "expo-image-picker";
 import { useApiFetch } from "../../../lib/api";
 import { useGroupDetail, useGroupsSummary, type FriendBalance } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
@@ -32,21 +34,15 @@ import { useTheme } from "../../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
+import { MemberAvatar } from "../../../components/MemberAvatar";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { sfx } from "../../../lib/sounds";
 
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
-
-function MemberAvatar({ name, size = 32 }: { name: string; size?: number }) {
-  const idx = name.charCodeAt(0) % MEMBER_COLORS.length;
-  return (
-    <View style={[s.avatar, { width: size, height: size, borderRadius: size * 0.3, backgroundColor: MEMBER_COLORS[idx] }]}>
-      <Text style={[s.avatarText, { fontSize: size * 0.35 }]}>{name.slice(0, 2).toUpperCase()}</Text>
-    </View>
-  );
-}
 
 function formatTimeAgo(iso: string): string {
   const d = new Date(iso);
@@ -75,6 +71,8 @@ export default function GroupScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const swipeableRefs = useRef(new Map<string, Swipeable>()).current;
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [localIconUrl, setLocalIconUrl] = useState<string | null>(null);
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<FriendBalance[]>([]);
@@ -220,6 +218,107 @@ export default function GroupScreen() {
     [handleDeleteExpense, swipeableRefs]
   );
 
+  const pickAndUploadIcon = useCallback(async (source: "library" | "camera") => {
+    if (source === "camera") {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Allow camera access in Settings to take a photo.");
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Allow photo library access in Settings.");
+        return;
+      }
+    }
+    const opts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: "images" as ImagePicker.MediaType,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      exif: false,
+    };
+    const result = source === "camera"
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? (asset.uri.endsWith(".png") ? "image/png" : "image/jpeg");
+    if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+      Alert.alert("Invalid file type", "Only PNG, JPEG, and HEIC images are allowed.");
+      return;
+    }
+    if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
+      Alert.alert("File too large", "Image must be under 2MB.");
+      return;
+    }
+
+    setUploadingIcon(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", { uri: asset.uri, name: `icon.${mimeType === "image/png" ? "png" : "jpg"}`, type: mimeType } as unknown as Blob);
+      if (__DEV__) console.log(`[group-icon] uploading to /api/groups/${id}/icon, mimeType:`, mimeType, "uri:", asset.uri.slice(0, 80));
+      const res = await apiFetch(`/api/groups/${id}/icon`, { method: "POST", body: formData });
+      if (__DEV__) console.log("[group-icon] response status:", res.status);
+      if (res.ok) {
+        const data = await res.json();
+        if (__DEV__) console.log("[group-icon] success, imageUrl:", data.imageUrl);
+        setLocalIconUrl(data.imageUrl);
+        toast.show("Group icon updated");
+        refetch(true);
+        DeviceEventEmitter.emit("groups-updated");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (__DEV__) console.warn("[group-icon] upload failed:", res.status, JSON.stringify(err));
+        Alert.alert("Upload failed", (err as { error?: string }).error ?? "Try again.");
+      }
+    } finally {
+      setUploadingIcon(false);
+    }
+  }, [id, apiFetch, toast, refetch]);
+
+  const handleIconPress = useCallback(() => {
+    if (isDemoOn || !id) return;
+    const hasIcon = Boolean(localIconUrl || detail?.image_url);
+    const options = hasIcon
+      ? ["Choose Photo", "Take Photo", "Remove Photo", "Cancel"]
+      : ["Choose Photo", "Take Photo", "Cancel"];
+    const cancelIndex = options.length - 1;
+    const destructiveIndex = hasIcon ? 2 : undefined;
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: cancelIndex, destructiveButtonIndex: destructiveIndex },
+        async (idx) => {
+          if (idx === 0) pickAndUploadIcon("library");
+          else if (idx === 1) pickAndUploadIcon("camera");
+          else if (idx === 2 && hasIcon) {
+            setUploadingIcon(true);
+            try {
+              const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
+              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); DeviceEventEmitter.emit("groups-updated"); }
+            } finally { setUploadingIcon(false); }
+          }
+        }
+      );
+    } else {
+      Alert.alert("Group Photo", undefined, [
+        { text: "Choose Photo", onPress: () => pickAndUploadIcon("library") },
+        { text: "Take Photo", onPress: () => pickAndUploadIcon("camera") },
+        ...(hasIcon ? [{ text: "Remove Photo", style: "destructive" as const, onPress: async () => {
+          setUploadingIcon(true);
+          try {
+            const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
+            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); DeviceEventEmitter.emit("groups-updated"); }
+          } finally { setUploadingIcon(false); }
+        }}] : []),
+        { text: "Cancel", style: "cancel" as const },
+      ]);
+    }
+  }, [isDemoOn, id, localIconUrl, detail?.image_url, pickAndUploadIcon, apiFetch, toast, refetch]);
+
   useEffect(() => {
     if (detail && id) {
       setExpensePrefillTarget({ key: id, name: detail.name, type: "group" });
@@ -280,13 +379,22 @@ export default function GroupScreen() {
       >
         {/* Header: avatar + name + actions */}
         <View style={s.groupHeader}>
-          {detail.image_url ? (
-            <Image source={{ uri: detail.image_url }} style={s.groupPhoto} />
-          ) : (
-            <View style={[s.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
-              <Ionicons name="people" size={32} color={theme.textTertiary} />
+          <TouchableOpacity onPress={handleIconPress} activeOpacity={0.7} disabled={uploadingIcon}>
+            {(localIconUrl || detail.image_url) ? (
+              <Image source={{ uri: localIconUrl || detail.image_url! }} style={s.groupPhoto} />
+            ) : (
+              <View style={[s.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
+                {uploadingIcon ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Ionicons name="people" size={32} color={theme.textTertiary} />
+                )}
+              </View>
+            )}
+            <View style={s.groupIconBadge}>
+              <Ionicons name="camera" size={12} color="#fff" />
             </View>
-          )}
+          </TouchableOpacity>
           <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
           <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
             {detail.members.length} member{detail.members.length !== 1 ? "s" : ""} ·{" "}
@@ -356,13 +464,19 @@ export default function GroupScreen() {
           </View>
         ) : null}
 
-        {detail.suggestions && detail.suggestions.length > 0 ? (
+        {detail.suggestions && detail.suggestions.length > 0 ? (() => {
+          const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
+          const mySuggestions = detail.suggestions.filter(
+            (su) => myMemberId && (su.fromMemberId === myMemberId || su.toMemberId === myMemberId)
+          );
+          return mySuggestions.length > 0 ? (
           <>
             <Text style={[s.section, { color: theme.textTertiary }]}>Settle up</Text>
-            {detail.suggestions.map((su) => {
-              const fromName = detail.members.find((m) => m.id === su.fromMemberId)?.display_name ?? "?";
-              const toName = detail.members.find((m) => m.id === su.toMemberId)?.display_name ?? "?";
-              const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
+            {mySuggestions.map((su) => {
+              const fromMember = detail.members.find((m) => m.id === su.fromMemberId);
+              const toMember = detail.members.find((m) => m.id === su.toMemberId);
+              const fromName = fromMember?.display_name ?? "?";
+              const toName = toMember?.display_name ?? "?";
               const theyPayMe = myMemberId && su.toMemberId === myMemberId;
               const iPayThem = myMemberId && su.fromMemberId === myMemberId;
               const canMarkPaid =
@@ -373,15 +487,15 @@ export default function GroupScreen() {
                   style={[s.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}
                 >
                   <View style={s.suggPeople}>
-                    <MemberAvatar name={fromName} />
+                    <MemberAvatar name={fromName} imageUrl={fromMember?.image_url} />
                     <Ionicons name="arrow-forward" size={14} color={theme.textQuaternary} />
-                    <MemberAvatar name={toName} />
+                    <MemberAvatar name={toName} imageUrl={toMember?.image_url} />
                   </View>
                   <View style={s.suggInfo}>
                     <Text style={[s.suggText, { color: theme.textSecondary }]}>
                       <Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>{toName}</Text>
                     </Text>
-                    <Text style={[s.suggAmount, { color: theme.positive }]}>
+                    <Text style={[s.suggAmount, { color: theyPayMe ? theme.positive : theme.negative }]}>
                       {formatSplitCurrencyAmount(su.amount, su.currency)}
                     </Text>
                   </View>
@@ -455,7 +569,8 @@ export default function GroupScreen() {
               );
             })}
           </>
-        ) : hasActivity && allSettled ? (
+          ) : null;
+        })() : hasActivity && allSettled ? (
           <View style={[s.settledBadge, { marginBottom: 16, backgroundColor: theme.primaryLight }]}>
             <Ionicons name="checkmark-circle" size={20} color={theme.primaryDark} />
             <Text style={[s.settledBadgeText, { color: theme.primaryDark }]}>All settled up</Text>
@@ -771,6 +886,7 @@ const s = StyleSheet.create({
   pickerBottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, borderTopWidth: 1 },
   pickerNextBtn: { borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   pickerNextBtnText: { color: "#fff", fontSize: 16, fontFamily: font.bold },
+  groupIconBadge: { position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "#fff" },
   section: { fontSize: 13, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
   card: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
   txRow: { flexDirection: "row", alignItems: "center", padding: 14 },

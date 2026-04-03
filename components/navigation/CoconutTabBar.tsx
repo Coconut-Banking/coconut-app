@@ -4,7 +4,7 @@
 import { Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { StackActions } from "@react-navigation/native";
+import { CommonActions, StackActions } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,8 +43,24 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   };
   const goFriends = () => {
     sfx.tabTap();
-    navigation.navigate("shared" as never);
-    popTabToRoot("shared");
+    if (current === "shared") {
+      // Already on shared tab — pop nested stack back to root
+      const route = state.routes.find((r) => r.name === "shared");
+      if (route?.state && route.state.index !== undefined && route.state.index > 0) {
+        navigation.dispatch({
+          ...StackActions.popToTop(),
+          target: route.state.key,
+        });
+      }
+    } else {
+      // Switch to shared tab and reset its stack to root
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: "shared",
+          params: {},
+        })
+      );
+    }
   };
   const goAccount = () => {
     sfx.tabTap();

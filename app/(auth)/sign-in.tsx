@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSSO } from "@clerk/expo";
+import * as SecureStore from "expo-secure-store";
 import { useTheme } from "../../lib/theme-context";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useSetup } from "../../lib/setup-context";
@@ -47,6 +48,7 @@ export default function SignInScreen() {
   const { startSSOFlow } = useSSO();
   const [error, setError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
+
 
   const handleGoogleSignIn = async () => {
     if (Platform.OS !== "ios" && Platform.OS !== "android") return;

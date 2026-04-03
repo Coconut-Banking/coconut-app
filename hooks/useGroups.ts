@@ -43,6 +43,7 @@ export interface GroupMember {
   user_id: string | null;
   email: string | null;
   display_name: string;
+  image_url?: string | null;
 }
 
 export interface GroupDetail {
@@ -86,6 +87,7 @@ export interface GroupDetail {
 
 export interface PersonDetail {
   displayName: string;
+  image_url?: string | null;
   /** One currency only; null when multiple currencies outstanding. */
   balance: number | null;
   currencyBalances: Array<{ currency: string; amount: number }>;
@@ -145,7 +147,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
         if (res.ok) {
           retryCount.current = 0;
           const data = await res.json();
-          if (__DEV__)
+          if (__DEV__) {
             console.log(
               "[summary]",
               contacts ? "contacts" : "outstanding",
@@ -154,6 +156,9 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
               "groups:",
               data.groups?.length ?? 0
             );
+            const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
+            if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
+          }
           setSummary(data);
         } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
           if (retryCount.current < 5) {
@@ -290,8 +295,8 @@ export interface TransactionDetail {
   createdAt: string;
   groupName: string | null;
   groupId: string;
-  paidBy: { memberId: string; displayName: string; isMe: boolean } | null;
-  shares: Array<{ memberId: string; displayName: string; isMe: boolean; amount: number }>;
+  paidBy: { memberId: string; displayName: string; isMe: boolean; image_url?: string | null } | null;
+  shares: Array<{ memberId: string; displayName: string; isMe: boolean; amount: number; image_url?: string | null }>;
   notes: string | null;
   category: string | null;
   receiptUrl: string | null;

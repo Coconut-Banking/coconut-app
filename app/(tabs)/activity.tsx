@@ -129,6 +129,7 @@ export default function ActivityTabScreen() {
             clearButtonMode="while-editing"
             autoCapitalize="none"
             autoCorrect={false}
+            maxLength={200}
           />
           {search.length > 0 ? (
             <TouchableOpacity onPress={() => setSearch("")} hitSlop={10} accessibilityLabel="Clear search">

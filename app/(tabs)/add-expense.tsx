@@ -746,6 +746,7 @@ export default function AddExpenseScreen() {
                   placeholder="Search name or group"
                   placeholderTextColor={darkUI.labelMuted}
                   autoCorrect={false}
+                  maxLength={200}
                 />
                 {query.length > 0 && (
                   <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
@@ -915,6 +916,7 @@ export default function AddExpenseScreen() {
                   placeholder="What's this for?"
                   placeholderTextColor={darkUI.labelMuted}
                   returnKeyType="next"
+                  maxLength={500}
                 />
 
                 {/* Amount */}
@@ -929,6 +931,7 @@ export default function AddExpenseScreen() {
                     placeholderTextColor={darkUI.labelMuted}
                     keyboardType="decimal-pad"
                     returnKeyType="done"
+                    maxLength={20}
                   />
                 </View>
 
@@ -1252,6 +1255,7 @@ export default function AddExpenseScreen() {
                           keyboardType="decimal-pad"
                           placeholder={splitMethod === "shares" ? "1" : "0"}
                           placeholderTextColor={darkUI.labelMuted}
+                          maxLength={20}
                         />
                       </View>
                     </View>
@@ -1307,7 +1311,7 @@ export default function AddExpenseScreen() {
                 <Ionicons name="close" size={22} color={darkUI.labelMuted} />
               </TouchableOpacity>
             </View>
-            <TextInput style={s.modalIn} value={newFriendName} onChangeText={setNewFriendName} placeholder="Name" placeholderTextColor={darkUI.labelMuted} />
+            <TextInput style={s.modalIn} value={newFriendName} onChangeText={setNewFriendName} placeholder="Name" placeholderTextColor={darkUI.labelMuted} maxLength={100} />
             <TextInput
               style={[s.modalIn, { marginTop: 10 }]}
               value={newFriendEmail}
@@ -1316,6 +1320,7 @@ export default function AddExpenseScreen() {
               placeholderTextColor={darkUI.labelMuted}
               keyboardType="email-address"
               autoCapitalize="none"
+              maxLength={254}
             />
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 16 }, (!newFriendName.trim() || addingNewPerson) && { opacity: 0.5 }]}

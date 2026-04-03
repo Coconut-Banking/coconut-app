@@ -16,7 +16,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.coconut.app",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["venmo"]
+        "LSApplicationQueriesSchemes": ["venmo"],
+        "NSCameraUsageDescription": "Coconut uses your camera to take group photos and scan receipts.",
+        "NSPhotoLibraryUsageDescription": "Coconut uses your photo library to select group photos and receipts."
       }
     },
     "android": {

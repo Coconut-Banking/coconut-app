@@ -309,6 +309,7 @@ export default function ReviewScreen() {
             onChangeText={setQuery}
             autoCapitalize="words"
             autoFocus
+            maxLength={200}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
@@ -438,6 +439,7 @@ export default function ReviewScreen() {
                 placeholder="Their name"
                 placeholderTextColor={colors.textMuted}
                 autoFocus
+                maxLength={100}
               />
             </View>
             <View style={[s.confirmCard, { marginTop: space.lg }]}>
@@ -450,6 +452,7 @@ export default function ReviewScreen() {
                 placeholderTextColor={colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                maxLength={254}
               />
               <Text style={[T.caption, { marginTop: space.sm }]}>
                 They&apos;ll be linked automatically when they join Coconut.
@@ -512,6 +515,7 @@ export default function ReviewScreen() {
                 onChangeText={setExpenseDesc}
                 placeholder="What's this for?"
                 placeholderTextColor={colors.textMuted}
+                maxLength={500}
               />
             </View>
 
@@ -527,6 +531,7 @@ export default function ReviewScreen() {
                   keyboardType="decimal-pad"
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
+                  maxLength={20}
                 />
               </View>
               {!isSelf && (

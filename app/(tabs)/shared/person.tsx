@@ -24,32 +24,11 @@ import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 import { sfx } from "../../../lib/sounds";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
+import { MemberAvatar } from "../../../components/MemberAvatar";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
-
-const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
-
-function MemberAvatar({ name, size = 76 }: { name: string; size?: number }) {
-  const hue = MEMBER_COLORS[name.charCodeAt(0) % MEMBER_COLORS.length];
-  return (
-    <View
-      style={[
-        s.avatarRing,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: `${hue}28`,
-          borderColor: `${hue}44`,
-        },
-      ]}
-    >
-      <Text style={[s.avatarText, { color: hue, fontSize: size * 0.32 }]}>{name.slice(0, 2).toUpperCase()}</Text>
-    </View>
-  );
-}
 
 /** Friend detail — aligned to `MobileAppPage` `FriendDetail` + existing settlement APIs */
 export default function PersonScreen() {
@@ -272,7 +251,7 @@ export default function PersonScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         <View style={s.hero}>
-          <MemberAvatar name={detail.displayName} />
+          <MemberAvatar name={detail.displayName} size={76} imageUrl={detail.image_url} variant="soft" />
           <Text style={s.heroName}>{detail.displayName}</Text>
           <Text style={s.heroMeta}>
             {detail.activity.length} shared expense{detail.activity.length !== 1 ? "s" : ""}
@@ -544,13 +523,6 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingBottom: 120 },
   hero: { alignItems: "center", paddingTop: 8, paddingBottom: 20 },
-  avatarRing: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  avatarText: { fontFamily: font.bold },
   heroName: { fontSize: 20, fontFamily: font.black, color: "#1F2328", textAlign: "center" },
   heroMeta: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 4 },
   balancePill: {

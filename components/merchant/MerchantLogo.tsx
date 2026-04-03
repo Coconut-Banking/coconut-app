@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { getMerchantLogoUrl } from "../../lib/merchant-logos";
@@ -39,7 +40,10 @@ export const MerchantLogo = React.memo(function MerchantLogo({
     const src = (fallbackText?.trim() || merchantName?.trim() || "");
     const words = src.split(/\s+/).filter((w) => /^[A-Za-z0-9]/.test(w));
     if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-    return (words[0]?.[0] ?? "").toUpperCase() || null;
+    if (words.length === 1) return words[0][0].toUpperCase();
+    // No alphanumeric words — use first non-whitespace character
+    const firstChar = src.replace(/\s/g, "")[0];
+    return firstChar ?? null;
   })();
 
   const bg = backgroundColor ?? "rgba(31,35,40,0.08)";
@@ -60,7 +64,9 @@ export const MerchantLogo = React.memo(function MerchantLogo({
         />
       ) : initial ? (
         <Text style={[s.initial, { fontSize: Math.max(10, size * 0.34), color: colors.primary }]}>{initial}</Text>
-      ) : null}
+      ) : (
+        <Ionicons name="receipt-outline" size={Math.max(12, size * 0.45)} color={colors.primary} />
+      )}
     </View>
   );
 });

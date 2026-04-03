@@ -19,28 +19,7 @@ import { useTransactionDetail } from "../../../hooks/useGroups";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
-
-const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
-
-function MemberAvatar({ name, size = 32 }: { name: string; size?: number }) {
-  const hue = MEMBER_COLORS[name.charCodeAt(0) % MEMBER_COLORS.length];
-  return (
-    <View
-      style={[
-        s.avatar,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: `${hue}28`,
-          borderColor: `${hue}44`,
-        },
-      ]}
-    >
-      <Text style={[s.avatarText, { color: hue, fontSize: size * 0.35 }]}>{name.slice(0, 2).toUpperCase()}</Text>
-    </View>
-  );
-}
+import { MemberAvatar } from "../../../components/MemberAvatar";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -246,7 +225,7 @@ export default function TransactionScreen() {
             <Text style={s.section}>Paid by</Text>
             <View style={s.card}>
               <View style={s.paidByRow}>
-                <MemberAvatar name={detail.paidBy.displayName} size={36} />
+                <MemberAvatar name={detail.paidBy.displayName} size={36} imageUrl={detail.paidBy.image_url} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text style={s.paidByName}>
                     {detail.paidBy.isMe ? "You" : detail.paidBy.displayName}
@@ -268,7 +247,7 @@ export default function TransactionScreen() {
               {detail.shares.map((share, i) => (
                 <View key={share.memberId}>
                   <View style={s.shareRow}>
-                    <MemberAvatar name={share.displayName} size={32} />
+                    <MemberAvatar name={share.displayName} size={32} imageUrl={share.image_url} />
                     <Text style={[s.shareName, { flex: 1, marginLeft: 12 }]}>
                       {share.isMe ? "You" : share.displayName}
                     </Text>

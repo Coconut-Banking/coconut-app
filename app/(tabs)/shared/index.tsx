@@ -26,7 +26,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
-import { useApiFetch } from "../../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../../lib/api";
 import { useGroupsSummary } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { SharedSkeletonScreen } from "../../../components/ui";
@@ -229,7 +229,10 @@ export default function SharedIndex() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
-      if (!isDemoOn) refetch(true);
+      if (!isDemoOn) {
+        invalidateApiCache("/api/groups/summary");
+        refetch(true);
+      }
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
@@ -475,6 +478,7 @@ export default function SharedIndex() {
           id: g.id,
           name: g.name,
           memberCount: g.memberCount,
+          imageUrl: null as string | null | undefined,
           myBalance: 0,
           myBalances: [] as { currency: string; amount: number }[],
           lastActivityAt: new Date().toISOString(),
@@ -485,6 +489,7 @@ export default function SharedIndex() {
       id: g.id,
       name: g.name,
       memberCount: g.memberCount,
+      imageUrl: null as string | null | undefined,
       myBalance: 0,
       myBalances: [] as { currency: string; amount: number }[],
       lastActivityAt: new Date().toISOString(),
@@ -565,6 +570,7 @@ export default function SharedIndex() {
               placeholderTextColor={theme.textTertiary}
               autoFocus
               autoCorrect={false}
+              maxLength={100}
             />
             {contactSearch.length > 0 && (
               <TouchableOpacity onPress={() => setContactSearch("")} hitSlop={8} style={{ marginRight: 12 }}>
@@ -592,6 +598,7 @@ export default function SharedIndex() {
                 placeholder="Name"
                 placeholderTextColor={theme.textTertiary}
                 autoFocus
+                maxLength={100}
               />
               <TextInput
                 style={[st.afManualInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
@@ -601,6 +608,7 @@ export default function SharedIndex() {
                 placeholderTextColor={theme.textTertiary}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                maxLength={254}
               />
               <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
                 <TouchableOpacity
@@ -760,6 +768,7 @@ export default function SharedIndex() {
                 autoFocus
                 returnKeyType="done"
                 onSubmitEditing={createGroup}
+                maxLength={100}
               />
 
               {/* Create button */}
