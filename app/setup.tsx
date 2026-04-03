@@ -151,6 +151,14 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
     setConnecting(true);
     setError(null);
     try {
+      // Bail early in Expo Go — native Plaid SDK not available
+      const plaid = await getPlaid();
+      if (!plaid) {
+        setError("Bank connection requires a native app build and is not available in Expo Go.");
+        setConnecting(false);
+        return;
+      }
+
       // 1. Get link token from server
       const tokenRes = await apiFetch("/api/plaid/create-link-token", {
         method: "POST",
