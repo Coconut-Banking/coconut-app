@@ -736,9 +736,13 @@ export default function BalancesPrototypeScreen() {
                         onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
                         activeOpacity={0.75}
                       >
-                        <View style={styles.groupIcon}>
-                          <Ionicons name="people" size={18} color="#1F2937" />
-                        </View>
+                        {g.imageUrl ? (
+                          <Image source={{ uri: g.imageUrl }} style={styles.groupIconImg} />
+                        ) : (
+                          <View style={styles.groupIcon}>
+                            <Ionicons name="people" size={18} color="#1F2937" />
+                          </View>
+                        )}
                         <View style={{ flex: 1, marginLeft: 12 }}>
                           <Text style={styles.groupRowName}>{g.name}</Text>
                           <Text style={styles.groupRowSub}>
@@ -1449,6 +1453,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.05)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  groupIconImg: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
   },
   groupRowName: { fontSize: 16, fontFamily: font.semibold, color: "#1F2328" },
   groupRowSub: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 1 },
