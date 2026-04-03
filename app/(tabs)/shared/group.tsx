@@ -359,9 +359,17 @@ export default function GroupScreen() {
 
   if (!detail) {
     return (
-      <View style={[s.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
+        <View style={[s.topBar, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+            <Ionicons name="chevron-back" size={20} color={theme.text} />
+            <Text style={[s.backText, { color: theme.text }]}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={theme.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -371,6 +379,12 @@ export default function GroupScreen() {
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
+      <View style={[s.topBar, { borderBottomColor: theme.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+          <Text style={[s.backText, { color: theme.text }]}>Back</Text>
+        </TouchableOpacity>
+      </View>
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.content}
@@ -814,6 +828,9 @@ export default function GroupScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  topBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  backRow: { flexDirection: "row", alignItems: "center", gap: 2 },
+  backText: { fontSize: 16, fontFamily: font.medium },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   content: { padding: 20, paddingBottom: 100 },
