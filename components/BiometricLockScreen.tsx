@@ -7,30 +7,48 @@ import { useTheme } from "../lib/theme-context";
 import { font } from "../lib/theme";
 import { CoconutMark } from "./brand/CoconutMark";
 
+const isSystemError = (result: { error?: string }) =>
+  result.error?.includes("error 6") || result.error?.includes("NotInteractive");
+
 export function BiometricLockScreen() {
   const { theme } = useTheme();
   const { unlock, biometricType } = useBiometricLock();
   const label = getBiometricLabel(biometricType);
   const autoTriggered = useRef(false);
+  const retryCount = useRef(0);
 
   const handleUnlock = async () => {
-    // Try biometric-only first so the Face ID prompt appears
     const bioResult = await authenticate(`Unlock Coconut with ${label}`, { biometricOnly: true });
     if (bioResult.success) {
       unlock();
       return;
     }
-    // If biometric fails (cancelled, not recognized), fall back to device auth (passcode)
+
+    // System not ready (error 6 / NotInteractive) -- retry after a delay
+    if (isSystemError(bioResult) && retryCount.current < 3) {
+      retryCount.current += 1;
+      setTimeout(handleUnlock, 600 * retryCount.current);
+      return;
+    }
+
     if (bioResult.error !== "user_cancel" && bioResult.errorCode !== "user_cancel") {
       const fallback = await authenticate(`Unlock Coconut`);
-      if (fallback.success) unlock();
+      if (fallback.success) {
+        unlock();
+        return;
+      }
+      // If passcode also fails with a system error, retry once more
+      if (isSystemError(fallback) && retryCount.current < 3) {
+        retryCount.current += 1;
+        setTimeout(handleUnlock, 600 * retryCount.current);
+      }
     }
   };
 
   useEffect(() => {
     if (autoTriggered.current) return;
     autoTriggered.current = true;
-    const timer = setTimeout(handleUnlock, 300);
+    const timer = setTimeout(handleUnlock, 500);
     return () => clearTimeout(timer);
   }, []);
 

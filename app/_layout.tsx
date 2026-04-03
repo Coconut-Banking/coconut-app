@@ -124,8 +124,6 @@ function AuthSwitch() {
 
   return (
     <BiometricLockProvider isSignedIn={!showAuth}>
-      {signedInAndReady && !needsSetup && <BiometricLockGate />}
-      {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
       <Stack screenOptions={{ headerShown: false, gestureEnabled: false }} initialRouteName="(auth)">
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
@@ -137,6 +135,8 @@ function AuthSwitch() {
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
       </Stack>
       <NavigateOnChange target={target} />
+      {signedInAndReady && !needsSetup && <BiometricLockGate />}
+      {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
     </BiometricLockProvider>
   );
 }
