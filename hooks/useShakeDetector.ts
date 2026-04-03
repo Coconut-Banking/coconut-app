@@ -16,10 +16,10 @@ export function useShakeDetector(onShake: () => void) {
 
     let sub: { remove: () => void } | null = null;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Accelerometer } = require("expo-sensors") as typeof import("expo-sensors");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+      const { Accelerometer } = require("expo-sensors") as any;
       Accelerometer.setUpdateInterval(100);
-      sub = Accelerometer.addListener(({ x, y, z }) => {
+      sub = Accelerometer.addListener(({ x, y, z }: { x: number; y: number; z: number }) => {
         const total = Math.sqrt(x * x + y * y + z * z);
         const now = Date.now();
         if (total > SHAKE_THRESHOLD && now - lastShake.current > SHAKE_COOLDOWN_MS) {
