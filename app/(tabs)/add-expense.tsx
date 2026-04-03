@@ -473,7 +473,7 @@ export default function AddExpenseScreen() {
         if (cancelled) return;
         if (!gr.ok) {
           if (attempt < 1) {
-            await new Promise((r) => setTimeout(r, 800));
+            await new Promise((r) => setTimeout(r, 200));
             if (!cancelled) load(1);
           } else {
             setError("Could not load group — tap Try again");
@@ -489,7 +489,7 @@ export default function AddExpenseScreen() {
       } catch {
         if (cancelled) return;
         if (attempt < 1) {
-          await new Promise((r) => setTimeout(r, 800));
+          await new Promise((r) => setTimeout(r, 200));
           if (!cancelled) load(1);
         } else {
           setError("Network error — tap Try again");
@@ -875,11 +875,24 @@ export default function AddExpenseScreen() {
           <>
             <View style={s.header}>
               <TouchableOpacity onPress={() => { setStep(1); removeTarget(); }} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="chevron-back" size={22} color={darkUI.labelSecondary} />
+                <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
               </TouchableOpacity>
-              <Text style={s.headerTitle}>Enter details</Text>
-              <View style={s.headerSide} />
+              <Text style={s.headerTitle}>Add an expense</Text>
+              <TouchableOpacity onPress={() => canReview && setStep(3)} hitSlop={12} style={s.headerSide} disabled={!canReview}>
+                <Text style={{ fontFamily: font.bold, fontSize: 15, color: canReview ? colors.primary : darkUI.labelMuted }}>Save</Text>
+              </TouchableOpacity>
             </View>
+            {targets[0] && (
+              <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 6 }}>
+                <Text style={{ fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary }}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, gap: 6, borderWidth: 1, borderColor: darkUI.stroke }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4A6CF722", alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 9, fontFamily: font.bold, color: "#4A6CF7" }}>{targets[0].name.slice(0, 2).toUpperCase()}</Text>
+                  </View>
+                  <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{targets[0].name}</Text>
+                </View>
+              </View>
+            )}
 
             {resolving ? (
               <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
