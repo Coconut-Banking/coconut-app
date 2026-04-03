@@ -115,54 +115,66 @@ export default function JoinGroupScreen() {
     return (
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
         <TouchableOpacity style={st.closeBtnTopRight} onPress={dismiss} activeOpacity={0.7}>
-          <Ionicons name="close" size={24} color={theme.textTertiary} />
+          <Ionicons name="close" size={22} color={theme.textTertiary} />
         </TouchableOpacity>
         <View style={st.centered}>
-          <View style={[st.iconCircle, { backgroundColor: theme.surfaceSecondary }]}>
-            <Ionicons name="link-outline" size={32} color={theme.textQuaternary} />
+          <View style={[st.resultCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <View style={[st.resultIcon, { backgroundColor: "#FEF2F2" }]}>
+              <Ionicons name="link-outline" size={32} color="#DC2626" />
+            </View>
+            <Text style={[st.resultTitle, { color: theme.text }]}>Invalid invite link</Text>
+            <Text style={[st.resultSub, { color: theme.textTertiary }]}>
+              This link is no longer valid. Ask the group creator for a new one.
+            </Text>
+            <TouchableOpacity
+              style={[st.resultBtn, { backgroundColor: theme.primary }]}
+              onPress={dismiss} activeOpacity={0.8}
+            >
+              <Text style={st.resultBtnText}>Go back</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={[st.title, { color: theme.text }]}>Invalid invite link</Text>
-          <Text style={[st.subtitle, { color: theme.textTertiary }]}>
-            This link is no longer valid. Ask the group creator for a new one.
-          </Text>
-          <TouchableOpacity
-            style={[st.primaryBtn, { backgroundColor: theme.primary }]}
-            onPress={dismiss} activeOpacity={0.7}
-          >
-            <Text style={st.primaryBtnText}>Go back</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
   if (result) {
+    const gName = preview?.groupName ?? "this group";
     return (
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
         <TouchableOpacity style={st.closeBtnTopRight} onPress={dismiss} activeOpacity={0.7}>
-          <Ionicons name="close" size={24} color={theme.textTertiary} />
+          <Ionicons name="close" size={22} color={theme.textTertiary} />
         </TouchableOpacity>
         <View style={st.centered}>
-          <View style={[st.iconCircle, { backgroundColor: theme.primaryLight }]}>
-            <Ionicons
-              name={result.alreadyMember ? "people" : "checkmark-circle"}
-              size={36} color={theme.primary}
-            />
+          <View style={[st.resultCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            {preview?.imageUrl ? (
+              <Image source={{ uri: preview.imageUrl }} style={st.resultGroupImg} />
+            ) : (
+              <View style={[st.resultIcon, { backgroundColor: result.alreadyMember ? `${theme.primary}15` : "#DEF7EC" }]}>
+                <Ionicons
+                  name={result.alreadyMember ? "people" : "checkmark-circle"}
+                  size={32}
+                  color={result.alreadyMember ? theme.primary : "#059669"}
+                />
+              </View>
+            )}
+            <Text style={[st.resultTitle, { color: theme.text }]}>
+              {result.alreadyMember ? "Already a member" : "You\u2019re in!"}
+            </Text>
+            <Text style={[st.resultSub, { color: theme.textTertiary }]}>
+              {result.alreadyMember
+                ? `You\u2019re already in ${gName}.`
+                : `Welcome to ${gName}. Start splitting expenses with the group.`}
+            </Text>
+            <TouchableOpacity
+              style={[st.resultBtn, { backgroundColor: theme.primary }]}
+              onPress={() => navigateToGroup(result.groupId)}
+              activeOpacity={0.8}
+            >
+              <Text style={st.resultBtnText}>View group</Text>
+              <Ionicons name="arrow-forward" size={16} color="#fff" />
+            </TouchableOpacity>
           </View>
-          <Text style={[st.title, { color: theme.text }]}>
-            {result.alreadyMember ? "Already a member" : "You're in!"}
-          </Text>
-          <Text style={[st.subtitle, { color: theme.textTertiary }]}>
-            {result.alreadyMember
-              ? `You're already in ${preview?.groupName ?? "this group"}.`
-              : `You've joined ${preview?.groupName ?? "the group"}.`}
-          </Text>
-          <TouchableOpacity
-            style={[st.primaryBtn, { backgroundColor: theme.primary }]}
-            onPress={() => navigateToGroup(result.groupId)} activeOpacity={0.7}
-          >
-            <Text style={st.primaryBtnText}>View group</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -237,7 +249,7 @@ export default function JoinGroupScreen() {
 
 const st = StyleSheet.create({
   container: { flex: 1 },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   scrollContent: { padding: 24, paddingTop: 16, paddingBottom: 120, alignItems: "center" },
   closeBtn: { alignSelf: "flex-end", padding: 4, marginBottom: 8 },
   closeBtnTopRight: { position: "absolute", top: 56, right: 20, zIndex: 10, padding: 4 },
@@ -265,4 +277,54 @@ const st = StyleSheet.create({
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: font.semibold },
   title: { fontSize: 20, fontWeight: "700", fontFamily: font.bold, marginBottom: 8, marginTop: 16 },
   subtitle: { fontSize: 14, fontFamily: font.regular, textAlign: "center", marginBottom: 24 },
+  resultCard: {
+    width: "100%",
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 32,
+    alignItems: "center",
+    ...shadow.sm,
+  },
+  resultIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  resultGroupImg: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 20,
+  },
+  resultTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    fontFamily: font.bold,
+    marginBottom: 8,
+  },
+  resultSub: {
+    fontSize: 15,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  resultBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    width: "100%",
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  resultBtnText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    fontFamily: font.semibold,
+  },
 });
