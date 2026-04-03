@@ -231,11 +231,15 @@ export default function SharedIndex() {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
       if (!isDemoOn) {
         invalidateApiCache("/api/groups/summary");
+        setOptimisticGroups([]);
+        setOptimisticFriends([]);
+        setFallbackGroups([]);
+        AsyncStorage.removeItem(optimisticStoreKey).catch(() => {});
         refetch(true);
       }
     });
     return () => sub.remove();
-  }, [isDemoOn, refetch]);
+  }, [isDemoOn, refetch, optimisticStoreKey]);
 
   useEffect(() => {
     if (prevDemoOn.current && !isDemoOn) refetch(true);
@@ -245,6 +249,22 @@ export default function SharedIndex() {
   useEffect(() => {
     if (!isDemoOn) void onRefresh();
   }, [isDemoOn, onRefresh]);
+
+  // Prune stale optimistic groups once the API has returned them
+  useEffect(() => {
+    if (!realSummary || isDemoOn) return;
+    const apiIds = new Set(realSummary.groups.map((g) => g.id));
+    const pruned = optimisticGroups.filter((o) => !apiIds.has(o.id));
+    if (pruned.length < optimisticGroups.length) {
+      setOptimisticGroups(pruned);
+      const prunedFriends = optimisticFriends.filter(
+        (f) => !realSummary.friends.some((s) => s.displayName === f.displayName)
+      );
+      setOptimisticFriends(prunedFriends);
+      void persistOptimistic(pruned, prunedFriends);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realSummary]);
 
   useEffect(() => {
     if (!showArchived || isDemoOn) return;
@@ -502,12 +522,11 @@ export default function SharedIndex() {
       myBalances: [] as { currency: string; amount: number }[],
       lastActivityAt: new Date().toISOString(),
     }));
-  const groups = !isDemoOn && realSummary != null ? [...optimisticAsGroups, ...groupsFromApi] : isDemoOn ? summaryGroups : groupsFromApi;
+  const groupsMerged = !isDemoOn && realSummary != null ? [...optimisticAsGroups, ...groupsFromApi] : isDemoOn ? summaryGroups : groupsFromApi;
+  const groups = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
   const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
   const visibleGroups = groups.filter((g) => {
     const groupName = g.name.trim().toLowerCase();
-    // "Add friend" currently creates a 2-member group under the hood.
-    // Keep the data model, but don't show duplicate rows in Groups UI.
     if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
     return true;
   });
