@@ -32,6 +32,8 @@ export type HomeBankStripRow = {
   receiptId?: string | null;
   /** Plaid counterparty logo URL. */
   logoUrl?: string | null;
+  /** Transaction category for icon fallback (e.g. "FOOD_AND_DRINK"). */
+  category?: string | null;
 };
 
 export function demoChargeToStripRow(tx: PrototypeBankCharge): HomeBankStripRow {
@@ -76,6 +78,7 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
     receiptBoxText: hasReceiptSnippet ? receiptSnippet : undefined,
     receiptId: tx.receiptId ?? null,
     logoUrl: tx.logoUrl ?? null,
+    category: tx.category ?? null,
   };
 }
 

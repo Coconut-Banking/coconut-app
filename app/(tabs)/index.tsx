@@ -59,7 +59,7 @@ import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
-function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null }): HomeBankStripRow {
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null; category?: string }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
   const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
   return {
@@ -74,6 +74,7 @@ function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: stri
     showReceiptBox: hasReceipt,
     receiptId: tx.receiptId ?? null,
     logoUrl: tx.logoUrl ?? null,
+    category: tx.category ?? null,
   };
 }
 
@@ -480,8 +481,8 @@ export default function BalancesPrototypeScreen() {
                       <MerchantLogo
                         merchantName={item.merchant}
                         size={22}
-                        fallbackText={item.emoji}
                         logoUrl={item.logoUrl}
+                        category={item.category}
                         backgroundColor="transparent"
                         borderColor="transparent"
                       />
@@ -564,8 +565,8 @@ export default function BalancesPrototypeScreen() {
                         <MerchantLogo
                           merchantName={item.merchant}
                           size={22}
-                          fallbackText={item.emoji}
                           logoUrl={item.logoUrl}
+                          category={item.category}
                           backgroundColor="transparent"
                           borderColor="transparent"
                         />
@@ -788,8 +789,8 @@ export default function BalancesPrototypeScreen() {
                     <MerchantLogo
                       merchantName={selectedStrip.merchant}
                       size={32}
-                      fallbackText={selectedStrip.emoji}
                       logoUrl={selectedStrip.logoUrl}
+                      category={selectedStrip.category}
                       backgroundColor="transparent"
                       borderColor="transparent"
                     />
@@ -1205,8 +1206,8 @@ export default function BalancesPrototypeScreen() {
                             <MerchantLogo
                               merchantName={tx.merchant || tx.rawDescription || "Purchase"}
                               size={22}
-                              fallbackText="💳"
                               logoUrl={tx.logoUrl}
+                              category={tx.category}
                               backgroundColor="transparent"
                               borderColor="transparent"
                             />
@@ -1274,7 +1275,7 @@ export default function BalancesPrototypeScreen() {
                             <View key={tx.id}>
                               <View style={styles.friendRow}>
                                 <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                                  <MerchantLogo merchantName={merchant} size={22} fallbackText="💳" backgroundColor="transparent" borderColor="transparent" />
+                                  <MerchantLogo merchantName={merchant} size={22} category={category} backgroundColor="transparent" borderColor="transparent" />
                                 </View>
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                   <Text style={styles.friendName} numberOfLines={1}>{merchant}</Text>
