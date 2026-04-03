@@ -25,6 +25,8 @@ import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
+import * as Clipboard from "expo-clipboard";
+import { useToast } from "../../../components/Toast";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -57,6 +59,7 @@ export default function GroupScreen() {
   const { detail: realDetail, loading, refetch } = useGroupDetail(isDemoOn ? null : (id ?? null));
   const { refetch: refetchSummary } = useGroupsSummary({ contacts: true });
   const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
+  const toast = useToast();
 
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
@@ -128,6 +131,20 @@ export default function GroupScreen() {
             </Text>
           </View>
         </View>
+
+        {!isArchived && detail.invite_token ? (
+          <TouchableOpacity
+            style={[s.inviteBtn, { backgroundColor: theme.primary }]}
+            onPress={async () => {
+              await Clipboard.setStringAsync(`https://coconut-app.dev/join/${detail.invite_token}`);
+              toast.show("Copied group invite link");
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="link-outline" size={18} color="#fff" />
+            <Text style={s.inviteBtnText}>Invite</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {isArchived ? (
           <View
@@ -323,6 +340,21 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 20, paddingBottom: 100 },
   groupHeader: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
+  inviteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: radii.md,
+    marginBottom: 20,
+  },
+  inviteBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: font.semibold,
+  },
   groupIcon: { width: 56, height: 56, borderRadius: radii.xl, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center" },
   groupName: { fontSize: 22, fontWeight: "700", fontFamily: font.bold, color: colors.text },
   groupMeta: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 4 },
