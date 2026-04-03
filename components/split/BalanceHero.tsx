@@ -1,3 +1,4 @@
+import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import type { GroupsSummary } from "../../hooks/useGroups";
 import { font, shadow, prototype } from "../../lib/theme";
@@ -12,7 +13,7 @@ const emptySummary: GroupsSummary = {
   totalsByCurrency: [],
 };
 
-export function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
+export const BalanceHero = React.memo(function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
   const s = summary ?? emptySummary;
   const rows = s.totalsByCurrency ?? [];
   const multi = rows.length > 1;
@@ -88,7 +89,7 @@ export function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
       </Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   heroCard: {

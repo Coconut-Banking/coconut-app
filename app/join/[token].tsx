@@ -89,17 +89,33 @@ export default function JoinGroupScreen() {
     router.replace({ pathname: "/(tabs)/shared/group", params: { id: groupId } });
   };
 
+  const dismiss = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   if (loading) {
     return (
-      <View style={[st.centered, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
+        <TouchableOpacity style={st.closeBtnTopRight} onPress={dismiss} activeOpacity={0.7}>
+          <Ionicons name="close" size={24} color={theme.textTertiary} />
+        </TouchableOpacity>
+        <View style={st.centered}>
+          <ActivityIndicator size="large" color={theme.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (error && !preview) {
     return (
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
+        <TouchableOpacity style={st.closeBtnTopRight} onPress={dismiss} activeOpacity={0.7}>
+          <Ionicons name="close" size={24} color={theme.textTertiary} />
+        </TouchableOpacity>
         <View style={st.centered}>
           <View style={[st.iconCircle, { backgroundColor: theme.surfaceSecondary }]}>
             <Ionicons name="link-outline" size={32} color={theme.textQuaternary} />
@@ -110,7 +126,7 @@ export default function JoinGroupScreen() {
           </Text>
           <TouchableOpacity
             style={[st.primaryBtn, { backgroundColor: theme.primary }]}
-            onPress={() => router.back()} activeOpacity={0.7}
+            onPress={dismiss} activeOpacity={0.7}
           >
             <Text style={st.primaryBtnText}>Go back</Text>
           </TouchableOpacity>
@@ -122,6 +138,9 @@ export default function JoinGroupScreen() {
   if (result) {
     return (
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
+        <TouchableOpacity style={st.closeBtnTopRight} onPress={dismiss} activeOpacity={0.7}>
+          <Ionicons name="close" size={24} color={theme.textTertiary} />
+        </TouchableOpacity>
         <View style={st.centered}>
           <View style={[st.iconCircle, { backgroundColor: theme.primaryLight }]}>
             <Ionicons
@@ -153,7 +172,7 @@ export default function JoinGroupScreen() {
   return (
     <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={st.scrollContent} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity style={st.closeBtn} onPress={() => router.back()} activeOpacity={0.7}>
+        <TouchableOpacity style={st.closeBtn} onPress={dismiss} activeOpacity={0.7}>
           <Ionicons name="close" size={24} color={theme.textTertiary} />
         </TouchableOpacity>
 
@@ -216,6 +235,7 @@ const st = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   scrollContent: { padding: 24, paddingTop: 16, paddingBottom: 120, alignItems: "center" },
   closeBtn: { alignSelf: "flex-end", padding: 4, marginBottom: 8 },
+  closeBtnTopRight: { position: "absolute", top: 56, right: 20, zIndex: 10, padding: 4 },
   iconCircle: { width: 64, height: 64, borderRadius: radii.xl, alignItems: "center", justifyContent: "center" },
   label: { fontSize: 13, fontFamily: font.medium, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   groupName: { fontSize: 24, fontWeight: "700", fontFamily: font.bold, marginBottom: 4, textAlign: "center" },

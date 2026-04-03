@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput, DeviceEventEmitter, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput, DeviceEventEmitter, AppState, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
@@ -78,6 +78,14 @@ export default function ActivityTabScreen() {
       DeviceEventEmitter.addListener("expense-added", () => refetch()),
     ];
     return () => subs.forEach((s) => s.remove());
+  }, [isDemoOn, refetch]);
+
+  useEffect(() => {
+    if (isDemoOn) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refetch();
+    });
+    return () => sub.remove();
   }, [isDemoOn, refetch]);
 
   if (!isDemoOn && loading && activity.length === 0) {

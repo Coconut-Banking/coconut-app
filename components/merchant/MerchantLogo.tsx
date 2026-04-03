@@ -1,10 +1,11 @@
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import React, { useEffect, useMemo, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { getMerchantLogoUrl } from "../../lib/merchant-logos";
 import { colors, font } from "../../lib/theme";
 
-export function MerchantLogo({
+export const MerchantLogo = React.memo(function MerchantLogo({
   merchantName,
   size = 32,
   backgroundColor,
@@ -52,7 +53,9 @@ export function MerchantLogo({
         <Image
           source={{ uri: logoUrl }}
           style={s.logoImg}
-          resizeMode="contain"
+          contentFit="contain"
+          cachePolicy="disk"
+          recyclingKey={logoUrl}
           onError={() => setErrored(true)}
         />
       ) : initial ? (
@@ -60,7 +63,7 @@ export function MerchantLogo({
       ) : null}
     </View>
   );
-}
+});
 
 const s = StyleSheet.create({
   circle: {

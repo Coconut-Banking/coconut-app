@@ -26,6 +26,8 @@ import { useDemoData } from "../../../lib/demo-context";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { useTheme } from "../../../lib/theme-context";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../../lib/format-split-money";
+import * as Clipboard from "expo-clipboard";
+import { useToast } from "../../../components/Toast";
 
 const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -65,6 +67,7 @@ export default function SharedIndex() {
   const { theme } = useTheme();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
+  const toast = useToast();
   const isFocused = useIsFocused();
   const { isDemoOn, setIsDemoOn } = useDemoMode();
   const demo = useDemoData();
@@ -133,7 +136,7 @@ export default function SharedIndex() {
   }, [isDemoOn, refetch, apiFetch]);
 
   useEffect(() => {
-    // Friends tab should always use real data.
+    // Shared tab should always use real data.
     if (isDemoOn) setIsDemoOn(false);
   }, [isDemoOn, setIsDemoOn]);
 
@@ -259,6 +262,10 @@ export default function SharedIndex() {
       const nextGroups = [{ id: data.id, name, memberCount: 1, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       await persistOptimistic(nextGroups, optimisticFriends);
+      if (data.invite_token) {
+        await Clipboard.setStringAsync(`https://coconut-app.dev/join/${data.invite_token}`);
+        toast.show("Group created! Invite link copied");
+      }
       router.push({ pathname: "/(tabs)/shared/group", params: { id: data.id } });
     } finally {
       setCreating(false);
@@ -472,7 +479,7 @@ export default function SharedIndex() {
           </View>
         ) : null}
 
-        <SLabel>Friends</SLabel>
+        <SLabel>People</SLabel>
         {!friends.length ? (
           <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />
