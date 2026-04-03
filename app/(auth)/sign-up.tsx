@@ -13,6 +13,22 @@ import { useSignUp } from "@clerk/expo";
 import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
 
+const SIGN_IN_TIMEOUT_MS = 20000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
   const first = err?.errors?.[0];
@@ -37,7 +53,7 @@ export default function SignUpScreen() {
     try {
       const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
       if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+        await withTimeout(setActive({ session: createdSessionId }), SIGN_IN_TIMEOUT_MS, "Google setActive");
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
@@ -78,7 +94,7 @@ export default function SignUpScreen() {
     try {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === "complete" && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
+        await withTimeout(setActive({ session: result.createdSessionId }), SIGN_IN_TIMEOUT_MS, "Email verification setActive");
       } else {
         setError("Verification is not complete yet. Please try again.");
       }
