@@ -1016,6 +1016,9 @@ export default function BalancesPrototypeScreen() {
                         prefillDesc: row.merchant,
                         prefillAmount: row.amount.toFixed(2),
                         prefillNonce: String(Date.now()),
+                        prefillPersonKey: "",
+                        prefillPersonName: "",
+                        prefillPersonType: "",
                       },
                     });
                   }}
@@ -1238,6 +1241,9 @@ export default function BalancesPrototypeScreen() {
                                     prefillDesc: tx.merchant || tx.rawDescription || "",
                                     prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
                                     prefillNonce: String(Date.now()),
+                                    prefillPersonKey: "",
+                                    prefillPersonName: "",
+                                    prefillPersonType: "",
                                   },
                                 });
                               }}

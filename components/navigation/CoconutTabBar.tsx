@@ -65,9 +65,9 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
         prefillNonce: String(Date.now()),
         prefillDesc: "",
         prefillAmount: "",
-        ...(prefill
-          ? { prefillPersonKey: prefill.key, prefillPersonName: prefill.name, prefillPersonType: prefill.type }
-          : {}),
+        prefillPersonKey: prefill?.key ?? "",
+        prefillPersonName: prefill?.name ?? "",
+        prefillPersonType: prefill?.type ?? "",
       },
     });
   };
