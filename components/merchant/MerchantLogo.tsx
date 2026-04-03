@@ -69,6 +69,7 @@ export const MerchantLogo = React.memo(function MerchantLogo({
 
   const logoUrl = useMemo(() => {
     if (errored) return null;
+    if (externalLogoUrl) return externalLogoUrl;
     return getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
   }, [merchantName, size, errored, externalLogoUrl]);
 
