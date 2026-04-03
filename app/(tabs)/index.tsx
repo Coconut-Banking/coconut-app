@@ -153,6 +153,7 @@ export default function BalancesPrototypeScreen() {
   const summary = isDemoOn ? demo.summary : apiSummary;
   const [dismissedBank, setDismissedBank] = useState<string[]>([]);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
+  const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
@@ -230,6 +231,14 @@ export default function BalancesPrototypeScreen() {
   }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank]);
 
   const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
+
+  const closeDetail = useCallback(() => {
+    setSelectedStrip(null);
+    if (openedFromListRef.current) {
+      openedFromListRef.current = false;
+      setShowAllBank(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedStrip) {
@@ -764,8 +773,8 @@ export default function BalancesPrototypeScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={!!selectedStrip} transparent animationType="slide" onRequestClose={() => setSelectedStrip(null)}>
-        <Pressable style={styles.sheetOverlay} onPress={() => setSelectedStrip(null)}>
+      <Modal visible={!!selectedStrip} transparent animationType="slide" onRequestClose={closeDetail}>
+        <Pressable style={styles.sheetOverlay} onPress={closeDetail}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
             {selectedStrip ? (
@@ -992,6 +1001,7 @@ export default function BalancesPrototypeScreen() {
                   style={styles.splitBtn}
                   onPress={() => {
                     const row = selectedStrip;
+                    openedFromListRef.current = false;
                     setSelectedStrip(null);
                     router.push({
                       pathname: "/(tabs)/add-expense",
@@ -1009,7 +1019,7 @@ export default function BalancesPrototypeScreen() {
                   <Ionicons name="git-branch-outline" size={18} color="#fff" />
                   <Text style={styles.splitBtnText}>Split this charge</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.sheetClose} onPress={() => setSelectedStrip(null)}>
+                <TouchableOpacity style={styles.sheetClose} onPress={closeDetail}>
                   <Text style={styles.sheetCloseText}>Close</Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -1185,6 +1195,7 @@ export default function BalancesPrototypeScreen() {
                           style={styles.friendRow}
                           activeOpacity={0.75}
                           onPress={() => {
+                            openedFromListRef.current = true;
                             setShowAllBank(false);
                             sfx.pop();
                             setSelectedStrip(txToSheetRow(tx));
