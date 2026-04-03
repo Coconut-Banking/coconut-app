@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
+import { create, open, dismissLink } from "react-native-plaid-link-sdk";
+import type { LinkSuccess, LinkExit } from "react-native-plaid-link-sdk";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useUser } from "@clerk/expo";
 import { useTheme } from "../lib/theme-context";
@@ -27,7 +29,6 @@ import { CoconutMark } from "../components/brand/CoconutMark";
 
 export const PENDING_FULL_RESET_KEY = "coconut.pending_full_reset";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 const TOTAL_STEPS = 4;
 
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
@@ -35,30 +36,6 @@ const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
 
 // Survives unmount/remount so hot reload preserves the current step.
 let _savedSetupStep = 0;
-
-const POLL_ATTEMPTS = 4;
-const POLL_INTERVAL = 1500;
-
-async function pollPlaidStatus(
-  apiFetch: (path: string) => Promise<Response>,
-): Promise<boolean> {
-  for (let i = 0; i < POLL_ATTEMPTS; i++) {
-    try {
-      invalidateApiCache("/api/plaid/status");
-      const res = await apiFetch("/api/plaid/status");
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.linked) return true;
-      }
-    } catch {
-      // keep polling
-    }
-    if (i < POLL_ATTEMPTS - 1) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-    }
-  }
-  return false;
-}
 
 export default function SetupScreen() {
   const { theme } = useTheme();
@@ -157,39 +134,74 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
   const toast = useToast();
   const [connecting, setConnecting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const connectBank = async () => {
     setConnecting(true);
+    setError(null);
     try {
-      const base = API_URL.replace(/\/$/, "");
-      const rawScheme = Constants.expoConfig?.scheme;
-      const scheme =
-        typeof rawScheme === "string"
-          ? rawScheme
-          : Array.isArray(rawScheme)
-            ? rawScheme[0] ?? "coconut"
-            : "coconut";
-      const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
-      const callbackUrl = `${scheme}://connected`;
-
-      // openAuthSessionAsync auto-dismisses when the web page redirects to
-      // the callback URL — no lingering Safari / SFSafariVC.
-      const result = await WebBrowser.openAuthSessionAsync(connectUrl, callbackUrl);
-
-      if (result.type === "cancel" || result.type === "dismiss") {
-        // User manually closed the browser — still poll in case they finished.
-      }
-
-      const linked = await pollPlaidStatus(apiFetch);
-      if (linked) {
-        setSuccess(true);
-        toast.show("Bank connected!", "success");
-        setTimeout(onDone, 1200);
+      // 1. Get link token from server
+      const tokenRes = await apiFetch("/api/plaid/create-link-token", {
+        method: "POST",
+        body: { redirect_path: "/plaid-oauth" },
+      });
+      if (!tokenRes.ok) {
+        const data = await tokenRes.json().catch(() => ({}));
+        setError((data as { error?: string }).error ?? "Failed to start bank connection");
+        setConnecting(false);
         return;
       }
+      const tokenData = await tokenRes.json();
+      const linkToken = (tokenData as { link_token?: string }).link_token;
+      if (!linkToken) {
+        setError("Server did not return a link token");
+        setConnecting(false);
+        return;
+      }
+
+      // 2. Create + open native Plaid Link
+      create({ token: linkToken });
+
+      const onSuccess = async (success: LinkSuccess) => {
+        if (__DEV__) console.log("[setup:bank] plaid link success:", success.publicToken);
+        try {
+          // 3. Exchange the public token
+          const exchangeRes = await apiFetch("/api/plaid/exchange-token", {
+            method: "POST",
+            body: { public_token: success.publicToken },
+          });
+          if (!exchangeRes.ok) {
+            const data = await exchangeRes.json().catch(() => ({}));
+            setError((data as { error?: string }).error ?? "Failed to connect bank");
+            setConnecting(false);
+            return;
+          }
+
+          // 4. Success!
+          setSuccess(true);
+          setConnecting(false);
+          toast.show("Bank connected!", "success");
+          setTimeout(onDone, 1200);
+        } catch (e) {
+          if (__DEV__) console.warn("[setup:bank] exchange error:", e);
+          setError("Failed to save bank connection. Please try again.");
+          setConnecting(false);
+        }
+      };
+
+      const onExit = (exit: LinkExit) => {
+        if (__DEV__) console.log("[setup:bank] plaid link exit:", exit);
+        setConnecting(false);
+        if (exit.error) {
+          const msg = exit.error.displayMessage || exit.error.errorMessage || "Bank connection failed";
+          setError(msg);
+        }
+      };
+
+      open({ onSuccess, onExit });
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
-    } finally {
+      setError("Something went wrong. Please try again.");
       setConnecting(false);
     }
   };
@@ -207,6 +219,43 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
           Your accounts are now syncing...
         </Text>
       </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <Animated.View entering={FadeInDown.duration(400)} style={styles.stepContainer}>
+        <View style={styles.centerFull}>
+          <View style={[styles.successCircle, { borderColor: theme.textTertiary }]}>
+            <Ionicons name="alert-circle" size={56} color={theme.textTertiary} />
+          </View>
+          <Text style={[styles.successTitle, { color: theme.text }]}>
+            Connection failed
+          </Text>
+          <Text style={[styles.successSub, { color: theme.textTertiary }]}>
+            {error}
+          </Text>
+        </View>
+        <View style={{ gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: theme.primary }, connecting && styles.disabled]}
+            onPress={connectBank}
+            disabled={connecting}
+            activeOpacity={0.9}
+          >
+            {connecting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnText}>Try again</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onSkip} style={styles.secondaryBtn} hitSlop={8}>
+            <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
+              Skip for now
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     );
   }
 
