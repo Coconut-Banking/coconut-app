@@ -40,7 +40,28 @@ import { CoconutMark } from "../components/brand/CoconutMark";
 
 export const PENDING_FULL_RESET_KEY = "coconut.pending_full_reset";
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 const TOTAL_STEPS = 4;
+
+const POLL_ATTEMPTS = 6;
+const POLL_INTERVAL = 1500;
+
+async function pollPlaidStatus(
+  apiFetch: (path: string) => Promise<Response>,
+): Promise<boolean> {
+  for (let i = 0; i < POLL_ATTEMPTS; i++) {
+    try {
+      invalidateApiCache("/api/plaid/status");
+      const res = await apiFetch("/api/plaid/status");
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.linked) return true;
+      }
+    } catch { /* keep polling */ }
+    if (i < POLL_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+  }
+  return false;
+}
 
 type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
 const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
@@ -151,10 +172,29 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
     setConnecting(true);
     setError(null);
     try {
-      // Bail early in Expo Go — native Plaid SDK not available
       const plaid = await getPlaid();
+
       if (!plaid) {
-        setError("Bank connection requires a native app build and is not available in Expo Go.");
+        // Native SDK unavailable (Expo Go) — fall back to web-browser flow
+        const base = API_URL.replace(/\/$/, "");
+        const rawScheme = Constants.expoConfig?.scheme;
+        const scheme =
+          typeof rawScheme === "string"
+            ? rawScheme
+            : Array.isArray(rawScheme)
+              ? rawScheme[0] ?? "coconut"
+              : "coconut";
+        const connectUrl = `${base}/connect?from_app=1&scheme=${scheme}`;
+        const callbackUrl = `${scheme}://connected`;
+        await WebBrowser.openAuthSessionAsync(connectUrl, callbackUrl);
+        const linked = await pollPlaidStatus(apiFetch);
+        if (linked) {
+          setSuccess(true);
+          toast.show("Bank connected!", "success");
+          setTimeout(onDone, 1200);
+        } else {
+          setError("Bank connection not detected. Please try again.");
+        }
         setConnecting(false);
         return;
       }
