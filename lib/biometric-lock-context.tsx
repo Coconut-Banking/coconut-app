@@ -1,8 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { AppState, NativeModules, type AppStateStatus } from "react-native";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ENABLED_KEY = "coconut.biometric_lock_enabled_v1";
+
+/** Don't re-lock if the app was backgrounded for less than this. */
+const GRACE_PERIOD_MS = 30_000;
 
 type BiometricType = "fingerprint" | "facial" | "iris" | null;
 
@@ -102,11 +105,19 @@ export function BiometricLockProvider({
     return () => { cancelled = true; };
   }, [isSignedIn]);
 
+  const backgroundedAt = useRef<number | null>(null);
+
   useEffect(() => {
     if (!enabled || !isSignedIn) return;
     const onChange = (state: AppStateStatus) => {
-      if (state === "background" || state === "inactive") {
-        setIsLocked(true);
+      if (state === "background") {
+        backgroundedAt.current = Date.now();
+      } else if (state === "active" && backgroundedAt.current !== null) {
+        const elapsed = Date.now() - backgroundedAt.current;
+        backgroundedAt.current = null;
+        if (elapsed >= GRACE_PERIOD_MS) {
+          setIsLocked(true);
+        }
       }
     };
     const sub = AppState.addEventListener("change", onChange);
