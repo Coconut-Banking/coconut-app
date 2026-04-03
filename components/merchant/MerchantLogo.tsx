@@ -1,6 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { getMerchantLogoUrl } from "../../lib/merchant-logos";
@@ -35,8 +34,8 @@ export const MerchantLogo = React.memo(function MerchantLogo({
     // Prefer Quikrturn for known merchants (Plaid's counterparty logos can be "?" placeholders)
     const quikrturn = getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
     if (quikrturn) return quikrturn;
-    // Skip Plaid placeholder logos (they show a generic "?" icon)
-    if (externalLogoUrl && !externalLogoUrl.includes("plaid-merchant-logos/unknown")) return externalLogoUrl;
+    // Only use external logos that aren't Plaid placeholders (they show a generic "?" icon)
+    if (externalLogoUrl && !externalLogoUrl.includes("plaid.com")) return externalLogoUrl;
     return null;
   }, [merchantName, size, errored, externalLogoUrl]);
 
@@ -66,10 +65,8 @@ export const MerchantLogo = React.memo(function MerchantLogo({
           recyclingKey={logoUrl}
           onError={() => setErrored(true)}
         />
-      ) : initial ? (
-        <Text style={[s.initial, { fontSize: Math.max(10, size * 0.34), color: colors.primary }]}>{initial}</Text>
       ) : (
-        <Ionicons name="receipt-outline" size={Math.max(12, size * 0.45)} color={colors.primary} />
+        <Text style={[s.initial, { fontSize: Math.max(10, size * 0.34), color: colors.primary }]}>{initial || "$"}</Text>
       )}
     </View>
   );
