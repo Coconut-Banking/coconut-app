@@ -198,7 +198,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
         }
       };
 
-      open(onSuccess, onExit);
+      open({ onSuccess, onExit });
     } catch (e) {
       if (__DEV__) console.warn("[setup:bank]", e);
       setError("Something went wrong. Please try again.");
