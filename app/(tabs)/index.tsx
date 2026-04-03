@@ -949,16 +949,22 @@ export default function BalancesPrototypeScreen() {
                     </>
                   ) : itemizedReceipt?.merchantType === "ecommerce" && itemizedReceipt.merchantDetails ? (
                     <>
+                      <Text style={styles.itemizedSectionTitle}>Order details</Text>
                       <MerchantEnrichmentCard
                         merchantType="ecommerce"
                         merchantDetails={itemizedReceipt.merchantDetails}
                       />
-                      {itemizedReceipt.items.length > 0 ? (
-                        <MerchantItemsList
-                          items={itemizedReceipt.items}
-                          estimatedDelivery={(itemizedReceipt.merchantDetails as Record<string, unknown>).estimated_delivery as string | undefined}
-                        />
-                      ) : null}
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
                     </>
                   ) : (
                     <>

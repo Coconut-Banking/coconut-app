@@ -60,13 +60,44 @@ function EcommerceCard({ details }: { details: MerchantDetails }) {
     ? String(details.estimated_delivery)
     : null;
   const orderNumber = details.order_number ? String(details.order_number) : null;
+  const shippingCost = details.shipping_cost != null ? Number(details.shipping_cost) : null;
+  const discount = details.discount != null ? Number(details.discount) : null;
+
+  const hasAnyContent = estimatedDelivery || orderNumber || (shippingCost != null && shippingCost > 0) || (discount != null && discount !== 0);
+  if (!hasAnyContent) return null;
 
   return (
     <View style={styles.card}>
       {estimatedDelivery ? (
-        <Text style={styles.headerLine}>Arrives {estimatedDelivery}</Text>
-      ) : orderNumber ? (
-        <Text style={styles.headerLine}>Order {orderNumber}</Text>
+        <View style={styles.stopRow}>
+          <Ionicons name="cube-outline" size={14} color={darkUI.labelSecondary} />
+          <Text style={styles.stopText} numberOfLines={1}>Arrives {estimatedDelivery}</Text>
+        </View>
+      ) : null}
+      {orderNumber ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="receipt-outline" size={14} color={darkUI.labelSecondary} />
+          <Text style={styles.stopText} numberOfLines={1}>Order #{orderNumber}</Text>
+        </View>
+      ) : null}
+      {shippingCost != null && shippingCost > 0 ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="car-outline" size={14} color={darkUI.labelSecondary} />
+          <Text style={styles.stopText} numberOfLines={1}>Shipping ${shippingCost.toFixed(2)}</Text>
+        </View>
+      ) : shippingCost === 0 ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="car-outline" size={14} color="#3A7D44" />
+          <Text style={[styles.stopText, { color: "#3A7D44" }]} numberOfLines={1}>Free shipping</Text>
+        </View>
+      ) : null}
+      {discount != null && discount !== 0 ? (
+        <View style={styles.stopRow}>
+          <Ionicons name="pricetag-outline" size={14} color="#3A7D44" />
+          <Text style={[styles.stopText, { color: "#3A7D44" }]} numberOfLines={1}>
+            Discount −${Math.abs(discount).toFixed(2)}
+          </Text>
+        </View>
       ) : null}
     </View>
   );

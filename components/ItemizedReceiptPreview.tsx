@@ -36,7 +36,7 @@ export function ItemizedReceiptPreview({
   if (error) {
     return <Text style={styles.error}>{error}</Text>;
   }
-  if (!loading && items.length === 0) {
+  if (!loading && items.length === 0 && total <= 0) {
     return (
       <View style={styles.box}>
         <Text style={styles.muted}>No line items returned for this receipt.</Text>
