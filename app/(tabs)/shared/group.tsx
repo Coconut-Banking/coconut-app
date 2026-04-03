@@ -57,7 +57,7 @@ function formatTimeAgo(iso: string): string {
 
 export default function GroupScreen() {
   const { theme } = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, localImage } = useLocalSearchParams<{ id: string; localImage?: string }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
@@ -433,32 +433,19 @@ export default function GroupScreen() {
                 <Ionicons name="person-add-outline" size={16} color={theme.text} />
                 <Text style={[s.actionBtnText, { color: theme.text }]}>Add members</Text>
               </TouchableOpacity>
-              {detail.invite_token ? (
-                <TouchableOpacity
-                  style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
-                  onPress={async () => {
-                    sfx.pop();
-                    await Clipboard.setStringAsync(`https://coconut-app.dev/join/${detail.invite_token}`);
-                    toast.show("Invite link copied");
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="link-outline" size={16} color={theme.surface} />
-                  <Text style={[s.actionBtnText, { color: theme.surface }]}>Copy link</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
-                  onPress={async () => {
-                    sfx.pop();
-                    await Share.share({ message: `Join my group "${detail.name}" on Coconut!`, title: "Share group" });
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="share-outline" size={16} color={theme.surface} />
-                  <Text style={[s.actionBtnText, { color: theme.surface }]}>Share</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
+                onPress={async () => {
+                  sfx.pop();
+                  const link = `https://coconut-app.dev/join/${detail.invite_token}`;
+                  await Clipboard.setStringAsync(link);
+                  toast.show("Link copied");
+                }}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="link-outline" size={16} color={theme.surface} />
+                <Text style={[s.actionBtnText, { color: theme.surface }]}>Copy link</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
         </View>

@@ -149,10 +149,10 @@ export default function SharedIndex() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,
+      quality: 0.3,
       base64: true,
     });
     if (!result.canceled && result.assets[0]) {
@@ -333,15 +333,22 @@ export default function SharedIndex() {
       setGroupImage(null);
       setGroupImageBase64(null);
 
+      let imageDataUri: string | null = null;
       if (capturedBase64) {
+        imageDataUri = `data:image/jpeg;base64,${capturedBase64}`;
         try {
-          const dataUri = `data:image/jpeg;base64,${capturedBase64}`;
-          await apiFetch(`/api/groups/${data.id}/image`, {
+          const uploadRes = await apiFetch(`/api/groups/${data.id}/image`, {
             method: "POST",
-            body: { image: dataUri } as object,
+            body: { image: imageDataUri } as object,
           });
-        } catch {
-          // Image upload failed silently — group still created
+          if (!uploadRes.ok) {
+            const err = await uploadRes.json().catch(() => ({}));
+            console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
+            toast.show("Group created but photo failed to save");
+          }
+        } catch (e) {
+          console.warn("[createGroup] image upload error:", e);
+          toast.show("Group created but photo failed to save");
         }
       }
 
@@ -350,7 +357,10 @@ export default function SharedIndex() {
       const nextGroups = [{ id: data.id, name, memberCount: 1, groupType }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       await persistOptimistic(nextGroups, optimisticFriends);
-      router.push({ pathname: "/(tabs)/shared/group", params: { id: data.id } });
+      router.push({
+        pathname: "/(tabs)/shared/group",
+        params: { id: data.id, ...(imageDataUri ? { localImage: imageDataUri } : {}) },
+      });
     } finally {
       setCreating(false);
     }
@@ -705,15 +715,15 @@ export default function SharedIndex() {
         visible={showCreate}
         transparent
         animationType="slide"
-        onRequestClose={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }}
+        onRequestClose={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }}
       >
-        <Pressable style={st.sheetOverlay} onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }}>
+        <Pressable style={st.sheetOverlay} onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <Pressable style={[st.sheet, { backgroundColor: theme.surface }]} onPress={() => {}}>
               <View style={st.sheetHandle} />
               <View style={st.sheetHeader}>
                 <Text style={[st.sheetTitle, { color: theme.text }]}>New Group</Text>
-                <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }} hitSlop={8}>
+                <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }} hitSlop={8}>
                   <Ionicons name="close" size={22} color={theme.textTertiary} />
                 </TouchableOpacity>
               </View>

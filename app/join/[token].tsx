@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  ScrollView, DeviceEventEmitter,
+  ScrollView, DeviceEventEmitter, Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +24,7 @@ interface GroupPreview {
   groupId: string;
   groupName: string;
   groupType: string;
+  imageUrl?: string | null;
   memberCount: number;
   inviterName: string;
   members: Array<{ display_name: string; initial: string; is_owner: boolean }>;
@@ -176,9 +177,13 @@ export default function JoinGroupScreen() {
           <Ionicons name="close" size={24} color={theme.textTertiary} />
         </TouchableOpacity>
 
-        <View style={[st.iconCircle, { backgroundColor: theme.primaryLight, marginBottom: 16 }]}>
-          <Text style={{ fontSize: 32 }}>{emoji || "👥"}</Text>
-        </View>
+        {preview?.imageUrl ? (
+          <Image source={{ uri: preview.imageUrl }} style={st.groupImage} />
+        ) : (
+          <View style={[st.iconCircle, { backgroundColor: theme.primaryLight, marginBottom: 16 }]}>
+            <Text style={{ fontSize: 32 }}>{emoji || "👥"}</Text>
+          </View>
+        )}
 
         <Text style={[st.label, { color: theme.textTertiary }]}>You're invited to</Text>
         <Text style={[st.groupName, { color: theme.text }]}>{preview?.groupName}</Text>
@@ -237,6 +242,7 @@ const st = StyleSheet.create({
   closeBtn: { alignSelf: "flex-end", padding: 4, marginBottom: 8 },
   closeBtnTopRight: { position: "absolute", top: 56, right: 20, zIndex: 10, padding: 4 },
   iconCircle: { width: 64, height: 64, borderRadius: radii.xl, alignItems: "center", justifyContent: "center" },
+  groupImage: { width: 80, height: 80, borderRadius: 40, marginBottom: 16 },
   label: { fontSize: 13, fontFamily: font.medium, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
   groupName: { fontSize: 24, fontWeight: "700", fontFamily: font.bold, marginBottom: 4, textAlign: "center" },
   createdBy: { fontSize: 14, fontFamily: font.regular, marginBottom: 24 },
