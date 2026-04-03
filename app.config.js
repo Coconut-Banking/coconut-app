@@ -81,7 +81,6 @@ export default {
     plugins: [
       "expo-router",
       "@clerk/expo", // Reads EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME from env for native Google Sign-In
-      "react-native-plaid-link-sdk",
       [
         "@stripe/stripe-terminal-react-native/app.plugin",
         {
