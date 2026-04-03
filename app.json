@@ -3,6 +3,7 @@
     "name": "coconut-app",
     "slug": "coconut-app",
     "version": "1.0.0",
+    "scheme": "coconut",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +13,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.coconut.app",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["venmo"],
+        "NSCameraUsageDescription": "Coconut uses your camera to take group photos and scan receipts.",
+        "NSPhotoLibraryUsageDescription": "Coconut uses your photo library to select group photos and receipts."
+      }
     },
     "android": {
       "adaptiveIcon": {
