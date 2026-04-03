@@ -23,7 +23,7 @@ import { useTheme } from "../lib/theme-context";
 import { useApiFetch, invalidateApiCache } from "../lib/api";
 import { useSetup } from "../lib/setup-context";
 import { useToast } from "../components/Toast";
-import { sendEmailInvite, shareInvite } from "../lib/invite";
+import { sendEmailInvite, shareInvite, type InviteLink } from "../lib/invite";
 import { font, radii, shadow } from "../lib/theme";
 import { CoconutMark } from "../components/brand/CoconutMark";
 
@@ -307,7 +307,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
 // STEP 2: SPLITWISE IMPORT
 // ────────────────────────────────────────────────────────────────────────────
 
-type UninvitedMember = { displayName: string; email: string | null; groupName: string };
+type UninvitedMember = { displayName: string; email: string | null; groupName: string; inviteToken: string | null };
 
 function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
   const { theme } = useTheme();
@@ -457,11 +457,21 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
     const senderName = user?.fullName || user?.username || undefined;
     const selected = uninvited.filter((_, i) => selectedInvites.has(i));
     const emails = selected.filter((m) => m.email).map((m) => m.email!);
+
+    const seen = new Set<string>();
+    const inviteLinks: InviteLink[] = [];
+    for (const m of selected) {
+      if (m.inviteToken && !seen.has(m.inviteToken)) {
+        seen.add(m.inviteToken);
+        inviteLinks.push({ groupName: m.groupName, token: m.inviteToken });
+      }
+    }
+
     try {
       if (emails.length > 0) {
-        await sendEmailInvite(emails, senderName);
+        await sendEmailInvite(emails, senderName, inviteLinks);
       } else {
-        await shareInvite(senderName);
+        await shareInvite(senderName, inviteLinks);
       }
     } catch {
       /* user cancelled compose — non-fatal */

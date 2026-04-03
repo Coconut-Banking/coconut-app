@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthHandoffHandler } from "../components/AuthHandoffHandler";
 import { ThemeProvider, useTheme } from "../lib/theme-context";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -83,6 +84,22 @@ function AuthSwitch() {
     }
   }, [isLoaded, isSignedIn, signOut, forceSignOutDone]);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !setupHydrated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pendingToken = await AsyncStorage.getItem("coconut.pending_invite_token");
+        if (cancelled || !pendingToken) return;
+        await AsyncStorage.removeItem("coconut.pending_invite_token");
+        setTimeout(() => {
+          router.push({ pathname: "/join/[token]", params: { token: pendingToken } } as any);
+        }, 500);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [isLoaded, isSignedIn, setupHydrated]);
+
   if (SKIP_AUTH) {
     return (
       <Stack screenOptions={{ headerShown: false }}>
@@ -90,6 +107,7 @@ function AuthSwitch() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
+        <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
       </Stack>
     );
   }
@@ -116,6 +134,7 @@ function AuthSwitch() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
+        <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
       </Stack>
       <NavigateOnChange target={target} />
     </BiometricLockProvider>

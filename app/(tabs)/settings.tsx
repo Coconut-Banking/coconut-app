@@ -34,7 +34,7 @@ import { useDemoMode } from "../../lib/demo-mode-context";
 import { useSetup } from "../../lib/setup-context";
 import { colors, font, shadow, radii } from "../../lib/theme";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
-import { sendSmsInvite, sendEmailInvite, shareInvite } from "../../lib/invite";
+import { sendSmsInvite, sendEmailInvite, shareInvite, type InviteLink } from "../../lib/invite";
 import { useBiometricLock } from "../../lib/biometric-lock-context";
 import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
@@ -136,7 +136,7 @@ export default function SettingsScreen() {
     error?: string;
   } | null>(null);
 
-  type UninvitedMember = { displayName: string; email: string | null; groupName: string };
+  type UninvitedMember = { displayName: string; email: string | null; groupName: string; inviteToken: string | null };
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [uninvitedMembers, setUninvitedMembers] = useState<UninvitedMember[]>([]);
   const [selectedInvites, setSelectedInvites] = useState<Set<number>>(new Set());
@@ -934,11 +934,20 @@ export default function SettingsScreen() {
     const selected = uninvitedMembers.filter((_, i) => selectedInvites.has(i));
     const emails = selected.filter((m) => m.email).map((m) => m.email!);
 
+    const seen = new Set<string>();
+    const inviteLinks: InviteLink[] = [];
+    for (const m of selected) {
+      if (m.inviteToken && !seen.has(m.inviteToken)) {
+        seen.add(m.inviteToken);
+        inviteLinks.push({ groupName: m.groupName, token: m.inviteToken });
+      }
+    }
+
     try {
       if (emails.length > 0) {
-        await sendEmailInvite(emails, senderName);
+        await sendEmailInvite(emails, senderName, inviteLinks);
       } else {
-        await shareInvite(senderName);
+        await shareInvite(senderName, inviteLinks);
       }
     } catch {
       Alert.alert("Error", "Could not send invites. Try again.");

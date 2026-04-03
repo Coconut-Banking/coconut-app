@@ -48,6 +48,7 @@ export interface GroupDetail {
   id: string;
   name: string;
   isOwner?: boolean;
+  invite_token?: string | null;
   /** ISO timestamp when archived; null/undefined = active */
   archivedAt?: string | null;
   members: GroupMember[];
