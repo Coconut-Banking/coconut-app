@@ -110,22 +110,22 @@ export default function SharedIndex() {
   const optimisticStoreKey = `coconut.optimistic.friends.${userId ?? "anon"}`;
 
   const { width: screenWidth } = useWindowDimensions();
-  const [activeTab, setActiveTab] = useState<"recent" | "groups" | "friends">("recent");
+  const [activeTab, setActiveTab] = useState<"friends" | "groups">("friends");
   const pagerRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [tabsWidth, setTabsWidth] = useState(0);
 
-  const handleTabPress = useCallback((tab: "recent" | "groups" | "friends") => {
+  const handleTabPress = useCallback((tab: "friends" | "groups") => {
     setActiveTab(tab);
     setShowAddFriend(false);
     setShowCreate(false);
-    const idx = tab === "recent" ? 0 : tab === "groups" ? 1 : 2;
+    const idx = tab === "friends" ? 0 : 1;
     pagerRef.current?.scrollTo({ x: idx * screenWidth, animated: true });
   }, [screenWidth]);
 
   const onPagerScrollEnd = useCallback((e: { nativeEvent: { contentOffset: { x: number } } }) => {
     const page = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
-    setActiveTab(page === 0 ? "recent" : page === 1 ? "groups" : "friends");
+    setActiveTab(page === 0 ? "friends" : "groups");
   }, [screenWidth]);
 
   const handlePlusPress = useCallback(() => {
@@ -357,7 +357,10 @@ export default function SharedIndex() {
       const nextGroups = [{ id: data.id, name, memberCount: 1, groupType }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       await persistOptimistic(nextGroups, optimisticFriends);
-      goToExpense("group", data.id, name);
+      router.push({
+        pathname: "/(tabs)/shared/group",
+        params: { id: data.id, ...(imageDataUri ? { localImage: imageDataUri } : {}) },
+      });
     } finally {
       setCreating(false);
     }
@@ -442,7 +445,7 @@ export default function SharedIndex() {
       setOptimisticGroups(nextGroups);
       setOptimisticFriends(nextFriends);
       await persistOptimistic(nextGroups, nextFriends);
-      goToExpense("group", group.id, name);
+      router.push({ pathname: "/(tabs)/shared/group", params: { id: group.id } });
     } catch {
       Alert.alert("Error", "Network error. Try again.");
     } finally {
@@ -509,26 +512,6 @@ export default function SharedIndex() {
     return true;
   });
 
-  const goToExpense = useCallback((type: "friend" | "group", key: string, name: string) => {
-    router.push({
-      pathname: "/(tabs)/add-expense",
-      params: {
-        prefillNonce: String(Date.now()),
-        prefillPersonKey: key,
-        prefillPersonName: name,
-        prefillPersonType: type,
-        prefillDesc: "",
-        prefillAmount: "",
-      },
-    });
-  }, []);
-
-  const recentItems = useMemo(() => {
-    return [...groups].sort((a, b) =>
-      new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
-    );
-  }, [groups]);
-
   if (loading && !summary) return <SharedSkeletonScreen />;
 
   return (
@@ -539,24 +522,21 @@ export default function SharedIndex() {
           style={st.tabsInner}
           onLayout={(e) => setTabsWidth(e.nativeEvent.layout.width)}
         >
-          <TouchableOpacity style={st.tab} onPress={() => handleTabPress("recent")} activeOpacity={0.8}>
-            <Text style={[st.tabText, { color: activeTab === "recent" ? theme.text : theme.textTertiary }]}>Recent</Text>
+          <TouchableOpacity style={st.tab} onPress={() => handleTabPress("friends")} activeOpacity={0.8}>
+            <Text style={[st.tabText, { color: activeTab === "friends" ? theme.text : theme.textTertiary }]}>Friends</Text>
           </TouchableOpacity>
           <TouchableOpacity style={st.tab} onPress={() => handleTabPress("groups")} activeOpacity={0.8}>
             <Text style={[st.tabText, { color: activeTab === "groups" ? theme.text : theme.textTertiary }]}>Groups</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={st.tab} onPress={() => handleTabPress("friends")} activeOpacity={0.8}>
-            <Text style={[st.tabText, { color: activeTab === "friends" ? theme.text : theme.textTertiary }]}>Friends</Text>
-          </TouchableOpacity>
           {tabsWidth > 0 && (
             <Animated.View
               style={[st.tabIndicator, {
-                width: tabsWidth / 3,
+                width: tabsWidth / 2,
                 backgroundColor: theme.text,
                 transform: [{
                   translateX: scrollX.interpolate({
-                    inputRange: [0, screenWidth, screenWidth * 2],
-                    outputRange: [0, tabsWidth / 3, (tabsWidth / 3) * 2],
+                    inputRange: [0, screenWidth],
+                    outputRange: [0, tabsWidth / 2],
                     extrapolate: "clamp",
                   }),
                 }],
@@ -833,58 +813,73 @@ export default function SharedIndex() {
         scrollEventThrottle={1}
         style={{ flex: 1 }}
       >
-        {/* Recent page */}
+        {/* Friends page */}
         <ScrollView
           style={{ width: screenWidth }}
           contentContainerStyle={st.page}
           showsVerticalScrollIndicator={false}
           refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
         >
-          {!recentItems.length ? (
+          {!friends.length ? (
             <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Ionicons name="time-outline" size={30} color={theme.textTertiary} />
-              <Text style={[st.emptyTitle, { color: theme.text }]}>No activity yet</Text>
-              <Text style={[st.emptySub, { color: theme.textTertiary }]}>Add a friend or group to start.</Text>
+              <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />
+              <Text style={[st.emptyTitle, { color: theme.text }]}>No friends yet</Text>
+              <Text style={[st.emptySub, { color: theme.textTertiary }]}>Add a friend to start splitting expenses.</Text>
             </View>
           ) : (
             <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {recentItems.map((g, i) => (
-                <View key={g.id}>
+              {friends.map((f, i) => (
+                <View key={f.key}>
                   <TouchableOpacity
                     style={st.groupedRow}
-                    onPress={() => goToExpense("group", g.id, g.name)}
+                    onPress={() => {
+                      if (f.key.startsWith("opt-")) {
+                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(4) } });
+                        return;
+                      }
+                      if (f.key.startsWith("fb-")) {
+                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(3) } });
+                        return;
+                      }
+                      router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } });
+                    }}
                     activeOpacity={0.75}
                   >
-                    {g.memberCount <= 2 ? (
-                      <Avatar name={g.name} size={42} />
-                    ) : g.imageUrl ? (
-                      <Image source={{ uri: g.imageUrl }} style={st.groupIconImg} />
-                    ) : (
-                      <View style={[st.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
-                        <Ionicons name="people" size={18} color={theme.text} />
-                      </View>
-                    )}
+                    <Avatar name={f.displayName} size={42} />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={[st.rowName, { color: theme.text }]}>{g.name}</Text>
-                      <Text style={[st.rowSub, { color: theme.textTertiary }]}>
-                        {g.memberCount <= 2 ? "" : `${g.memberCount} members · `}{timeAgo(g.lastActivityAt)}
+                      <Text style={[st.rowName, { color: theme.text }]}>{f.displayName}</Text>
+                      <Text style={st.rowSub}>
+                        {(() => {
+                          const lines = friendBalanceLines(f);
+                          if (lines.length === 0) return "settled up";
+                          const pos =
+                            lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
+                          const neg =
+                            lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
+                          if (!pos && !neg) return "balances";
+                          return pos ? "owes you" : "you owe";
+                        })()}
                       </Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
-                      {groupBalanceLines(g).length === 0 ? (
+                      {friendBalanceLines(f).length === 0 ? (
                         <Text style={[st.rowBal, st.muted]}>—</Text>
                       ) : (
-                        groupBalanceLines(g).map((b) => (
-                          <Text key={b.currency} style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
-                            {b.amount > 0 ? "+" : "−"}
-                            {formatSplitCurrencyAmount(b.amount, b.currency)}
-                          </Text>
-                        ))
+                        friendBalanceLines(f).map((b) => {
+                          const p = b.amount > 0.005;
+                          const n = b.amount < -0.005;
+                          return (
+                            <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
+                              {p ? "+" : n ? "−" : ""}
+                              {formatSplitCurrencyAmount(b.amount, b.currency)}
+                            </Text>
+                          );
+                        })
                       )}
                     </View>
                     <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
                   </TouchableOpacity>
-                  {i < recentItems.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                  {i < friends.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
                 </View>
               ))}
             </View>
@@ -910,7 +905,7 @@ export default function SharedIndex() {
                 <View key={g.id}>
                   <TouchableOpacity
                     style={st.groupedRow}
-                    onPress={() => goToExpense("group", g.id, g.name)}
+                    onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
                     activeOpacity={0.75}
                   >
                     {g.imageUrl ? (
@@ -967,7 +962,7 @@ export default function SharedIndex() {
                       <View key={g.id}>
                         <TouchableOpacity
                           style={st.groupedRow}
-                          onPress={() => goToExpense("group", g.id, g.name)}
+                          onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
                           activeOpacity={0.75}
                         >
                           <View style={st.groupIcon}>
@@ -987,74 +982,6 @@ export default function SharedIndex() {
               ) : null}
             </View>
           ) : null}
-        </ScrollView>
-
-        {/* Friends page */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          contentContainerStyle={st.page}
-          showsVerticalScrollIndicator={false}
-          refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
-        >
-          {!friends.length ? (
-            <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />
-              <Text style={[st.emptyTitle, { color: theme.text }]}>No friends yet</Text>
-              <Text style={[st.emptySub, { color: theme.textTertiary }]}>Add a friend to start splitting expenses.</Text>
-            </View>
-          ) : (
-            <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {friends.map((f, i) => {
-                const isGroupBacked = f.key.startsWith("opt-") || f.key.startsWith("fb-");
-                const targetKey = isGroupBacked ? (f.key.startsWith("opt-") ? f.key.slice(4) : f.key.slice(3)) : f.key;
-                const targetType = isGroupBacked ? "group" as const : "friend" as const;
-                return (
-                  <View key={f.key}>
-                    <TouchableOpacity
-                      style={st.groupedRow}
-                      onPress={() => goToExpense(targetType, targetKey, f.displayName)}
-                      activeOpacity={0.75}
-                    >
-                      <Avatar name={f.displayName} size={42} />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={[st.rowName, { color: theme.text }]}>{f.displayName}</Text>
-                        <Text style={st.rowSub}>
-                          {(() => {
-                            const lines = friendBalanceLines(f);
-                            if (lines.length === 0) return "settled up";
-                            const pos =
-                              lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
-                            const neg =
-                              lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
-                            if (!pos && !neg) return "balances";
-                            return pos ? "owes you" : "you owe";
-                          })()}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        {friendBalanceLines(f).length === 0 ? (
-                          <Text style={[st.rowBal, st.muted]}>—</Text>
-                        ) : (
-                          friendBalanceLines(f).map((b) => {
-                            const p = b.amount > 0.005;
-                            const n = b.amount < -0.005;
-                            return (
-                              <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
-                                {p ? "+" : n ? "−" : ""}
-                                {formatSplitCurrencyAmount(b.amount, b.currency)}
-                              </Text>
-                            );
-                          })
-                        )}
-                      </View>
-                      <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                    </TouchableOpacity>
-                    {i < friends.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </ScrollView>
       </ScrollView>
     </SafeAreaView>
