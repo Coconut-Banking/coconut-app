@@ -32,8 +32,12 @@ export const MerchantLogo = React.memo(function MerchantLogo({
 
   const logoUrl = useMemo(() => {
     if (errored) return null;
-    if (externalLogoUrl) return externalLogoUrl;
-    return getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
+    // Prefer Quikrturn for known merchants (Plaid's counterparty logos can be "?" placeholders)
+    const quikrturn = getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
+    if (quikrturn) return quikrturn;
+    // Skip Plaid placeholder logos (they show a generic "?" icon)
+    if (externalLogoUrl && !externalLogoUrl.includes("plaid-merchant-logos/unknown")) return externalLogoUrl;
+    return null;
   }, [merchantName, size, errored, externalLogoUrl]);
 
   const initial = (() => {

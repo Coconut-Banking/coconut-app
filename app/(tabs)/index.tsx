@@ -157,7 +157,7 @@ export default function BalancesPrototypeScreen() {
   const [bankSearch, setBankSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
   const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
-  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom">("all");
+  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom" | "receipts">("all");
   const [customDateStart, setCustomDateStart] = useState<Date | null>(null);
   const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -284,7 +284,7 @@ export default function BalancesPrototypeScreen() {
   }, [bankVisibleTransactions, linked]);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
-    if (datePreset === "all") return null;
+    if (datePreset === "all" || datePreset === "receipts") return null;
     if (datePreset === "custom" && customDateStart && customDateEnd) {
       return { start: customDateStart, end: customDateEnd };
     }
@@ -300,6 +300,7 @@ export default function BalancesPrototypeScreen() {
     const q = bankSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
+      if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
       if (dateFilterRange) {
         // Use tx.date (ISO "2026-03-31") — tx.dateStr is a human label ("Mar 31") that new Date() can't parse
         const txDate = new Date(tx.date || "");
@@ -314,7 +315,7 @@ export default function BalancesPrototypeScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange]);
+  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange, datePreset]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -1089,7 +1090,7 @@ export default function BalancesPrototypeScreen() {
 
             {/* Date filter presets */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
-              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"]] as const).map(([preset, label]) => (
+              {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["receipts", "Email Receipts"]] as const).map(([preset, label]) => (
                 <TouchableOpacity
                   key={preset}
                   onPress={() => {
@@ -1100,6 +1101,7 @@ export default function BalancesPrototypeScreen() {
                   }}
                   style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
                 >
+                  {preset === "receipts" ? <Ionicons name="mail-outline" size={13} color={datePreset === "receipts" ? "#fff" : "#7a7d80"} style={{ marginRight: 4 }} /> : null}
                   <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1782,6 +1784,8 @@ const searchStyles = StyleSheet.create({
     color: "#fff",
   },
   dateChip: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
