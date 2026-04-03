@@ -100,6 +100,8 @@ const MERCHANT_DOMAINS: Record<string, string> = {
   square: "squareup.com",
   robinhood: "robinhood.com",
   coinbase: "coinbase.com",
+  wise: "wise.com",
+  transferwise: "wise.com",
   etrade: "etrade.com",
   fidelity: "fidelity.com",
   schwab: "schwab.com",

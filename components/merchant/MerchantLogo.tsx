@@ -61,17 +61,18 @@ export const MerchantLogo = React.memo(function MerchantLogo({
   /** Transaction category (e.g. "FOOD_AND_DRINK") for icon fallback. */
   category?: string | null;
 }) {
-  const [errored, setErrored] = useState(false);
+  const [errorCount, setErrorCount] = useState(0);
 
   useEffect(() => {
-    setErrored(false);
+    setErrorCount(0);
   }, [merchantName, externalLogoUrl]);
 
   const logoUrl = useMemo(() => {
-    if (errored) return null;
-    if (externalLogoUrl) return externalLogoUrl;
-    return getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
-  }, [merchantName, size, errored, externalLogoUrl]);
+    const quikrturnUrl = getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
+    if (errorCount === 0 && externalLogoUrl) return externalLogoUrl;
+    if (errorCount <= 1 && quikrturnUrl) return quikrturnUrl;
+    return null;
+  }, [merchantName, size, errorCount, externalLogoUrl]);
 
   const catInfo = category ? CATEGORY_ICONS[category.toUpperCase()] ?? CATEGORY_ICONS[category] : null;
   const initials = getInitials(merchantName);
@@ -90,7 +91,7 @@ export const MerchantLogo = React.memo(function MerchantLogo({
           contentFit="contain"
           cachePolicy="disk"
           recyclingKey={logoUrl}
-          onError={() => setErrored(true)}
+          onError={() => setErrorCount((c) => c + 1)}
         />
       ) : catInfo ? (
         <Ionicons name={catInfo.icon} size={Math.max(12, size * 0.48)} color={catInfo.color} />
