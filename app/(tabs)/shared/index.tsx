@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,15 @@ import {
   RefreshControl,
   AppState,
   DeviceEventEmitter,
+  Animated,
+  useWindowDimensions,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,6 +36,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../../lib/format-split-money";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
+import { useDeviceContacts, type DeviceContact } from "../../../hooks/useDeviceContacts";
 
 const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -77,11 +86,17 @@ export default function SharedIndex() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [groupName, setGroupName] = useState("");
+  const [groupType, setGroupType] = useState("trip");
+  const [groupImage, setGroupImage] = useState<string | null>(null);
+  const [groupImageBase64, setGroupImageBase64] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [friendName, setFriendName] = useState("");
   const [friendEmail, setFriendEmail] = useState("");
   const [addingFriend, setAddingFriend] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
   const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
   const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
   const [optimisticFriends, setOptimisticFriends] = useState<
@@ -93,6 +108,58 @@ export default function SharedIndex() {
   const prevFocused = useRef(false);
   const prevDemoOn = useRef(isDemoOn);
   const optimisticStoreKey = `coconut.optimistic.friends.${userId ?? "anon"}`;
+
+  const { width: screenWidth } = useWindowDimensions();
+  const [activeTab, setActiveTab] = useState<"friends" | "groups">("friends");
+  const pagerRef = useRef<ScrollView>(null);
+  // scrollX tracks the raw horizontal offset of the pager — drives indicator in real-time
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [tabsWidth, setTabsWidth] = useState(0);
+
+  const handleTabPress = useCallback((tab: "friends" | "groups") => {
+    setActiveTab(tab);
+    setShowAddFriend(false);
+    setShowCreate(false);
+    pagerRef.current?.scrollTo({ x: tab === "friends" ? 0 : screenWidth, animated: true });
+  }, [screenWidth]);
+
+  const onPagerScrollEnd = useCallback((e: { nativeEvent: { contentOffset: { x: number } } }) => {
+    const page = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+    setActiveTab(page === 0 ? "friends" : "groups");
+  }, [screenWidth]);
+
+  const handlePlusPress = useCallback(() => {
+    if (activeTab === "friends") {
+      setShowCreate(false);
+      setShowAddFriend(v => !v);
+    } else {
+      setShowAddFriend(false);
+      setGroupName("");
+      setGroupType("trip");
+      setGroupImage(null);
+      setGroupImageBase64(null);
+      setShowCreate(true);
+    }
+  }, [activeTab]);
+
+  const pickGroupImage = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Allow photo access to set a group image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setGroupImage(result.assets[0].uri);
+      setGroupImageBase64(result.assets[0].base64 ?? null);
+    }
+  }, []);
 
   const persistOptimistic = useCallback(
     async (
@@ -241,6 +308,7 @@ export default function SharedIndex() {
     if (isDemoOn) {
       Alert.alert("Demo", `"${name}" created`);
       setGroupName("");
+      setGroupType("trip");
       setShowCreate(false);
       return;
     }
@@ -248,7 +316,7 @@ export default function SharedIndex() {
     try {
       const res = await apiFetch("/api/groups", {
         method: "POST",
-        body: { name, ownerDisplayName: "You" } as object,
+        body: { name, ownerDisplayName: "You", groupType } as object,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.id) {
@@ -257,20 +325,65 @@ export default function SharedIndex() {
       }
       setShowCreate(false);
       setGroupName("");
+      setGroupType("trip");
+      const capturedBase64 = groupImageBase64;
+      setGroupImage(null);
+      setGroupImageBase64(null);
+
+      if (capturedBase64) {
+        try {
+          const dataUri = `data:image/jpeg;base64,${capturedBase64}`;
+          await apiFetch(`/api/groups/${data.id}/image`, {
+            method: "POST",
+            body: { image: dataUri } as object,
+          });
+        } catch {
+          // Image upload failed silently — group still created
+        }
+      }
+
       await refetch(true);
       await onRefresh();
-      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== data.id)];
+      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       await persistOptimistic(nextGroups, optimisticFriends);
-      if (data.invite_token) {
-        await Clipboard.setStringAsync(`https://coconut-app.dev/join/${data.invite_token}`);
-        toast.show("Group created! Invite link copied");
-      }
       router.push({ pathname: "/(tabs)/shared/group", params: { id: data.id } });
     } finally {
       setCreating(false);
     }
   };
+
+  const existingFriendNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const f of summary?.friends ?? []) names.add(f.displayName.trim().toLowerCase());
+    for (const f of optimisticFriends) names.add(f.displayName.trim().toLowerCase());
+    return names;
+  }, [summary, optimisticFriends]);
+
+  const filteredContacts = useMemo(() => {
+    if (contactsPerm !== "granted") return [];
+    const q = contactSearch.toLowerCase().trim();
+    return deviceContacts
+      .filter((c) => {
+        if (existingFriendNames.has(c.name.trim().toLowerCase())) return false;
+        if (!q) return true;
+        return c.name.toLowerCase().includes(q) || (c.phone?.includes(q) ?? false) || (c.email?.toLowerCase().includes(q) ?? false);
+      })
+      .slice(0, 50);
+  }, [deviceContacts, contactsPerm, contactSearch, existingFriendNames]);
+
+  const addFriendFromContact = useCallback((contact: DeviceContact) => {
+    setFriendName(contact.name);
+    setFriendEmail(contact.email ?? "");
+  }, []);
+
+  const closeAddFriend = useCallback(() => {
+    setShowAddFriend(false);
+    setFriendName("");
+    setFriendEmail("");
+    setContactSearch("");
+    setShowManualEntry(false);
+  }, []);
 
   const addFriend = async () => {
     const name = friendName.trim();
@@ -308,9 +421,7 @@ export default function SharedIndex() {
         return;
       }
 
-      setShowAddFriend(false);
-      setFriendName("");
-      setFriendEmail("");
+      closeAddFriend();
       await refetch(true);
       await onRefresh();
       const nextGroups = [{ id: group.id, name, memberCount: 2, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== group.id)];
@@ -390,250 +501,471 @@ export default function SharedIndex() {
 
   return (
     <SafeAreaView style={[st.container, { backgroundColor: theme.background }]} edges={["top"]}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={st.page}
-        showsVerticalScrollIndicator={false}
-        refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
+      {/* Tab bar */}
+      <View style={[st.tabBar, { borderBottomColor: theme.border }]}>
+        <View
+          style={st.tabsInner}
+          onLayout={(e) => setTabsWidth(e.nativeEvent.layout.width)}
+        >
+          <TouchableOpacity style={st.tab} onPress={() => handleTabPress("friends")} activeOpacity={0.8}>
+            <Text style={[st.tabText, { color: activeTab === "friends" ? theme.text : theme.textTertiary }]}>Friends</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={st.tab} onPress={() => handleTabPress("groups")} activeOpacity={0.8}>
+            <Text style={[st.tabText, { color: activeTab === "groups" ? theme.text : theme.textTertiary }]}>Groups</Text>
+          </TouchableOpacity>
+          {tabsWidth > 0 && (
+            <Animated.View
+              style={[st.tabIndicator, {
+                width: tabsWidth / 2,
+                backgroundColor: theme.text,
+                transform: [{
+                  translateX: scrollX.interpolate({
+                    inputRange: [0, screenWidth],
+                    outputRange: [0, tabsWidth / 2],
+                    extrapolate: "clamp",
+                  }),
+                }],
+              }]}
+            />
+          )}
+        </View>
+        <TouchableOpacity style={[st.addPill, { backgroundColor: theme.text }]} onPress={handlePlusPress} activeOpacity={0.75}>
+          <Ionicons name="add" size={16} color={theme.background} />
+          <Text style={[st.addPillText, { color: theme.background }]}>
+            {activeTab === "friends" ? "Friend" : "Group"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Add friend — full-screen contacts picker */}
+      <Modal
+        visible={showAddFriend}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeAddFriend}
       >
-        <View style={st.header}>
-          <View>
-            <Text style={[st.title, { color: theme.text }]}>People & groups</Text>
-            <Text style={[st.titleSub, { color: theme.textTertiary }]}>Manage everyone you split with</Text>
+        <SafeAreaView style={[st.afContainer, { backgroundColor: theme.background }]} edges={["top"]}>
+          {/* Header */}
+          <View style={[st.afHeader, { borderBottomColor: theme.border }]}>
+            <TouchableOpacity onPress={closeAddFriend} hitSlop={12}>
+              <Text style={[st.afCancel, { color: theme.text }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[st.afTitle, { color: theme.text }]}>Add friends</Text>
+            <View style={{ width: 50 }} />
           </View>
-        </View>
 
-        <View style={st.actionsRow}>
-          <TouchableOpacity
-            style={st.actionBtn}
-            onPress={() => {
-              setShowAddFriend((v) => !v);
-              setShowCreate(false);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="person-add" size={16} color="#fff" />
-            <Text style={st.actionBtnText}>Add friend</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[st.actionBtnAlt, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-            onPress={() => {
-              setShowCreate((v) => !v);
-              setShowAddFriend(false);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="people" size={16} color={colors.primary} />
-            <Text style={[st.actionBtnAltText, { color: theme.text }]}>New group</Text>
-          </TouchableOpacity>
-        </View>
-
-        {showAddFriend ? (
-          <View style={[st.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {/* Search */}
+          <View style={st.afSearchWrap}>
+            <Ionicons name="search" size={18} color={theme.textTertiary} style={{ marginLeft: 12 }} />
             <TextInput
-              style={[st.formInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
-              value={friendName}
-              onChangeText={setFriendName}
-              placeholder="Friend name"
+              style={[st.afSearchInput, { color: theme.text }]}
+              value={contactSearch}
+              onChangeText={setContactSearch}
+              placeholder="Search contacts"
               placeholderTextColor={theme.textTertiary}
               autoFocus
+              autoCorrect={false}
             />
-            <TextInput
-              style={[st.formInput, { marginTop: 8, borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
-              value={friendEmail}
-              onChangeText={setFriendEmail}
-              placeholder="Email (optional)"
-              placeholderTextColor={theme.textTertiary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <View style={st.formActions}>
-              <TouchableOpacity style={st.formPrimaryBtn} onPress={addFriend} disabled={!friendName.trim() || addingFriend}>
-                <Text style={st.formPrimaryBtnText}>{addingFriend ? "Adding…" : "Add"}</Text>
+            {contactSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setContactSearch("")} hitSlop={8} style={{ marginRight: 12 }}>
+                <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setShowAddFriend(false); setFriendName(""); setFriendEmail(""); }}>
-                <Text style={[st.formCancelText, { color: theme.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
-        ) : null}
 
-        {showCreate ? (
-          <View style={[st.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <TextInput
-              style={[st.formInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
-              value={groupName}
-              onChangeText={setGroupName}
-              placeholder="Group name"
-              placeholderTextColor={theme.textTertiary}
-              autoFocus
-            />
-            <View style={st.formActions}>
-              <TouchableOpacity style={st.formPrimaryBtn} onPress={createGroup} disabled={!groupName.trim() || creating}>
-                <Text style={st.formPrimaryBtnText}>{creating ? "Creating…" : "Create"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); }}>
-                <Text style={[st.formCancelText, { color: theme.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
-        <SLabel>People</SLabel>
-        {!friends.length ? (
-          <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />
-            <Text style={[st.emptyTitle, { color: theme.text }]}>No friends yet</Text>
-            <Text style={[st.emptySub, { color: theme.textTertiary }]}>Add a friend to start splitting expenses.</Text>
-          </View>
-        ) : (
-          <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {friends.map((f, i) => (
-              <View key={f.key}>
-                <TouchableOpacity
-                  style={st.groupedRow}
-                  onPress={() => {
-                    // Synthetic fallback/optimistic friend keys map to group IDs.
-                    if (f.key.startsWith("opt-")) {
-                      router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(4) } });
-                      return;
-                    }
-                    if (f.key.startsWith("fb-")) {
-                      router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(3) } });
-                      return;
-                    }
-                    router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } });
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Avatar name={f.displayName} size={42} />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[st.rowName, { color: theme.text }]}>{f.displayName}</Text>
-                    <Text style={st.rowSub}>
-                      {(() => {
-                        const lines = friendBalanceLines(f);
-                        if (lines.length === 0) return "settled up";
-                        const pos =
-                          lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
-                        const neg =
-                          lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
-                        if (!pos && !neg) return "balances";
-                        return pos ? "owes you" : "you owe";
-                      })()}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    {friendBalanceLines(f).length === 0 ? (
-                      <Text style={[st.rowBal, st.muted]}>—</Text>
-                    ) : (
-                      friendBalanceLines(f).map((b) => {
-                        const p = b.amount > 0.005;
-                        const n = b.amount < -0.005;
-                        return (
-                          <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
-                            {p ? "+" : n ? "−" : ""}
-                            {formatSplitCurrencyAmount(b.amount, b.currency)}
-                          </Text>
-                        );
-                      })
-                    )}
-                  </View>
-                  <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                </TouchableOpacity>
-                {i < friends.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-              </View>
-            ))}
-          </View>
-        )}
-
-        <SLabel>Groups</SLabel>
-        {!visibleGroups.length ? (
-          <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="people-outline" size={30} color={theme.textTertiary} />
-            <Text style={[st.emptyTitle, { color: theme.text }]}>No groups yet</Text>
-            <Text style={[st.emptySub, { color: theme.textTertiary }]}>Create a group for trips, roommates, or dinners.</Text>
-          </View>
-        ) : (
-          <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {visibleGroups.map((g, i) => (
-              <View key={g.id}>
-                <TouchableOpacity
-                  style={st.groupedRow}
-                  onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
-                  activeOpacity={0.75}
-                >
-                  <View style={[st.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
-                  <Ionicons name="people" size={18} color={theme.text} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[st.rowName, { color: theme.text }]}>{g.name}</Text>
-                    <Text style={[st.rowSub, { color: theme.textTertiary }]}>{g.memberCount} members · {timeAgo(g.lastActivityAt)}</Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    {groupBalanceLines(g).length === 0 ? (
-                      <Text style={[st.rowBal, st.muted]}>—</Text>
-                    ) : (
-                      groupBalanceLines(g).map((b) => (
-                        <Text key={b.currency} style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
-                          {b.amount > 0 ? "+" : "−"}
-                          {formatSplitCurrencyAmount(b.amount, b.currency)}
-                        </Text>
-                      ))
-                    )}
-                  </View>
-                  <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                </TouchableOpacity>
-                {i < visibleGroups.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {!isDemoOn ? (
-          <View style={{ marginTop: 8 }}>
+          {/* Manual entry option */}
+          {!showManualEntry ? (
             <TouchableOpacity
-              onPress={() => setShowArchived((v) => !v)}
-              style={{ paddingVertical: 14 }}
-              hitSlop={8}
+              style={[st.afManualRow, { borderBottomColor: theme.border }]}
+              onPress={() => setShowManualEntry(true)}
               activeOpacity={0.7}
             >
-              <Text style={{ fontSize: 14, fontFamily: font.semibold, color: colors.primary }}>
-                {showArchived ? "Hide archived groups" : "Show archived groups"}
-              </Text>
+              <Ionicons name="person-add-outline" size={22} color={theme.text} />
+              <Text style={[st.afManualText, { color: theme.text }]}>Add a new contact manually</Text>
             </TouchableOpacity>
-            {showArchived ? (
-              archivedLoading ? (
-                <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primary} />
-              ) : archivedGroups.length === 0 ? (
-                <Text style={[st.emptySub, { marginBottom: 16 }]}>No archived groups.</Text>
-              ) : (
-                <View style={st.groupedCard}>
-                  {archivedGroups.map((g, i) => (
-                    <View key={g.id}>
-                      <TouchableOpacity
-                        style={st.groupedRow}
-                        onPress={() =>
-                          router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })
-                        }
-                        activeOpacity={0.75}
-                      >
-                        <View style={st.groupIcon}>
-                          <Ionicons name="archive-outline" size={18} color="#1F2328" />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={st.rowName}>{g.name}</Text>
-                          <Text style={st.rowSub}>{g.memberCount} members · archived</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                      </TouchableOpacity>
-                      {i < archivedGroups.length - 1 ? <View style={st.rowSep} /> : null}
-                    </View>
-                  ))}
+          ) : (
+            <View style={[st.afManualForm, { borderBottomColor: theme.border }]}>
+              <TextInput
+                style={[st.afManualInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
+                value={friendName}
+                onChangeText={setFriendName}
+                placeholder="Name"
+                placeholderTextColor={theme.textTertiary}
+                autoFocus
+              />
+              <TextInput
+                style={[st.afManualInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
+                value={friendEmail}
+                onChangeText={setFriendEmail}
+                placeholder="Email (optional)"
+                placeholderTextColor={theme.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={[st.afAddBtn, { backgroundColor: theme.text, opacity: friendName.trim() ? 1 : 0.4 }]}
+                  onPress={addFriend}
+                  disabled={!friendName.trim() || addingFriend}
+                >
+                  <Text style={[st.afAddBtnText, { color: theme.background }]}>
+                    {addingFriend ? "Adding…" : "Add friend"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setShowManualEntry(false); setFriendName(""); setFriendEmail(""); }}>
+                  <Text style={[st.afCancelSmall, { color: theme.textTertiary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Contacts list */}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            {contactsPerm !== "granted" ? (
+              <View style={st.afPermission}>
+                <Text style={[st.afPermTitle, { color: theme.text }]}>Connect your contacts</Text>
+                <Text style={[st.afPermSub, { color: theme.textTertiary }]}>
+                  Quickly add friends from your phone contacts.
+                </Text>
+                <TouchableOpacity
+                  style={[st.afPermBtn, { backgroundColor: theme.text }]}
+                  onPress={requestContactsAccess}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[st.afPermBtnText, { color: theme.background }]}>Allow access</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={[st.afSectionLabel, { color: theme.textTertiary }]}>From your contacts</Text>
+                {filteredContacts.length === 0 ? (
+                  <Text style={[st.afEmpty, { color: theme.textTertiary }]}>
+                    {contactSearch ? "No contacts match your search" : "No contacts to show"}
+                  </Text>
+                ) : (
+                  filteredContacts.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[st.afContactRow, { borderBottomColor: theme.borderLight }]}
+                      onPress={() => {
+                        addFriendFromContact(c);
+                        setShowManualEntry(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[st.afContactName, { color: theme.text }]}>{c.name}</Text>
+                        <Text style={[st.afContactPhone, { color: theme.textTertiary }]}>
+                          {c.phone ?? c.email ?? ""}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </>
+            )}
+          </ScrollView>
+
+          {/* Bottom add button — shows when contact selected */}
+          {friendName.trim() && !showManualEntry ? (
+            <View style={[st.afBottom, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+              <View style={st.afSelectedPill}>
+                <Avatar name={friendName} size={28} />
+                <Text style={[st.afSelectedName, { color: theme.text }]} numberOfLines={1}>{friendName}</Text>
+                <TouchableOpacity onPress={() => { setFriendName(""); setFriendEmail(""); }} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={[st.afBottomBtn, { backgroundColor: theme.text }]}
+                onPress={addFriend}
+                disabled={addingFriend}
+                activeOpacity={0.8}
+              >
+                {addingFriend ? (
+                  <ActivityIndicator color={theme.background} size="small" />
+                ) : (
+                  <Text style={[st.afBottomBtnText, { color: theme.background }]}>Add friend</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showCreate}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }}
+      >
+        <Pressable style={st.sheetOverlay} onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <Pressable style={[st.sheet, { backgroundColor: theme.surface }]} onPress={() => {}}>
+              <View style={st.sheetHandle} />
+              <View style={st.sheetHeader}>
+                <Text style={[st.sheetTitle, { color: theme.text }]}>New Group</Text>
+                <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); }} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={theme.textTertiary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Image picker */}
+              <TouchableOpacity style={st.imagePicker} onPress={pickGroupImage} activeOpacity={0.8}>
+                {groupImage ? (
+                  <Image source={{ uri: groupImage }} style={st.imagePickerImg} />
+                ) : (
+                  <View style={[st.imagePickerPlaceholder, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                    <Ionicons name="camera-outline" size={26} color={theme.textTertiary} />
+                    <Text style={[st.imagePickerLabel, { color: theme.textTertiary }]}>Add photo</Text>
+                  </View>
+                )}
+                <View style={[st.imagePickerBadge, { backgroundColor: theme.text }]}>
+                  <Ionicons name="camera" size={12} color={theme.surface} />
                 </View>
-              )
-            ) : null}
-          </View>
-        ) : null}
+              </TouchableOpacity>
+
+              {/* Group type picker */}
+              <View style={st.typeGrid}>
+                {([
+                  { id: "trip", label: "Trip", icon: "✈️" },
+                  { id: "home", label: "Home", icon: "🏠" },
+                  { id: "couple", label: "Couple", icon: "❤️" },
+                  { id: "event", label: "Event", icon: "🎉" },
+                  { id: "other", label: "Other", icon: "👥" },
+                ] as const).map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => setGroupType(t.id)}
+                    activeOpacity={0.75}
+                    style={[
+                      st.typeBtn,
+                      { borderColor: groupType === t.id ? theme.text : theme.border,
+                        backgroundColor: groupType === t.id ? theme.text + "10" : theme.surfaceSecondary }
+                    ]}
+                  >
+                    <Text style={st.typeEmoji}>{t.icon}</Text>
+                    <Text style={[st.typeLabel, { color: groupType === t.id ? theme.text : theme.textTertiary }]}>{t.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Name input */}
+              <TextInput
+                style={[st.sheetInput, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary, color: theme.text }]}
+                value={groupName}
+                onChangeText={setGroupName}
+                placeholder="Group name"
+                placeholderTextColor={theme.textTertiary}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={createGroup}
+              />
+
+              {/* Create button */}
+              <TouchableOpacity
+                style={[st.sheetCreateBtn, { backgroundColor: groupName.trim() ? theme.text : theme.border, opacity: groupName.trim() ? 1 : 0.5 }]}
+                onPress={createGroup}
+                disabled={!groupName.trim() || creating}
+                activeOpacity={0.8}
+              >
+                {creating ? (
+                  <ActivityIndicator color={theme.surface} size="small" />
+                ) : (
+                  <Text style={[st.sheetCreateBtnText, { color: theme.surface }]}>Create Group</Text>
+                )}
+              </TouchableOpacity>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      {/* Swipeable pages */}
+      <ScrollView
+        ref={pagerRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: false }
+        )}
+        onMomentumScrollEnd={onPagerScrollEnd}
+        scrollEventThrottle={1}
+        style={{ flex: 1 }}
+      >
+        {/* Friends page */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          contentContainerStyle={st.page}
+          showsVerticalScrollIndicator={false}
+          refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
+        >
+          {!friends.length ? (
+            <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="person-add-outline" size={30} color={theme.textTertiary} />
+              <Text style={[st.emptyTitle, { color: theme.text }]}>No friends yet</Text>
+              <Text style={[st.emptySub, { color: theme.textTertiary }]}>Add a friend to start splitting expenses.</Text>
+            </View>
+          ) : (
+            <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {friends.map((f, i) => (
+                <View key={f.key}>
+                  <TouchableOpacity
+                    style={st.groupedRow}
+                    onPress={() => {
+                      if (f.key.startsWith("opt-")) {
+                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(4) } });
+                        return;
+                      }
+                      if (f.key.startsWith("fb-")) {
+                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(3) } });
+                        return;
+                      }
+                      router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Avatar name={f.displayName} size={42} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[st.rowName, { color: theme.text }]}>{f.displayName}</Text>
+                      <Text style={st.rowSub}>
+                        {(() => {
+                          const lines = friendBalanceLines(f);
+                          if (lines.length === 0) return "settled up";
+                          const pos =
+                            lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
+                          const neg =
+                            lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
+                          if (!pos && !neg) return "balances";
+                          return pos ? "owes you" : "you owe";
+                        })()}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      {friendBalanceLines(f).length === 0 ? (
+                        <Text style={[st.rowBal, st.muted]}>—</Text>
+                      ) : (
+                        friendBalanceLines(f).map((b) => {
+                          const p = b.amount > 0.005;
+                          const n = b.amount < -0.005;
+                          return (
+                            <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
+                              {p ? "+" : n ? "−" : ""}
+                              {formatSplitCurrencyAmount(b.amount, b.currency)}
+                            </Text>
+                          );
+                        })
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+                  </TouchableOpacity>
+                  {i < friends.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Groups page */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          contentContainerStyle={st.page}
+          showsVerticalScrollIndicator={false}
+          refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
+        >
+          {!visibleGroups.length ? (
+            <View style={[st.groupedCard, st.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="people-outline" size={30} color={theme.textTertiary} />
+              <Text style={[st.emptyTitle, { color: theme.text }]}>No groups yet</Text>
+              <Text style={[st.emptySub, { color: theme.textTertiary }]}>Create a group for trips, roommates, or dinners.</Text>
+            </View>
+          ) : (
+            <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {visibleGroups.map((g, i) => (
+                <View key={g.id}>
+                  <TouchableOpacity
+                    style={st.groupedRow}
+                    onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
+                    activeOpacity={0.75}
+                  >
+                    {g.imageUrl ? (
+                      <Image source={{ uri: g.imageUrl }} style={st.groupIconImg} />
+                    ) : (
+                      <View style={[st.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
+                        <Ionicons name="people" size={18} color={theme.text} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[st.rowName, { color: theme.text }]}>{g.name}</Text>
+                      <Text style={[st.rowSub, { color: theme.textTertiary }]}>{g.memberCount} members · {timeAgo(g.lastActivityAt)}</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      {groupBalanceLines(g).length === 0 ? (
+                        <Text style={[st.rowBal, st.muted]}>—</Text>
+                      ) : (
+                        groupBalanceLines(g).map((b) => (
+                          <Text key={b.currency} style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
+                            {b.amount > 0 ? "+" : "−"}
+                            {formatSplitCurrencyAmount(b.amount, b.currency)}
+                          </Text>
+                        ))
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+                  </TouchableOpacity>
+                  {i < visibleGroups.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                </View>
+              ))}
+            </View>
+          )}
+
+          {!isDemoOn ? (
+            <View style={{ marginTop: 8 }}>
+              <TouchableOpacity
+                onPress={() => setShowArchived((v) => !v)}
+                style={{ paddingVertical: 14 }}
+                hitSlop={8}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 14, fontFamily: font.semibold, color: colors.primary }}>
+                  {showArchived ? "Hide archived groups" : "Show archived groups"}
+                </Text>
+              </TouchableOpacity>
+              {showArchived ? (
+                archivedLoading ? (
+                  <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primary} />
+                ) : archivedGroups.length === 0 ? (
+                  <Text style={[st.emptySub, { marginBottom: 16 }]}>No archived groups.</Text>
+                ) : (
+                  <View style={st.groupedCard}>
+                    {archivedGroups.map((g, i) => (
+                      <View key={g.id}>
+                        <TouchableOpacity
+                          style={st.groupedRow}
+                          onPress={() =>
+                            router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })
+                          }
+                          activeOpacity={0.75}
+                        >
+                          <View style={st.groupIcon}>
+                            <Ionicons name="archive-outline" size={18} color="#1F2328" />
+                          </View>
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={st.rowName}>{g.name}</Text>
+                            <Text style={st.rowSub}>{g.memberCount} members · archived</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+                        </TouchableOpacity>
+                        {i < archivedGroups.length - 1 ? <View style={st.rowSep} /> : null}
+                      </View>
+                    ))}
+                  </View>
+                )
+              ) : null}
+            </View>
+          ) : null}
+        </ScrollView>
       </ScrollView>
     </SafeAreaView>
   );
@@ -641,62 +973,279 @@ export default function SharedIndex() {
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F3F2" },
-  page: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 120 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  title: { fontSize: 32, fontFamily: font.black, color: "#1F2328", letterSpacing: -0.9 },
-  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#7A8088", marginTop: 2 },
-  actionsRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#1F2328",
-    borderRadius: radii.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  actionBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 13 },
-  actionBtnAlt: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#F3EEEA",
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: "#E3DBD8",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  actionBtnAltText: { color: "#1F2328", fontFamily: font.bold, fontSize: 13 },
+  page: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 },
 
-  formCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E3DBD8",
-    padding: 14,
-    marginBottom: 12,
+  tabBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    paddingRight: 16,
   },
-  formInput: {
+  tabsInner: {
+    flex: 1,
+    flexDirection: "row",
+    position: "relative",
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  tabText: {
+    fontSize: 15,
+    fontFamily: font.bold,
+  },
+  tabIndicator: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    height: 2.5,
+    borderRadius: 2,
+  },
+  addPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#1F2328",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  addPillText: {
+    fontSize: 13,
+    fontFamily: font.bold,
+    color: "#fff",
+  },
+
+  // bottom sheet modal
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#D1C9C4",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontFamily: font.bold,
+  },
+  imagePicker: {
+    alignSelf: "center",
+    marginBottom: 20,
+    position: "relative",
+  },
+  imagePickerImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  imagePickerPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  imagePickerLabel: {
+    fontSize: 10,
+    fontFamily: font.semibold,
+  },
+  imagePickerBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  typeGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+    flexWrap: "wrap",
+  },
+  typeBtn: {
+    flex: 1,
+    minWidth: 60,
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    gap: 4,
+  },
+  typeEmoji: {
+    fontSize: 22,
+  },
+  typeLabel: {
+    fontSize: 11,
+    fontFamily: font.bold,
+  },
+  sheetInput: {
     borderWidth: 1,
-    borderColor: "#E3DBD8",
-    backgroundColor: "#F7F3F0",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    fontFamily: font.semibold,
+    marginBottom: 16,
+  },
+  sheetCreateBtn: {
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetCreateBtnText: {
+    fontSize: 16,
+    fontFamily: font.bold,
+  },
+
+  // Add friend modal
+  afContainer: { flex: 1 },
+  afHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  afCancel: { fontSize: 16, fontFamily: font.medium },
+  afTitle: { fontSize: 17, fontFamily: font.bold },
+  afSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginVertical: 10,
     borderRadius: 10,
-    color: "#1F2328",
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  afSearchInput: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    fontSize: 16,
+    fontFamily: font.regular,
+  },
+  afManualRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  afManualText: { fontSize: 16, fontFamily: font.medium },
+  afManualForm: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  afManualInput: {
+    borderWidth: 1,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontFamily: font.regular,
     fontSize: 15,
+    fontFamily: font.regular,
   },
-  formActions: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
-  formPrimaryBtn: {
-    backgroundColor: colors.primary,
+  afAddBtn: {
     borderRadius: radii.lg,
     paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
-  formPrimaryBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 14 },
-  formCancelText: { color: "#4B5563", fontFamily: font.semibold, fontSize: 14 },
+  afAddBtnText: { fontFamily: font.bold, fontSize: 14 },
+  afCancelSmall: { fontFamily: font.semibold, fontSize: 14, paddingVertical: 10 },
+  afSectionLabel: {
+    fontSize: 12,
+    fontFamily: font.bold,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
+  afEmpty: {
+    fontSize: 14,
+    fontFamily: font.regular,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    textAlign: "center",
+  },
+  afContactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  afContactName: { fontSize: 16, fontFamily: font.medium },
+  afContactPhone: { fontSize: 13, fontFamily: font.regular, marginTop: 1 },
+  afPermission: {
+    alignItems: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 30,
+    gap: 8,
+  },
+  afPermTitle: { fontSize: 17, fontFamily: font.bold },
+  afPermSub: { fontSize: 14, fontFamily: font.regular, textAlign: "center" },
+  afPermBtn: {
+    marginTop: 12,
+    borderRadius: radii.lg,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  afPermBtnText: { fontSize: 15, fontFamily: font.bold },
+  afBottom: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  afSelectedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  afSelectedName: { fontSize: 15, fontFamily: font.semibold, flex: 1 },
+  afBottomBtn: {
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  afBottomBtnText: { fontSize: 16, fontFamily: font.bold },
 
   sLabel: {
     fontSize: 11,
@@ -736,6 +1285,11 @@ const st = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.05)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  groupIconImg: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
   },
   emptyInner: { alignItems: "center", paddingVertical: 36, paddingHorizontal: 20 },
   emptyTitle: { fontSize: 16, fontFamily: font.bold, color: "#1F2328", marginTop: 10 },

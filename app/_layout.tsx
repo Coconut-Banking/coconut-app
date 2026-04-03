@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
@@ -233,26 +234,28 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider>
-      <ClerkProvider
-        publishableKey={publishableKey ?? ""}
-        tokenCache={tokenCache}
-      >
-        <DemoModeProvider>
-          <DemoProvider>
-            <SetupProvider>
-              <ErrorBoundary>
-                <ToastProvider>
-                  <StatusBarFromTheme />
-                  <AuthHandoffHandler />
-                  <AuthSwitch />
-                </ToastProvider>
-              </ErrorBoundary>
-            </SetupProvider>
-          </DemoProvider>
-        </DemoModeProvider>
-      </ClerkProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <ClerkProvider
+          publishableKey={publishableKey ?? ""}
+          tokenCache={tokenCache}
+        >
+          <DemoModeProvider>
+            <DemoProvider>
+              <SetupProvider>
+                <ErrorBoundary>
+                  <ToastProvider>
+                    <StatusBarFromTheme />
+                    <AuthHandoffHandler />
+                    <AuthSwitch />
+                  </ToastProvider>
+                </ErrorBoundary>
+              </SetupProvider>
+            </DemoProvider>
+          </DemoModeProvider>
+        </ClerkProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 

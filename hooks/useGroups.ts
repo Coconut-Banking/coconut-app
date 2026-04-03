@@ -5,6 +5,7 @@ export interface GroupSummary {
   id: string;
   name: string;
   memberCount: number;
+  imageUrl?: string | null;
   /** Net for you in this group when exactly one currency is outstanding; otherwise null. */
   myBalance: number | null;
   /** Per-currency net for you in this group (Splitwise-style; never add across currencies). */
@@ -49,6 +50,7 @@ export interface GroupDetail {
   name: string;
   isOwner?: boolean;
   invite_token?: string | null;
+  image_url?: string | null;
   /** ISO timestamp when archived; null/undefined = active */
   archivedAt?: string | null;
   members: GroupMember[];
