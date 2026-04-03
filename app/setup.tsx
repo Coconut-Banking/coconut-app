@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
@@ -94,6 +95,11 @@ export default function SetupScreen() {
         invalidateApiCache("/api/splitwise/status");
         invalidateApiCache("/api/gmail/status");
         invalidateApiCache("/api/groups/summary");
+        try {
+          const allKeys = await AsyncStorage.getAllKeys();
+          const staleKeys = allKeys.filter((k) => k.startsWith("coconut.optimistic.friends."));
+          if (staleKeys.length) await AsyncStorage.multiRemove(staleKeys);
+        } catch { /* best effort */ }
       } catch (e) {
         if (__DEV__) console.warn("[setup] full reset failed:", e);
       } finally {

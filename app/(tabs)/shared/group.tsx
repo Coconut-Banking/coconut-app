@@ -368,7 +368,22 @@ export default function GroupScreen() {
           </TouchableOpacity>
         </View>
         <View style={s.center}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          {loading ? (
+            <ActivityIndicator size="large" color={theme.primary} />
+          ) : (
+            <>
+              <Ionicons name="alert-circle-outline" size={48} color={theme.textTertiary} style={{ marginBottom: 12 }} />
+              <Text style={{ fontFamily: font.semibold, fontSize: 17, color: theme.text, marginBottom: 4 }}>
+                Group not found
+              </Text>
+              <Text style={{ fontFamily: font.regular, fontSize: 14, color: theme.textTertiary, textAlign: "center", paddingHorizontal: 40 }}>
+                This group may have been deleted.
+              </Text>
+              <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 10 }}>
+                <Text style={{ fontFamily: font.semibold, fontSize: 15, color: "#fff" }}>Go back</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </SafeAreaView>
     );

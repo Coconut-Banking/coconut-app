@@ -983,6 +983,11 @@ export default function SettingsScreen() {
                     : null,
                 ].filter(Boolean).join("\n");
                 Alert.alert("All data cleared", details || "Everything wiped.");
+                try {
+                  const allKeys = await AsyncStorage.getAllKeys();
+                  const staleKeys = allKeys.filter((k) => k.startsWith("coconut.optimistic.friends."));
+                  if (staleKeys.length) await AsyncStorage.multiRemove(staleKeys);
+                } catch { /* best effort */ }
                 DeviceEventEmitter.emit("groups-updated");
               } else {
                 const errData = await res.json().catch(() => null);
