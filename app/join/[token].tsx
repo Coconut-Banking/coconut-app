@@ -64,7 +64,7 @@ export default function JoinGroupScreen() {
   }, [token, isLoaded, isSignedIn]);
 
   const handleJoin = async () => {
-    if (!token || joining) return;
+    if (!token || joining || !isLoaded) return;
     if (!isSignedIn) {
       await AsyncStorage.setItem(PENDING_INVITE_KEY, token);
       router.replace("/(auth)/sign-in");
@@ -216,10 +216,10 @@ export default function JoinGroupScreen() {
 
       <View style={[st.bottomBar, { borderTopColor: theme.borderLight }]}>
         <TouchableOpacity
-          style={[st.primaryBtn, { backgroundColor: theme.primary }]}
-          onPress={handleJoin} disabled={joining} activeOpacity={0.7}
+          style={[st.primaryBtn, { backgroundColor: theme.primary, opacity: (!isLoaded || joining) ? 0.7 : 1 }]}
+          onPress={handleJoin} disabled={joining || !isLoaded} activeOpacity={0.7}
         >
-          {joining
+          {(joining || !isLoaded)
             ? <ActivityIndicator color="#fff" />
             : <Text style={st.primaryBtnText}>
                 {isSignedIn ? `Join ${preview?.groupName ?? "group"}` : "Sign up to join"}

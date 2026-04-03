@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -11,13 +11,21 @@ import {
   RefreshControl,
   DeviceEventEmitter,
   Image,
+  Animated,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  FlatList,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../../lib/api";
-import { useGroupDetail, useGroupsSummary } from "../../../hooks/useGroups";
+import { useGroupDetail, useGroupsSummary, type FriendBalance } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { useTheme } from "../../../lib/theme-context";
@@ -27,6 +35,7 @@ import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
+import { sfx } from "../../../lib/sounds";
 
 const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
 
@@ -64,6 +73,152 @@ export default function GroupScreen() {
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const swipeableRefs = useRef(new Map<string, Swipeable>()).current;
+
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [selectedFriends, setSelectedFriends] = useState<FriendBalance[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [addingMembers, setAddingMembers] = useState(false);
+  const [manualName, setManualName] = useState("");
+  const [showManualInput, setShowManualInput] = useState(false);
+
+  const { summary } = useGroupsSummary({ contacts: true });
+  const existingMemberNames = useMemo(
+    () => new Set((detail?.members ?? []).map((m) => m.display_name.toLowerCase())),
+    [detail?.members],
+  );
+  const availableFriends = useMemo(() => {
+    const all = summary?.friends ?? [];
+    return all.filter((f) => !existingMemberNames.has(f.displayName.toLowerCase()));
+  }, [summary?.friends, existingMemberNames]);
+
+  const filteredFriends = useMemo(() => {
+    if (!searchQuery.trim()) return availableFriends;
+    const q = searchQuery.toLowerCase();
+    return availableFriends.filter((f) => f.displayName.toLowerCase().includes(q));
+  }, [availableFriends, searchQuery]);
+
+  const toggleFriend = (friend: FriendBalance) => {
+    sfx.pop();
+    setSelectedFriends((prev) => {
+      const exists = prev.some((f) => f.key === friend.key);
+      return exists ? prev.filter((f) => f.key !== friend.key) : [...prev, friend];
+    });
+  };
+
+  const removeFriend = (key: string) => {
+    sfx.pop();
+    setSelectedFriends((prev) => prev.filter((f) => f.key !== key));
+  };
+
+  const addManualContact = () => {
+    const name = manualName.trim();
+    if (!name) return;
+    sfx.pop();
+    const fake: FriendBalance = { key: `manual_${Date.now()}`, displayName: name, balance: null, balances: [] };
+    setSelectedFriends((prev) => [...prev, fake]);
+    setManualName("");
+    setShowManualInput(false);
+  };
+
+  const openAddMembers = () => {
+    sfx.sheetOpen();
+    setSelectedFriends([]);
+    setSearchQuery("");
+    setShowManualInput(false);
+    setManualName("");
+    setShowAddMember(true);
+  };
+
+  const addSelectedMembers = async () => {
+    if (selectedFriends.length === 0 || !id) return;
+    setAddingMembers(true);
+    sfx.pop();
+    try {
+      let added = 0;
+      for (const friend of selectedFriends) {
+        const res = await apiFetch(`/api/groups/${id}/members`, {
+          method: "POST",
+          body: { displayName: friend.displayName } as object,
+        });
+        if (res.ok) added++;
+      }
+      setShowAddMember(false);
+      setSelectedFriends([]);
+      await refetch(true);
+      sfx.success();
+      toast.show(`${added} member${added !== 1 ? "s" : ""} added`);
+    } catch {
+      Alert.alert("Error", "Could not add members");
+    } finally {
+      setAddingMembers(false);
+    }
+  };
+
+  const handleDeleteExpense = useCallback((txId: string, merchant: string) => {
+    Alert.alert(
+      "Delete expense",
+      `Remove "${merchant}" from this group? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel", onPress: () => swipeableRefs.get(txId)?.close() },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(txId);
+            try {
+              const res = await apiFetch(`/api/split-transactions/${txId}`, { method: "DELETE" });
+              if (res.ok) {
+                DeviceEventEmitter.emit("groups-updated");
+                await refetch(true);
+                await refetchSummary();
+              } else {
+                Alert.alert("Error", "Couldn't delete expense. Try again.");
+              }
+            } finally {
+              setDeleting(null);
+            }
+          },
+        },
+      ]
+    );
+  }, [apiFetch, refetch, refetchSummary, swipeableRefs]);
+
+  const renderRightActions = useCallback(
+    (txId: string, merchant: string) =>
+      (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+        const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0.5], extrapolate: "clamp" });
+        return (
+          <View style={s.swipeActions}>
+            <TouchableOpacity
+              style={s.swipeEdit}
+              onPress={() => {
+                swipeableRefs.get(txId)?.close();
+                router.push({ pathname: "/(tabs)/shared/transaction", params: { id: txId, edit: "1" } });
+              }}
+              activeOpacity={0.7}
+            >
+              <Animated.View style={{ transform: [{ scale }], alignItems: "center" }}>
+                <Ionicons name="pencil" size={18} color="#fff" />
+                <Text style={s.swipeActionText}>Edit</Text>
+              </Animated.View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.swipeDelete}
+              onPress={() => handleDeleteExpense(txId, merchant)}
+              activeOpacity={0.7}
+            >
+              <Animated.View style={{ transform: [{ scale }], alignItems: "center" }}>
+                <Ionicons name="trash" size={18} color="#fff" />
+                <Text style={s.swipeActionText}>Delete</Text>
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
+        );
+      },
+    [handleDeleteExpense, swipeableRefs]
+  );
 
   useEffect(() => {
     if (detail && id) {
@@ -123,37 +278,65 @@ export default function GroupScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
+        {/* Header: avatar + name + actions */}
         <View style={s.groupHeader}>
-          <View style={[s.groupIcon, { backgroundColor: theme.primaryLight }]}>
-            <Ionicons name="people" size={28} color={theme.primary} />
-          </View>
-          <View>
-            <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
-            <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
-              {detail.members.length} members ·{" "}
-              {detail.totalSpend != null
-                ? `$${detail.totalSpend.toFixed(2)}`
-                : (detail.totalSpendByCurrency ?? [])
-                    .map((r) => `${r.currency} ${r.amount.toFixed(2)}`)
-                    .join(" · ") || "—"}{" "}
-              total
-            </Text>
-          </View>
-        </View>
+          {detail.image_url ? (
+            <Image source={{ uri: detail.image_url }} style={s.groupPhoto} />
+          ) : (
+            <View style={[s.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
+              <Ionicons name="people" size={32} color={theme.textTertiary} />
+            </View>
+          )}
+          <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
+          <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
+            {detail.members.length} member{detail.members.length !== 1 ? "s" : ""} ·{" "}
+            {detail.totalSpend != null
+              ? `$${detail.totalSpend.toFixed(2)}`
+              : (detail.totalSpendByCurrency ?? [])
+                  .map((r) => `${r.currency} ${r.amount.toFixed(2)}`)
+                  .join(" · ") || "—"}{" "}
+            total
+          </Text>
 
-        {!isArchived && detail.invite_token ? (
-          <TouchableOpacity
-            style={[s.inviteBtn, { backgroundColor: theme.primary }]}
-            onPress={async () => {
-              await Clipboard.setStringAsync(`https://coconut-app.dev/join/${detail.invite_token}`);
-              toast.show("Copied group invite link");
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="link-outline" size={18} color="#fff" />
-            <Text style={s.inviteBtnText}>Invite</Text>
-          </TouchableOpacity>
-        ) : null}
+          {!isArchived ? (
+            <View style={s.actionRow}>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={openAddMembers}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="person-add-outline" size={16} color={theme.text} />
+                <Text style={[s.actionBtnText, { color: theme.text }]}>Add members</Text>
+              </TouchableOpacity>
+              {detail.invite_token ? (
+                <TouchableOpacity
+                  style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
+                  onPress={async () => {
+                    sfx.pop();
+                    await Clipboard.setStringAsync(`https://coconut-app.dev/join/${detail.invite_token}`);
+                    toast.show("Invite link copied");
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="link-outline" size={16} color={theme.surface} />
+                  <Text style={[s.actionBtnText, { color: theme.surface }]}>Copy link</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
+                  onPress={async () => {
+                    sfx.pop();
+                    await Share.share({ message: `Join my group "${detail.name}" on Coconut!`, title: "Share group" });
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="share-outline" size={16} color={theme.surface} />
+                  <Text style={[s.actionBtnText, { color: theme.surface }]}>Share</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
+        </View>
 
         {isArchived ? (
           <View
@@ -291,31 +474,47 @@ export default function GroupScreen() {
         ) : (
           <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             {(detail.activity ?? []).map((a, i) => (
-              <TouchableOpacity
+              <Swipeable
                 key={a.id}
-                style={[s.txRow, i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight }]}
-                activeOpacity={0.7}
-                onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
+                ref={(ref) => { if (ref) swipeableRefs.set(a.id, ref); }}
+                renderRightActions={isDemoOn ? undefined : renderRightActions(a.id, a.merchant)}
+                overshootRight={false}
+                friction={2}
               >
-                {a.receiptUrl ? (
-                  <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
-                ) : (
-                  <MerchantLogo
-                    merchantName={a.merchant}
-                    size={36}
-                    backgroundColor={theme.surfaceTertiary}
-                    borderColor={theme.borderLight}
-                    style={{ marginRight: 12 }}
-                  />
-                )}
-                <View style={s.txInfo}>
-                  <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
-                  <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
-                </View>
-                <Text style={[s.txAmount, { color: theme.text }]}>
-                  {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    s.txRow,
+                    { backgroundColor: theme.surface },
+                    i < detail.activity.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id } })}
+                  disabled={deleting === a.id}
+                >
+                  {a.receiptUrl ? (
+                    <Image source={{ uri: a.receiptUrl }} style={s.txThumb} />
+                  ) : (
+                    <MerchantLogo
+                      merchantName={a.merchant}
+                      size={36}
+                      backgroundColor={theme.surfaceTertiary}
+                      borderColor={theme.borderLight}
+                      style={{ marginRight: 12 }}
+                    />
+                  )}
+                  <View style={s.txInfo}>
+                    <Text style={[s.txMerchant, { color: theme.text }]}>{a.merchant}</Text>
+                    <Text style={[s.txMeta, { color: theme.textQuaternary }]}>Split {a.splitCount} ways · {formatTimeAgo(a.createdAt)}</Text>
+                  </View>
+                  {deleting === a.id ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Text style={[s.txAmount, { color: theme.text }]}>
+                      {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </Swipeable>
             ))}
           </View>
         )}
@@ -339,6 +538,174 @@ export default function GroupScreen() {
           </TouchableOpacity>
         ) : null}
       </ScrollView>
+
+      {/* Add members — full-screen multi-select picker */}
+      <Modal
+        visible={showAddMember}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddMember(false)}
+      >
+        <SafeAreaView style={[s.pickerRoot, { backgroundColor: theme.surface }]} edges={["top", "bottom"]}>
+          {/* Top bar */}
+          <View style={s.pickerTopBar}>
+            <TouchableOpacity onPress={() => setShowAddMember(false)} hitSlop={10}>
+              <Text style={[s.pickerCancel, { color: theme.primary }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[s.pickerTitle, { color: theme.text }]}>Add group members</Text>
+            <View style={{ width: 52 }} />
+          </View>
+
+          {/* Search */}
+          <View style={[s.pickerSearchWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+            <Ionicons name="search" size={18} color={theme.textTertiary} />
+            <TextInput
+              style={[s.pickerSearchInput, { color: theme.text }]}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search friends"
+              placeholderTextColor={theme.textTertiary}
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Selected chips */}
+          {selectedFriends.length > 0 && (
+            <View style={s.pickerChipsSection}>
+              <Text style={[s.pickerChipsLabel, { color: theme.textSecondary }]}>People to add</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.pickerChipsScroll} contentContainerStyle={{ gap: 12, paddingHorizontal: 16 }}>
+                {selectedFriends.map((f) => (
+                  <View key={f.key} style={s.pickerChip}>
+                    <View style={[s.pickerChipAvatar, { backgroundColor: MEMBER_COLORS[f.displayName.charCodeAt(0) % MEMBER_COLORS.length] }]}>
+                      <Text style={s.pickerChipAvatarText}>{f.displayName.slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[s.pickerChipRemove, { backgroundColor: theme.textTertiary }]}
+                      onPress={() => removeFriend(f.key)}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="close" size={10} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={[s.pickerChipName, { color: theme.text }]} numberOfLines={1}>{f.displayName.split(" ")[0]}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          <View style={[s.pickerDivider, { backgroundColor: theme.borderLight }]} />
+
+          {/* Add a new contact */}
+          {showManualInput ? (
+            <View style={[s.pickerManualRow, { borderBottomColor: theme.borderLight }]}>
+              <TextInput
+                style={[s.pickerManualInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                value={manualName}
+                onChangeText={setManualName}
+                placeholder="Enter name"
+                placeholderTextColor={theme.textTertiary}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={addManualContact}
+              />
+              <TouchableOpacity
+                style={[s.pickerManualAdd, { backgroundColor: manualName.trim() ? theme.text : theme.border }]}
+                onPress={addManualContact}
+                disabled={!manualName.trim()}
+              >
+                <Text style={{ color: "#fff", fontFamily: font.bold, fontSize: 14 }}>Add</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowManualInput(false); setManualName(""); }} hitSlop={8}>
+                <Ionicons name="close" size={20} color={theme.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[s.pickerNewContact, { borderBottomColor: theme.borderLight }]}
+              onPress={() => { sfx.pop(); setShowManualInput(true); }}
+              activeOpacity={0.7}
+            >
+              <View style={[s.pickerNewContactIcon, { backgroundColor: theme.surfaceSecondary }]}>
+                <Ionicons name="person-add-outline" size={18} color={theme.textSecondary} />
+              </View>
+              <Text style={[s.pickerNewContactText, { color: theme.text }]}>Add a new contact</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Friends list */}
+          {availableFriends.length > 0 && (
+            <Text style={[s.pickerSectionLabel, { color: theme.textTertiary }]}>Friends</Text>
+          )}
+          <FlatList
+            data={filteredFriends}
+            keyExtractor={(item) => item.key}
+            contentContainerStyle={{ paddingBottom: 100 }}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => {
+              const isSelected = selectedFriends.some((f) => f.key === item.key);
+              const avatarColor = MEMBER_COLORS[item.displayName.charCodeAt(0) % MEMBER_COLORS.length];
+              return (
+                <TouchableOpacity
+                  style={s.pickerFriendRow}
+                  onPress={() => toggleFriend(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.pickerFriendAvatar, { backgroundColor: `${avatarColor}20`, borderColor: `${avatarColor}40` }]}>
+                    <Text style={[s.pickerFriendAvatarText, { color: avatarColor }]}>
+                      {item.displayName.slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[s.pickerFriendName, { color: theme.text }]}>{item.displayName}</Text>
+                  <View style={[
+                    s.pickerCheckbox,
+                    {
+                      borderColor: isSelected ? theme.primary : theme.border,
+                      backgroundColor: isSelected ? theme.primary : "transparent",
+                    },
+                  ]}>
+                    {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={{ padding: 32, alignItems: "center" }}>
+                <Text style={[s.emptySubtext, { color: theme.textQuaternary }]}>
+                  {searchQuery ? "No friends match your search" : "No friends to show"}
+                </Text>
+              </View>
+            }
+          />
+
+          {/* Next button */}
+          <View style={[s.pickerBottomBar, { backgroundColor: theme.surface, borderTopColor: theme.borderLight }]}>
+            <TouchableOpacity
+              style={[
+                s.pickerNextBtn,
+                { backgroundColor: selectedFriends.length > 0 ? theme.primary : theme.border },
+              ]}
+              onPress={addSelectedMembers}
+              disabled={selectedFriends.length === 0 || addingMembers}
+              activeOpacity={0.8}
+            >
+              {addingMembers ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={s.pickerNextBtnText}>
+                  {selectedFriends.length > 0
+                    ? `Add ${selectedFriends.length} member${selectedFriends.length !== 1 ? "s" : ""}`
+                    : "Select people"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -348,25 +715,62 @@ const s = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   content: { padding: 20, paddingBottom: 100 },
-  groupHeader: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
-  inviteBtn: {
+  groupHeader: { alignItems: "center", marginBottom: 24, paddingTop: 8 },
+  groupPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
+  groupIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  groupName: { fontSize: 24, fontWeight: "800", fontFamily: font.bold, color: colors.text, textAlign: "center" },
+  groupMeta: { fontSize: 13, fontFamily: font.regular, color: colors.textTertiary, marginTop: 4, textAlign: "center" },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
+  actionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: radii.md,
-    marginBottom: 20,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
   },
-  inviteBtnText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: font.semibold,
+  actionBtnText: { fontSize: 13, fontFamily: font.bold },
+  // Multi-select picker styles
+  pickerRoot: { flex: 1 },
+  pickerTopBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
+  pickerCancel: { fontSize: 16, fontFamily: font.regular },
+  pickerTitle: { fontSize: 16, fontFamily: font.bold },
+  pickerSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    gap: 8,
   },
-  groupIcon: { width: 56, height: 56, borderRadius: radii.xl, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center" },
-  groupName: { fontSize: 22, fontWeight: "700", fontFamily: font.bold, color: colors.text },
-  groupMeta: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 4 },
+  pickerSearchInput: { flex: 1, fontSize: 15, fontFamily: font.regular, paddingVertical: 10 },
+  pickerChipsSection: { marginBottom: 8 },
+  pickerChipsLabel: { fontSize: 13, fontFamily: font.bold, textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 16, marginBottom: 8 },
+  pickerChipsScroll: { paddingBottom: 4 },
+  pickerChip: { alignItems: "center", width: 56 },
+  pickerChipAvatar: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  pickerChipAvatarText: { color: "#fff", fontSize: 18, fontFamily: font.bold },
+  pickerChipRemove: { position: "absolute", top: 0, right: 2, width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  pickerChipName: { fontSize: 11, fontFamily: font.medium, marginTop: 4, textAlign: "center" },
+  pickerDivider: { height: 1, marginVertical: 4 },
+  pickerNewContact: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: 1 },
+  pickerNewContactIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  pickerNewContactText: { fontSize: 15, fontFamily: font.medium },
+  pickerManualRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, gap: 8, borderBottomWidth: 1 },
+  pickerManualInput: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, fontFamily: font.regular },
+  pickerManualAdd: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9 },
+  pickerSectionLabel: { fontSize: 13, fontFamily: font.bold, textTransform: "uppercase", letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  pickerFriendRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
+  pickerFriendAvatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  pickerFriendAvatarText: { fontSize: 14, fontFamily: font.bold },
+  pickerFriendName: { flex: 1, fontSize: 16, fontFamily: font.medium },
+  pickerCheckbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  pickerBottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, borderTopWidth: 1 },
+  pickerNextBtn: { borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
+  pickerNextBtnText: { color: "#fff", fontSize: 16, fontFamily: font.bold },
   section: { fontSize: 13, fontWeight: "700", fontFamily: font.bold, color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
   card: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
   txRow: { flexDirection: "row", alignItems: "center", padding: 14 },
@@ -406,4 +810,23 @@ const s = StyleSheet.create({
   bold: { fontWeight: "700", fontFamily: font.bold },
   avatar: { justifyContent: "center", alignItems: "center" },
   avatarText: { color: "#fff", fontWeight: "700", fontFamily: font.bold },
+  swipeActions: { flexDirection: "row" },
+  swipeEdit: {
+    backgroundColor: "#3B82F6",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 72,
+  },
+  swipeDelete: {
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 72,
+  },
+  swipeActionText: {
+    color: "#fff",
+    fontSize: 11,
+    fontFamily: font.semibold,
+    marginTop: 4,
+  },
 });

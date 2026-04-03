@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
+  Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
+import { useApiFetch } from "../../../lib/api";
 import { useTransactionDetail } from "../../../hooks/useGroups";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
@@ -46,14 +49,95 @@ function formatDate(iso: string | null): string {
 }
 
 export default function TransactionScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
+  const apiFetch = useApiFetch();
   const { detail, loading, refetch } = useTransactionDetail(id ?? null);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDesc, setEditDesc] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+
+  useEffect(() => {
+    if (detail) {
+      setEditDesc(detail.description ?? "");
+      setEditAmount(String(detail.amount ?? 0));
+    }
+  }, [detail]);
+
+  useEffect(() => {
+    if (edit === "1" && detail && !editing) {
+      setEditing(true);
+    }
+  }, [edit, detail, editing]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try { await refetch(true); } finally { setRefreshing(false); }
   }, [refetch]);
+
+  const handleDelete = useCallback(() => {
+    if (!detail || !id) return;
+    Alert.alert(
+      "Delete expense",
+      `Remove "${detail.description}" from ${detail.groupName ?? "this group"}? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              const res = await apiFetch(`/api/split-transactions/${id}`, { method: "DELETE" });
+              if (res.ok) {
+                DeviceEventEmitter.emit("groups-updated");
+                router.back();
+              } else {
+                Alert.alert("Error", "Couldn't delete expense. Try again.");
+              }
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [id, detail, apiFetch]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!id || !detail) return;
+    const desc = editDesc.trim();
+    const amt = parseFloat(editAmount);
+    if (!desc) { Alert.alert("Error", "Description can't be empty"); return; }
+    if (!Number.isFinite(amt) || amt <= 0) { Alert.alert("Error", "Enter a valid amount"); return; }
+
+    const body: Record<string, unknown> = {};
+    if (desc !== detail.description) body.description = desc;
+    if (Math.abs(amt - (detail.amount ?? 0)) > 0.005) {
+      body.amount = amt;
+      body.shares = detail.shares.map((sh) => ({
+        memberId: sh.memberId,
+        amount: Math.round((amt / detail.shares.length) * 100) / 100,
+      }));
+    }
+
+    if (Object.keys(body).length === 0) { setEditing(false); return; }
+
+    try {
+      const res = await apiFetch(`/api/split-transactions/${id}`, { method: "PATCH", body });
+      if (res.ok) {
+        DeviceEventEmitter.emit("groups-updated");
+        setEditing(false);
+        await refetch();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert("Error", (err as { error?: string }).error ?? "Couldn't save changes.");
+      }
+    } catch {
+      Alert.alert("Error", "Network error. Try again.");
+    }
+  }, [id, detail, editDesc, editAmount, apiFetch, refetch]);
 
   if (loading && !detail) {
     return (
@@ -93,10 +177,24 @@ export default function TransactionScreen() {
   return (
     <SafeAreaView style={s.container} edges={["top"]}>
       <View style={s.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+        <TouchableOpacity onPress={() => { if (editing) setEditing(false); else router.back(); }} style={s.backRow} hitSlop={12}>
           <Ionicons name="chevron-back" size={20} color={colors.primary} />
-          <Text style={s.backText}>Back</Text>
+          <Text style={s.backText}>{editing ? "Cancel" : "Back"}</Text>
         </TouchableOpacity>
+        {!editing ? (
+          <View style={s.topActions}>
+            <TouchableOpacity onPress={() => setEditing(true)} hitSlop={10} style={s.topActionBtn}>
+              <Ionicons name="pencil" size={18} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleDelete} hitSlop={10} style={s.topActionBtn} disabled={deleting}>
+              {deleting ? (
+                <ActivityIndicator size="small" color="#EF4444" />
+              ) : (
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
       <ScrollView
         style={s.scroll}
@@ -105,15 +203,32 @@ export default function TransactionScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {/* Hero */}
-        <View style={s.hero}>
-          <MerchantLogo merchantName={detail.description ?? "Expense"} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
-          <Text style={s.heroTitle}>{detail.description ?? "Expense"}</Text>
-          <Text style={s.heroAmount}>{formatSplitCurrencyAmount(totalAmount, currency)}</Text>
-          {detail.groupName ? (
-            <Text style={s.heroGroup}>{detail.groupName}</Text>
-          ) : null}
-          <Text style={s.heroDate}>{formatDate(detail.date)}</Text>
-        </View>
+        {editing ? (
+          <View style={s.hero}>
+            <MerchantLogo merchantName={editDesc || "Expense"} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
+            <EditInput value={editDesc} onChangeText={setEditDesc} placeholder="Description" style={s.editDescInput} />
+            <EditInput
+              value={editAmount}
+              onChangeText={setEditAmount}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              style={s.editAmountInput}
+              prefix="$"
+            />
+            {detail.groupName ? <Text style={s.heroGroup}>{detail.groupName}</Text> : null}
+            <Text style={s.heroDate}>{formatDate(detail.date)}</Text>
+          </View>
+        ) : (
+          <View style={s.hero}>
+            <MerchantLogo merchantName={detail.description ?? "Expense"} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
+            <Text style={s.heroTitle}>{detail.description ?? "Expense"}</Text>
+            <Text style={s.heroAmount}>{formatSplitCurrencyAmount(totalAmount, currency)}</Text>
+            {detail.groupName ? (
+              <Text style={s.heroGroup}>{detail.groupName}</Text>
+            ) : null}
+            <Text style={s.heroDate}>{formatDate(detail.date)}</Text>
+          </View>
+        )}
 
         {/* Category badge */}
         {detail.category ? (
@@ -188,14 +303,52 @@ export default function TransactionScreen() {
           </>
         ) : null}
 
+        {editing ? (
+          <TouchableOpacity style={s.saveBtn} onPress={handleSaveEdit} activeOpacity={0.8}>
+            <Ionicons name="checkmark" size={18} color="#fff" />
+            <Text style={s.saveBtnText}>Save changes</Text>
+          </TouchableOpacity>
+        ) : null}
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function EditInput({
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  style,
+  prefix,
+}: {
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder: string;
+  keyboardType?: "default" | "decimal-pad";
+  style?: object;
+  prefix?: string;
+}) {
+  const { TextInput } = require("react-native");
+  return (
+    <View style={[s.editInputWrap, style]}>
+      {prefix ? <Text style={s.editPrefix}>{prefix}</Text> : null}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        keyboardType={keyboardType ?? "default"}
+        style={s.editInput}
+        placeholderTextColor="#9CA3AF"
+      />
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F3F2" },
-  topBar: { paddingHorizontal: 8, paddingTop: 4 },
+  topBar: { paddingHorizontal: 8, paddingTop: 4, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   backRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 8, paddingHorizontal: 8 },
   backText: { fontSize: 15, fontFamily: font.semibold, color: colors.primary },
   scroll: { flex: 1 },
@@ -259,4 +412,35 @@ const s = StyleSheet.create({
     borderWidth: 1,
   },
   avatarText: { fontFamily: font.bold },
+
+  topActions: { flexDirection: "row", gap: 12, alignItems: "center" },
+  topActionBtn: { padding: 8 },
+  editInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E3DBD8",
+    paddingHorizontal: 14,
+    height: 48,
+    marginTop: 10,
+    width: "100%",
+  },
+  editPrefix: { fontSize: 22, fontFamily: font.black, color: "#1F2328", marginRight: 4 },
+  editInput: { flex: 1, fontSize: 16, fontFamily: font.semibold, color: "#1F2328", paddingVertical: 0 },
+  editDescInput: {},
+  editAmountInput: {},
+  saveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  saveBtnText: { fontSize: 16, fontFamily: font.bold, color: "#fff" },
 });

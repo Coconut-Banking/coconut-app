@@ -1,5 +1,5 @@
 /**
- * Bottom tabs matching `MobileAppPage.tsx` / Figma: two equal columns + centered FAB that overlaps the bar.
+ * Bottom tabs: four tabs + centered FAB that overlaps the bar.
  */
 import { Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,12 +22,6 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const current = state.routes[state.index]?.name;
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "review", "tap-to-pay-education"]);
-
-  const triggerMediumHaptic = () => {
-    // Some iOS runtimes/simulators expose expo-haptics without native support.
-    // Swallow errors so tap actions continue to work.
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  };
 
   const popTabToRoot = (tabName: string) => {
     const route = state.routes.find((r) => r.name === tabName);
@@ -94,90 +88,84 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
         {
           paddingBottom: bottomPad,
           backgroundColor: theme.surface,
-          borderTopColor: theme.border,
         },
       ]}
     >
       <View style={styles.row}>
-          <Pressable
-            onPress={goIndex}
-            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: homeActive }}
-            accessibilityLabel="Home"
-          >
-            <Ionicons
-              name={homeActive ? "home" : "home-outline"}
-              size={22}
-              color={homeActive ? activeColor : inactiveColor}
-            />
-            <Text style={[styles.label, { color: homeActive ? activeColor : inactiveColor }]}>Home</Text>
-          </Pressable>
+        <Pressable
+          onPress={goIndex}
+          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: homeActive }}
+          accessibilityLabel="Home"
+        >
+          <Ionicons
+            name={homeActive ? "home" : "home-outline"}
+            size={22}
+            color={homeActive ? activeColor : inactiveColor}
+          />
+          <Text style={[styles.label, { color: homeActive ? activeColor : inactiveColor }]}>Home</Text>
+        </Pressable>
 
-          <Pressable
-            onPress={goFriends}
-            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: friendsActive }}
-            accessibilityLabel="Shared"
-          >
-            <Ionicons
-              name={friendsActive ? "git-network" : "git-network-outline"}
-              size={22}
-              color={friendsActive ? activeColor : inactiveColor}
-            />
-            <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Shared</Text>
-          </Pressable>
+        <Pressable
+          onPress={goFriends}
+          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: friendsActive }}
+          accessibilityLabel="Shared"
+        >
+          <Ionicons
+            name={friendsActive ? "people" : "people-outline"}
+            size={22}
+            color={friendsActive ? activeColor : inactiveColor}
+          />
+          <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Shared</Text>
+        </Pressable>
 
-          <View style={styles.centerSpacer} />
+        <View style={styles.centerSpacer} />
 
-          <Pressable
-            onPress={goActivity}
-            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: activityActive }}
-            accessibilityLabel="Activity"
-          >
-            <Ionicons
-              name={activityActive ? "time" : "time-outline"}
-              size={22}
-              color={activityActive ? activeColor : inactiveColor}
-            />
-            <Text style={[styles.label, { color: activityActive ? activeColor : inactiveColor }]}>Activity</Text>
-          </Pressable>
+        <Pressable
+          onPress={goActivity}
+          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: activityActive }}
+          accessibilityLabel="Activity"
+        >
+          <Ionicons
+            name={activityActive ? "time" : "time-outline"}
+            size={22}
+            color={activityActive ? activeColor : inactiveColor}
+          />
+          <Text style={[styles.label, { color: activityActive ? activeColor : inactiveColor }]}>Activity</Text>
+        </Pressable>
 
-          <Pressable
-            onPress={goAccount}
-            style={({ pressed }) => [styles.side, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: accountActive }}
-            accessibilityLabel="Account"
-          >
-            <Ionicons
-              name={accountActive ? "person" : "person-outline"}
-              size={22}
-              color={accountActive ? activeColor : inactiveColor}
-            />
-            <Text style={[styles.label, { color: accountActive ? activeColor : inactiveColor }]}>Account</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={goAccount}
+          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: accountActive }}
+          accessibilityLabel="Account"
+        >
+          <Ionicons
+            name={accountActive ? "person" : "person-outline"}
+            size={22}
+            color={accountActive ? activeColor : inactiveColor}
+          />
+          <Text style={[styles.label, { color: accountActive ? activeColor : inactiveColor }]}>Account</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.fabWrap} pointerEvents="box-none">
-        <View style={styles.fabHalo} pointerEvents="none" />
         <Pressable
-          onPress={() => {
-            openAddMenu();
-          }}
+          onPress={openAddMenu}
           style={({ pressed }) => [
             styles.fab,
-            { backgroundColor: "#1F2328", borderColor: "#FFFFFF" },
             pressed && styles.fabPressed,
           ]}
           accessibilityRole="button"
           accessibilityLabel="Add options"
         >
-          <View style={styles.fabGloss} pointerEvents="none" />
-          <Ionicons name="add" size={32} color="#FFFFFF" style={styles.fabIcon} />
+          <Ionicons name="add" size={30} color="#FFFFFF" />
         </Pressable>
       </View>
 
@@ -238,65 +226,55 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-/** Slightly larger than before; sits higher so it reads as floating above the bar. */
-const FAB = 58;
-/** Soft brand glow behind the button (reads as “lift” on dark UI). */
-const HALO = 10;
-const FAB_TOP = -(FAB / 2) - 10;
+const FAB = 54;
+const FAB_TOP = -(FAB / 2) - 4;
 
 const styles = StyleSheet.create({
   bar: {
     backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#E6DFDA",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.06)",
     paddingTop: 8,
     position: "relative",
     overflow: "visible",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 4,
   },
   row: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    minHeight: 52,
-    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "space-around",
+    minHeight: 48,
+    paddingHorizontal: 8,
   },
   side: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
-    paddingBottom: 4,
+    justifyContent: "center",
+    gap: 3,
+    paddingVertical: 4,
   },
   centerSpacer: {
-    width: 64,
+    width: FAB + 8,
     flexShrink: 0,
   },
   label: {
-    fontFamily: font.semibold,
+    fontFamily: font.medium,
     fontSize: fontSize["2xs"],
-    letterSpacing: 0.2,
-    color: "#8A9098",
+    letterSpacing: 0.1,
   },
   fabWrap: {
     position: "absolute",
     left: "50%",
-    top: FAB_TOP - HALO / 2,
-    width: FAB + HALO,
-    height: FAB + HALO,
-    marginLeft: -(FAB + HALO) / 2,
+    top: FAB_TOP,
+    width: FAB,
+    height: FAB,
+    marginLeft: -FAB / 2,
     alignItems: "center",
     justifyContent: "center",
-  },
-  fabHalo: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: (FAB + HALO) / 2,
-    backgroundColor: "rgba(31,35,40,0.08)",
-    transform: [{ scale: 1.06 }],
   },
   fab: {
     width: FAB,
@@ -304,41 +282,21 @@ const styles = StyleSheet.create({
     borderRadius: FAB / 2,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
     backgroundColor: "#1F2328",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.9)",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 12,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 8,
   },
   fabPressed: {
-    transform: [{ scale: 0.96 }],
-    opacity: 0.96,
-  },
-  /** Subtle top highlight — reads as a lit sphere, not a flat disk. */
-  fabGloss: {
-    position: "absolute",
-    top: 0,
-    left: "12%",
-    right: "12%",
-    height: "38%",
-    borderTopLeftRadius: FAB / 2,
-    borderTopRightRadius: FAB / 2,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  fabIcon: {
-    marginTop: 1,
-    /** Crisp + on the gradient fill */
-    textShadowColor: "rgba(0, 0, 0, 0.2)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    transform: [{ scale: 0.93 }],
   },
   fabOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   fabMenu: {
