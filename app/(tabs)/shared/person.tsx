@@ -75,7 +75,29 @@ export default function PersonScreen() {
   }, [refetch]);
 
   if (!detail) {
-    return <PersonSkeletonScreen />;
+    if (loading) return <PersonSkeletonScreen />;
+    return (
+      <SafeAreaView style={[s.container, { backgroundColor: colors.primaryLight }]} edges={["top"]}>
+        <View style={s.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+            <Ionicons name="chevron-back" size={20} color={colors.primary} />
+            <Text style={s.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name="alert-circle-outline" size={48} color="#999" style={{ marginBottom: 12 }} />
+          <Text style={{ fontFamily: font.semibold, fontSize: 17, color: colors.primary, marginBottom: 4 }}>
+            Friend not found
+          </Text>
+          <Text style={{ fontFamily: font.regular, fontSize: 14, color: "#999", textAlign: "center", paddingHorizontal: 40 }}>
+            This person may have been removed.
+          </Text>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 10 }}>
+            <Text style={{ fontFamily: font.semibold, fontSize: 15, color: "#fff" }}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   const EPS = 0.005;
