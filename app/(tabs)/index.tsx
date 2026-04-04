@@ -26,7 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useAuth, useUser } from "@clerk/expo";
+import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
 import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
@@ -44,7 +44,6 @@ import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme"
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { HomeSkeletonScreen } from "../../components/ui";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
-import { DEMO_HOME_DISPLAY_NAME, formatHomeGreetingLine } from "../../lib/home-greeting";
 import {
   buildLiveMatchedStrip,
   demoChargeToStripRow,
@@ -146,7 +145,6 @@ function filterOffsettingBankPairs(transactions: Transaction[]): Transaction[] {
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
-  const { user, isLoaded: userLoaded } = useUser();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
@@ -209,7 +207,7 @@ export default function BalancesPrototypeScreen() {
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
-  const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx, runFullSync } = useTransactions();
+  const { transactions, linked, loading: txLoading, runFullSync } = useTransactions();
   const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
   const initialHomeLoading =
     !isDemoOn &&
@@ -394,12 +392,6 @@ export default function BalancesPrototypeScreen() {
   const friendExpenseCount = (key: string) =>
     isDemoOn ? (demo.personDetails[key]?.activity.length ?? 0) : undefined;
 
-  const greetingName = isDemoOn
-    ? DEMO_HOME_DISPLAY_NAME
-    : userLoaded && isSignedIn
-      ? (user?.firstName?.trim() || user?.username?.trim() || "")
-      : "";
-  const greetingTitle = formatHomeGreetingLine(greetingName);
   if (initialHomeLoading) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -420,15 +412,6 @@ export default function BalancesPrototypeScreen() {
           )
         }
       >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
-              {greetingTitle}
-            </Text>
-            <Text style={[styles.titleSub, { color: theme.textTertiary }]}>Here&apos;s where you stand with friends and groups.</Text>
-          </View>
-        </View>
-
         <BalanceHero summary={summary} />
 
         {showContactsBanner ? (
@@ -519,124 +502,68 @@ export default function BalancesPrototypeScreen() {
               )}
             />
           </View>
-        ) : !useDemoBankUi ? (
+        ) : !useDemoBankUi && !txLoading && linked && stripRows.length > 0 ? (
           <View style={{ marginBottom: 18 }}>
             <View style={styles.sectionRow}>
               <SLabel>From your bank</SLabel>
-              {linked ? (
-                <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
-                  <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
+                <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
+              </TouchableOpacity>
             </View>
-            {null}
-            {txStatus === "api_unreachable" ? (
-              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
-                  Can&apos;t reach the Coconut API (got 404). Set EXPO_PUBLIC_API_URL in .env to your live Next.js URL
-                  (same host as the web app), restart Expo, and try again.
-                </Text>
-              </View>
-            ) : txStatus === "unauthorized" ? (
-              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>Sign in again to load bank charges.</Text>
-              </View>
-            ) : !linked ? (
-              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
-                  Connect your bank on the web to see charges. When a purchase matches an email receipt,
-                  it&apos;ll show here to split.
-                </Text>
-              </View>
-            ) : stripRows.length > 0 ? (
-              <FlatList
-                horizontal
-                data={stripRows}
-                keyExtractor={(t) => t.stripId}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                    onPress={() => { sfx.pop(); setSelectedStrip(item); }}
-                  >
-                    <View style={styles.bankTop}>
-                      <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                        <MerchantLogo
-                          merchantName={item.merchant}
-                          size={22}
-                          logoUrl={item.logoUrl}
-                          category={item.category}
-                          backgroundColor="transparent"
-                          borderColor="transparent"
-                        />
-                        {item.hasMailBadge ? (
-                          <View style={styles.mailDot}>
-                            <Ionicons name="mail" size={7} color="#fff" />
-                          </View>
-                        ) : null}
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setDismissedBank((d) => [...d, item.stripId])}
-                        hitSlop={8}
-                        style={{ padding: 2 }}
-                      >
-                        <Ionicons name="close" size={13} color={darkUI.labelMuted} />
-                      </TouchableOpacity>
+            <FlatList
+              horizontal
+              data={stripRows}
+              keyExtractor={(t) => t.stripId}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
+                  onPress={() => { sfx.pop(); setSelectedStrip(item); }}
+                >
+                  <View style={styles.bankTop}>
+                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                      <MerchantLogo
+                        merchantName={item.merchant}
+                        size={22}
+                        logoUrl={item.logoUrl}
+                        category={item.category}
+                        backgroundColor="transparent"
+                        borderColor="transparent"
+                      />
+                      {item.hasMailBadge ? (
+                        <View style={styles.mailDot}>
+                          <Ionicons name="mail" size={7} color="#fff" />
+                        </View>
+                      ) : null}
                     </View>
-                    <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
-                      {item.merchant}
-                    </Text>
-                    <Text
-                      style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
-                      numberOfLines={1}
+                    <TouchableOpacity
+                      onPress={() => setDismissedBank((d) => [...d, item.stripId])}
+                      hitSlop={8}
+                      style={{ padding: 2 }}
                     >
-                      {item.cardDetailLine}
+                      <Ionicons name="close" size={13} color={darkUI.labelMuted} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+                    {item.merchant}
+                  </Text>
+                  <Text
+                    style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+                    numberOfLines={1}
+                  >
+                    {item.cardDetailLine}
+                  </Text>
+                  <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
+                  <View style={styles.bankCta}>
+                    <Text style={styles.bankCtaText}>
+                      {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
                     </Text>
-                    <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
-                    <View style={styles.bankCta}>
-                      <Text style={styles.bankCtaText}>
-                        {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
-                      </Text>
-                    </View>
-                  </Pressable>
-                )}
-              />
-            ) : txLoading ? (
-              <View style={[styles.emptyBank, styles.emptyBankLoading]}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={[styles.emptyBankText, { marginTop: 10 }]}>Loading bank charges…</Text>
-              </View>
-            ) : (
-              <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>
-                  No bank charges yet. Pull to refresh after linking your bank.
-                </Text>
-              </View>
-            )}
+                  </View>
+                </Pressable>
+              )}
+            />
           </View>
-        ) : null}
-
-        {Platform.OS !== "web" ? (
-          <TouchableOpacity
-            style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => {
-              sfx.pop();
-              router.push("/(tabs)/tap-to-pay-education");
-            }}
-            activeOpacity={0.85}
-          >
-            <View style={[ttpStyles.iconWrap, { backgroundColor: theme.primaryLight }]}>
-              <TapToPayButtonIcon color={theme.primary} size={22} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[ttpStyles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
-              <Text style={[ttpStyles.sub, { color: theme.textTertiary }]}>
-                Learn how it works — collect from an expense or settlement
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
-          </TouchableOpacity>
         ) : null}
 
         <View style={{ marginBottom: 12 }}>
@@ -1325,9 +1252,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F5F3F2" },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 132 },
-  header: { marginBottom: 16, paddingTop: 4, flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  title: { fontSize: 42, lineHeight: 44, fontFamily: font.black, color: "#1F2328", letterSpacing: -1.2 },
-  titleSub: { fontSize: 13, fontFamily: font.medium, color: "#6B7280", marginTop: 2 },
   sLabel: {
     fontSize: 11,
     fontFamily: font.extrabold,
