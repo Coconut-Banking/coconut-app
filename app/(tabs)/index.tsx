@@ -21,6 +21,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  PanResponder,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,7 +34,7 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchContactsSummary } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -148,12 +149,22 @@ export default function BalancesPrototypeScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
+  usePrefetchContactsSummary();
 
   const summary = isDemoOn ? demo.summary : apiSummary;
   const [dismissedBank, setDismissedBank] = useState<string[]>([]);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
+  const dismissAllBankRef = useRef(() => {});
+  dismissAllBankRef.current = () => { setShowAllBank(false); setSearchMode("keyword"); askClear(); };
+  const allBankPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 4,
+      onPanResponderRelease: (_, g) => { if (g.dy > 40) dismissAllBankRef.current(); },
+    })
+  ).current;
   const [bankSearch, setBankSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
   const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
@@ -233,10 +244,6 @@ export default function BalancesPrototypeScreen() {
 
   const closeDetail = useCallback(() => {
     setSelectedStrip(null);
-    if (openedFromListRef.current) {
-      openedFromListRef.current = false;
-      setShowAllBank(true);
-    }
   }, []);
 
   useEffect(() => {
@@ -288,7 +295,7 @@ export default function BalancesPrototypeScreen() {
         const db = new Date(b.date || "").getTime();
         return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
       })
-      .slice(0, 120);
+      .slice(0, 500);
   }, [bankVisibleTransactions, linked]);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
@@ -329,7 +336,6 @@ export default function BalancesPrototypeScreen() {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      // runFullSync pulls fresh data from Plaid into the DB, then reloads the list (can take ~15–30s).
       await Promise.all([refetch(), runFullSync(false)]);
     } finally {
       setRefreshing(false);
@@ -705,7 +711,7 @@ export default function BalancesPrototypeScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={!!selectedStrip} transparent animationType="slide" onRequestClose={closeDetail}>
+      <Modal visible={!!selectedStrip && !showAllBank} transparent animationType="slide" onRequestClose={closeDetail}>
         <Pressable style={styles.sheetOverlay} onPress={closeDetail}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
@@ -933,7 +939,6 @@ export default function BalancesPrototypeScreen() {
                   style={styles.splitBtn}
                   onPress={() => {
                     const row = selectedStrip;
-                    openedFromListRef.current = false;
                     setSelectedStrip(null);
                     router.push({
                       pathname: "/(tabs)/add-expense",
@@ -965,12 +970,101 @@ export default function BalancesPrototypeScreen() {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} />
-          <Pressable style={[styles.sheet, { maxHeight: "92%" }]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHandle} />
+          <Pressable style={[styles.sheet, { maxHeight: "92%", flex: 1 }]} onPress={(e) => e.stopPropagation()}>
+            <View {...allBankPan.panHandlers} style={{ paddingVertical: 10, alignItems: "center" }}>
+              <View style={[styles.sheetHandle, { marginTop: 0, marginBottom: 0 }]} />
+            </View>
+            {selectedStrip && showAllBank ? (
+              <>
+                <View style={styles.allBankHead}>
+                  <TouchableOpacity onPress={closeDetail} hitSlop={8} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Ionicons name="chevron-back" size={18} color="#8A9098" />
+                    <Text style={[styles.sheetMerchant, { fontSize: 15, color: "#8A9098" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { setSelectedStrip(null); dismissAllBankRef.current(); }} hitSlop={8}>
+                    <Ionicons name="close" size={20} color="#8A9098" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  style={styles.sheetScroll}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.sheetHead}>
+                    <View style={styles.sheetEmoji}>
+                      <MerchantLogo
+                        merchantName={selectedStrip.merchant}
+                        size={32}
+                        logoUrl={selectedStrip.logoUrl}
+                        category={selectedStrip.category}
+                        backgroundColor="transparent"
+                        borderColor="transparent"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sheetMerchant}>{selectedStrip.merchant}</Text>
+                      <Text style={styles.sheetDate}>{selectedStrip.sheetDateLine}</Text>
+                    </View>
+                    <Text style={styles.sheetAmt}>${selectedStrip.amount.toFixed(2)}</Text>
+                  </View>
+                  {selectedStrip.showReceiptBox ? (
+                    <View style={styles.emailBox}>
+                      <View style={styles.emailRow}>
+                        <Ionicons name="mail-outline" size={12} color={prototype.blue} />
+                        <Text style={styles.emailLbl}>MATCHED FROM EMAIL RECEIPT</Text>
+                      </View>
+                    </View>
+                  ) : null}
+                  {selectedStrip.receiptId && itemizedReceipt ? (
+                    <>
+                      <Text style={styles.itemizedSectionTitle}>Details</Text>
+                      <ItemizedReceiptPreview
+                        loading={itemizedLoading}
+                        error={itemizedError}
+                        merchantName={itemizedReceipt.merchantName}
+                        items={itemizedReceipt.items}
+                        subtotal={itemizedReceipt.subtotal}
+                        tax={itemizedReceipt.tax}
+                        tip={itemizedReceipt.tip}
+                        extras={itemizedReceipt.extras}
+                        total={itemizedReceipt.total}
+                      />
+                    </>
+                  ) : itemizedLoading ? (
+                    <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                      <ActivityIndicator size="small" color="#8A9098" />
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    style={styles.splitBtn}
+                    onPress={() => {
+                      const row = selectedStrip;
+                      setSelectedStrip(null);
+                      dismissAllBankRef.current();
+                      router.push({
+                        pathname: "/(tabs)/add-expense",
+                        params: {
+                          prefillDesc: row.merchant,
+                          prefillAmount: row.amount.toFixed(2),
+                          prefillNonce: String(Date.now()),
+                          prefillPersonKey: "",
+                          prefillPersonName: "",
+                          prefillPersonType: "",
+                        },
+                      });
+                    }}
+                  >
+                    <Ionicons name="git-branch-outline" size={18} color="#fff" />
+                    <Text style={styles.splitBtnText}>Split this charge</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </>
+            ) : (
+            <>
             <View style={styles.allBankHead}>
-              <Text style={styles.sheetMerchant}>Bank charges</Text>
-              <TouchableOpacity onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} hitSlop={8}>
-                <Ionicons name="close" size={18} color={darkUI.labelMuted} />
+              <Text style={styles.sheetMerchant}>Transactions</Text>
+              <TouchableOpacity onPress={() => { dismissAllBankRef.current(); }} hitSlop={8}>
+                <Ionicons name="close" size={20} color="#8A9098" />
               </TouchableOpacity>
             </View>
 
@@ -990,18 +1084,18 @@ export default function BalancesPrototypeScreen() {
                   }}
                   style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
                 >
-                  <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : darkUI.labelMuted} />
+                  <Ionicons name={icon as any} size={13} color={searchMode === mode ? "#fff" : "#8A9098"} />
                   <Text style={[searchStyles.tabText, searchMode === mode && searchStyles.tabTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Search input */}
-            <View style={[styles.sheetSearchWrap, searchMode === "natural" && bankSearch.trim() ? { borderColor: "#A78BFA60" } : {}]}>
+            <View style={[styles.sheetSearchWrap, searchMode === "natural" && bankSearch.trim() ? { borderColor: "#7C3AED40" } : {}]}>
               <Ionicons
                 name={searchMode === "natural" ? "sparkles" : "search"}
                 size={16}
-                color={searchMode === "natural" && bankSearch.trim() ? "#A78BFA" : darkUI.labelMuted}
+                color={searchMode === "natural" && bankSearch.trim() ? "#7C3AED" : "#B0B5BC"}
               />
               <TextInput
                 value={bankSearch}
@@ -1025,19 +1119,19 @@ export default function BalancesPrototypeScreen() {
                   }
                 }}
                 placeholder={searchMode === "natural" ? "Ask in plain English..." : "Search by name, amount, etc."}
-                placeholderTextColor={darkUI.labelMuted}
+                placeholderTextColor="#B0B5BC"
                 style={styles.sheetSearchInput}
                 returnKeyType={searchMode === "natural" ? "search" : "done"}
               />
               {bankSearch.length > 0 && (
                 <TouchableOpacity onPress={() => { setBankSearch(""); askClear(); }} hitSlop={8}>
-                  <Ionicons name="close-circle" size={16} color={darkUI.labelMuted} />
+                  <Ionicons name="close-circle" size={16} color="#B0B5BC" />
                 </TouchableOpacity>
               )}
             </View>
 
             {/* Date filter presets */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ gap: 6 }}>
               {([["all", "All time"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["receipts", "Email Receipts"]] as const).map(([preset, label]) => (
                 <TouchableOpacity
                   key={preset}
@@ -1049,7 +1143,7 @@ export default function BalancesPrototypeScreen() {
                   }}
                   style={[searchStyles.dateChip, datePreset === preset && searchStyles.dateChipActive]}
                 >
-                  {preset === "receipts" ? <Ionicons name="mail-outline" size={13} color={datePreset === "receipts" ? "#fff" : "#7a7d80"} style={{ marginRight: 4 }} /> : null}
+                  {preset === "receipts" ? <Ionicons name="mail-outline" size={13} color={datePreset === "receipts" ? "#fff" : "#8A9098"} style={{ marginRight: 4 }} /> : null}
                   <Text style={[searchStyles.dateChipText, datePreset === preset && searchStyles.dateChipTextActive]}>{label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1070,7 +1164,7 @@ export default function BalancesPrototypeScreen() {
 
             {/* Calendar picker for Custom */}
             {datePreset === "custom" && showCalendar ? (
-              <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+              <View style={{ marginBottom: 12 }}>
                 <CalendarPicker
                   startDate={customDateStart}
                   endDate={customDateEnd}
@@ -1093,7 +1187,7 @@ export default function BalancesPrototypeScreen() {
             {/* Ask mode: AI answer banner */}
             {searchMode === "natural" && askResults?.answer && !askLoading ? (
               <View style={searchStyles.answerBanner}>
-                <Ionicons name="sparkles" size={18} color="#A78BFA" />
+                <Ionicons name="sparkles" size={18} color="#7C3AED" />
                 <Text style={searchStyles.answerText}>{askResults.answer}</Text>
               </View>
             ) : null}
@@ -1101,92 +1195,21 @@ export default function BalancesPrototypeScreen() {
             {/* Ask mode: loading */}
             {searchMode === "natural" && askLoading ? (
               <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                <ActivityIndicator size="small" color="#A78BFA" />
-                <Text style={[searchStyles.loadingText, { color: darkUI.labelMuted }]}>Searching...</Text>
+                <ActivityIndicator size="small" color="#7C3AED" />
+                <Text style={[searchStyles.loadingText, { color: "#8A9098" }]}>Searching...</Text>
               </View>
             ) : null}
 
             {/* Ask mode: error */}
             {searchMode === "natural" && askError && !askLoading ? (
               <View style={{ alignItems: "center", paddingVertical: 24 }}>
-                <Text style={{ color: "#F87171", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
+                <Text style={{ color: "#DC2626", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
               </View>
             ) : null}
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {searchMode === "keyword" ? (
-                filteredAllBankRows.length === 0 ? (
-                  <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No charges found.</Text>
-                  </View>
-                ) : (
-                  <View style={styles.groupedCard}>
-                    {filteredAllBankRows.map((tx, i) => (
-                      <View key={tx.id}>
-                        <TouchableOpacity
-                          style={styles.friendRow}
-                          activeOpacity={0.75}
-                          onPress={() => {
-                            openedFromListRef.current = true;
-                            setShowAllBank(false);
-                            sfx.pop();
-                            setSelectedStrip(txToSheetRow(tx));
-                          }}
-                        >
-                          <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                            <MerchantLogo
-                              merchantName={tx.merchant || tx.rawDescription || "Purchase"}
-                              size={22}
-                              logoUrl={tx.logoUrl}
-                              category={tx.category}
-                              backgroundColor="transparent"
-                              borderColor="transparent"
-                            />
-                          </View>
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={styles.friendName} numberOfLines={1}>
-                              {tx.merchant || tx.rawDescription || "Purchase"}
-                            </Text>
-                            <Text style={styles.friendMeta} numberOfLines={1}>
-                              {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
-                            </Text>
-                          </View>
-                          <Text style={[styles.friendAmt, styles.balAmtOut]}>
-                            ${Math.abs(Number(tx.amount)).toFixed(2)}
-                          </Text>
-                          {!tx.alreadySplit ? (
-                            <TouchableOpacity
-                              style={styles.bankSplitPill}
-                              hitSlop={8}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                sfx.toggle();
-                                setShowAllBank(false);
-                                router.push({
-                                  pathname: "/(tabs)/add-expense",
-                                  params: {
-                                    prefillDesc: tx.merchant || tx.rawDescription || "",
-                                    prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
-                                    prefillNonce: String(Date.now()),
-                                    prefillPersonKey: "",
-                                    prefillPersonName: "",
-                                    prefillPersonType: "",
-                                  },
-                                });
-                              }}
-                            >
-                              <Text style={styles.bankSplitPillText}>Split</Text>
-                            </TouchableOpacity>
-                          ) : null}
-                        </TouchableOpacity>
-                        {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
-                      </View>
-                    ))}
-                  </View>
-                )
-              ) : (
-                /* Ask mode: API search results */
-                !askLoading && !askError && askResults ? (
+            {searchMode === "natural" && (askLoading || askResults || askError) ? (
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                {!askLoading && !askError && askResults ? (
                   askResults.transactions.length === 0 ? (
                     <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                       <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No transactions found. Try a different question.</Text>
@@ -1225,22 +1248,85 @@ export default function BalancesPrototypeScreen() {
                       </View>
                     </>
                   )
-                ) : !askLoading && !askError && !askResults && bankSearch.trim() === "" ? (
-                  <View style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 24 }}>
-                    <Ionicons name="sparkles-outline" size={36} color={darkUI.labelMuted} />
-                    <Text style={[styles.emptyBankText, { color: darkUI.labelMuted, marginTop: 10, textAlign: "center" }]}>
-                      Ask about your transactions
-                    </Text>
-                    <Text style={{ color: darkUI.labelMuted, fontSize: 12, fontFamily: font.regular, textAlign: "center", marginTop: 6 }}>
-                      Try "how much on food this month" or "Uber rides last week"
-                    </Text>
-                  </View>
-                ) : null
-              )}
-            </ScrollView>
-            <TouchableOpacity style={styles.sheetClose} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
-              <Text style={styles.sheetCloseText}>Close</Text>
-            </TouchableOpacity>
+                ) : null}
+              </ScrollView>
+            ) : (
+              filteredAllBankRows.length === 0 ? (
+                <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border, marginBottom: 16 }]}>
+                  <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No charges found.</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredAllBankRows}
+                  keyExtractor={(item) => item.id}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  style={{ flex: 1 }}
+                  initialNumToRender={15}
+                  maxToRenderPerBatch={20}
+                  windowSize={7}
+                  ItemSeparatorComponent={() => <View style={styles.rowSep} />}
+                  renderItem={({ item: tx }) => (
+                    <TouchableOpacity
+                      style={styles.friendRow}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        sfx.pop();
+                        setSelectedStrip(txToSheetRow(tx));
+                      }}
+                    >
+                      <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                        <MerchantLogo
+                          merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+                          size={22}
+                          logoUrl={tx.logoUrl}
+                          category={tx.category}
+                          backgroundColor="transparent"
+                          borderColor="transparent"
+                        />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.friendName} numberOfLines={1}>
+                          {tx.merchant || tx.rawDescription || "Purchase"}
+                        </Text>
+                        <Text style={styles.friendMeta} numberOfLines={1}>
+                          {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
+                        </Text>
+                      </View>
+                      <Text style={[styles.friendAmt, styles.balAmtOut]}>
+                        ${Math.abs(Number(tx.amount)).toFixed(2)}
+                      </Text>
+                      {!tx.alreadySplit ? (
+                        <TouchableOpacity
+                          style={styles.bankSplitPill}
+                          hitSlop={8}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            sfx.toggle();
+                            setShowAllBank(false);
+                            router.push({
+                              pathname: "/(tabs)/add-expense",
+                              params: {
+                                prefillDesc: tx.merchant || tx.rawDescription || "",
+                                prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
+                                prefillNonce: String(Date.now()),
+                                prefillPersonKey: "",
+                                prefillPersonName: "",
+                                prefillPersonType: "",
+                              },
+                            });
+                          }}
+                        >
+                          <Text style={styles.bankSplitPillText}>Split</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </TouchableOpacity>
+                  )}
+                />
+              )
+            )}
+            </>
+            )}
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
@@ -1706,10 +1792,9 @@ const styles = StyleSheet.create({
 const searchStyles = StyleSheet.create({
   tabRow: {
     flexDirection: "row",
-    marginHorizontal: 16,
     marginBottom: 10,
-    backgroundColor: "#2a2d2e",
-    borderRadius: 14,
+    backgroundColor: "#F0EDEA",
+    borderRadius: 12,
     padding: 3,
     gap: 3,
   },
@@ -1720,16 +1805,16 @@ const searchStyles = StyleSheet.create({
     justifyContent: "center",
     gap: 5,
     paddingVertical: 8,
-    borderRadius: 11,
+    borderRadius: 10,
   },
   tabActive: {
-    backgroundColor: "#3d4043",
+    backgroundColor: "#1F2328",
   },
   tabText: {
     fontSize: 12,
     fontFamily: font.bold,
     fontWeight: "700",
-    color: "#7a7d80",
+    color: "#8A9098",
   },
   tabTextActive: {
     color: "#fff",
@@ -1741,18 +1826,18 @@ const searchStyles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3d4043",
-    backgroundColor: "#2a2d2e",
+    borderColor: "#E3DBD8",
+    backgroundColor: "#FFFFFF",
   },
   dateChipActive: {
-    borderColor: "#ffffff40",
-    backgroundColor: "#3d4043",
+    borderColor: "#1F2328",
+    backgroundColor: "#1F2328",
   },
   dateChipText: {
     fontSize: 11,
     fontFamily: font.bold,
     fontWeight: "700",
-    color: "#7a7d80",
+    color: "#8A9098",
   },
   dateChipTextActive: {
     color: "#fff",
@@ -1761,19 +1846,18 @@ const searchStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    marginHorizontal: 16,
     marginBottom: 12,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: "#1E1040",
+    backgroundColor: "#F3F0FF",
     borderWidth: 1,
-    borderColor: "#7C3AED40",
+    borderColor: "#DDD6FE",
   },
   answerText: {
     flex: 1,
     fontSize: 15,
     fontFamily: font.semibold,
-    color: "#fff",
+    color: "#4C1D95",
     lineHeight: 22,
     letterSpacing: -0.1,
   },
@@ -1785,7 +1869,7 @@ const searchStyles = StyleSheet.create({
   resultCount: {
     fontSize: 11,
     fontFamily: font.semibold,
-    color: "#7a7d80",
+    color: "#8A9098",
     paddingHorizontal: 16,
     paddingBottom: 6,
     textTransform: "uppercase",
@@ -1799,7 +1883,7 @@ const searchStyles = StyleSheet.create({
     alignItems: "center",
   },
   applyBtnDisabled: {
-    backgroundColor: "#3d4043",
+    backgroundColor: "#D8D4CF",
   },
   applyBtnText: {
     fontSize: 14,

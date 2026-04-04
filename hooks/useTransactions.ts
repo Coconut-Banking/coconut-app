@@ -57,8 +57,7 @@ export function useTransactions() {
   const fetchData = useCallback((silent = false): Promise<void> => {
     const isFirstLoad = !hasShownInitialLoad.current;
     if (__DEV__) console.log("[pipeline:tx] 1. start", { silent, isFirstLoad });
-    setStatus("ok");
-    setLinked(false);
+    if (!silent) setStatus("ok");
     if (!silent && isFirstLoad) setLoading(true);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -191,17 +190,19 @@ export function useTransactions() {
       });
   }, [apiFetch]);
 
-  /** Full sync with Plaid (POST = institution refresh + sync, then GET). Slow (~15–30s); pull-to-refresh. */
+  /** Show cached data immediately, then kick off Plaid sync in the background. */
   const runFullSync = useCallback(
     async (silent = true) => {
       await fetchData(silent);
-      try {
-        await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
-        lastPlaidPushAtRef.current = Date.now();
-        fetchData(true);
-      } catch {
-        // Sync may fail; cached data is already displayed
-      }
+      void (async () => {
+        try {
+          await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+          lastPlaidPushAtRef.current = Date.now();
+          fetchData(true);
+        } catch {
+          // Sync may fail; cached data is already displayed
+        }
+      })();
     },
     [apiFetch, fetchData]
   );

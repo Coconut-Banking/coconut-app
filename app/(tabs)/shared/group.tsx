@@ -93,6 +93,7 @@ export default function GroupScreen() {
   const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
   const [pendingP2PSuggestion, setPendingP2PSuggestion] = useState<{ fromMemberId: string; toMemberId: string; amount: number; currency: string } | null>(null);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [membersExpanded, setMembersExpanded] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -750,70 +751,87 @@ export default function GroupScreen() {
           </View>
         ) : null}
 
-        <Text style={[s.section, { color: theme.textTertiary, marginTop: 4 }]}>Members</Text>
-        <View style={[s.card, s.membersCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-          {detail.members.map((m, i) => {
-            const isOwnerMember = memberIsGroupOwner(m);
-            const isMe = Boolean(userId && m.user_id === userId);
-            const showRemove =
-              detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
-            const showEditHandles = detail.isOwner && !isDemoOn && !isArchived;
-            return (
-              <View
-                key={m.id}
-                style={[
-                  s.memberRow,
-                  i < detail.members.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.borderLight },
-                ]}
-              >
-                <MemberAvatar name={m.display_name} imageUrl={m.image_url} />
-                <View style={s.memberRowText}>
-                  <Text style={[s.memberRowName, { color: theme.text }]} numberOfLines={1}>
-                    {m.display_name}
-                    {isMe ? " (you)" : ""}
-                    {isOwnerMember ? " · Owner" : ""}
-                  </Text>
-                  {(m.venmo_username || m.cashapp_cashtag || m.paypal_username) ? (
-                    <Text style={[s.memberRowHandles, { color: theme.textQuaternary }]} numberOfLines={2}>
-                      {[m.venmo_username ? `Venmo @${m.venmo_username}` : null, m.cashapp_cashtag ? `Cash ${m.cashapp_cashtag.startsWith("$") ? m.cashapp_cashtag : `$${m.cashapp_cashtag}`}` : null, m.paypal_username ? `PayPal ${m.paypal_username}` : null]
-                        .filter(Boolean)
-                        .join(" · ")}
+        <TouchableOpacity
+          style={s.membersToggle}
+          onPress={() => setMembersExpanded((p) => !p)}
+          activeOpacity={0.65}
+        >
+          <Text style={[s.section, { color: theme.textTertiary, marginTop: 4, marginBottom: 0 }]}>
+            Members · {detail.members.length}
+          </Text>
+          <Ionicons
+            name={membersExpanded ? "chevron-up" : "chevron-down"}
+            size={16}
+            color={theme.textTertiary}
+            style={{ marginTop: 4 }}
+          />
+        </TouchableOpacity>
+
+        {membersExpanded && (
+          <View style={[s.card, s.membersCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            {detail.members.map((m, i) => {
+              const isOwnerMember = memberIsGroupOwner(m);
+              const isMe = Boolean(userId && m.user_id === userId);
+              const showRemove =
+                detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
+              const showEditHandles = detail.isOwner && !isDemoOn && !isArchived;
+              return (
+                <View
+                  key={m.id}
+                  style={[
+                    s.memberRow,
+                    i < detail.members.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.borderLight },
+                  ]}
+                >
+                  <MemberAvatar name={m.display_name} imageUrl={m.image_url} />
+                  <View style={s.memberRowText}>
+                    <Text style={[s.memberRowName, { color: theme.text }]} numberOfLines={1}>
+                      {m.display_name}
+                      {isMe ? " (you)" : ""}
+                      {isOwnerMember ? " · Owner" : ""}
                     </Text>
-                  ) : null}
-                </View>
-                <View style={s.memberRowActions}>
-                  {showEditHandles ? (
-                    <TouchableOpacity
-                      onPress={() => openEditHandles(m)}
-                      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-                      accessibilityLabel={`Edit payment handles for ${m.display_name}`}
-                    >
-                      <Ionicons name="wallet-outline" size={20} color={theme.textTertiary} />
-                    </TouchableOpacity>
-                  ) : null}
-                  {showRemove ? (
-                    removingMemberId === m.id ? (
-                      <ActivityIndicator size="small" color={theme.primary} />
-                    ) : (
+                    {(m.venmo_username || m.cashapp_cashtag || m.paypal_username) ? (
+                      <Text style={[s.memberRowHandles, { color: theme.textQuaternary }]} numberOfLines={2}>
+                        {[m.venmo_username ? `Venmo @${m.venmo_username}` : null, m.cashapp_cashtag ? `Cash ${m.cashapp_cashtag.startsWith("$") ? m.cashapp_cashtag : `$${m.cashapp_cashtag}`}` : null, m.paypal_username ? `PayPal ${m.paypal_username}` : null]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={s.memberRowActions}>
+                    {showEditHandles ? (
                       <TouchableOpacity
-                        onPress={() => {
-                          sfx.pop();
-                          confirmRemoveMember(m);
-                        }}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                        accessibilityLabel={`Remove ${m.display_name}`}
+                        onPress={() => openEditHandles(m)}
+                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                        accessibilityLabel={`Edit payment handles for ${m.display_name}`}
                       >
-                        <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                        <Ionicons name="wallet-outline" size={20} color={theme.textTertiary} />
                       </TouchableOpacity>
-                    )
-                  ) : !showEditHandles ? (
-                    <View style={{ width: 22 }} />
-                  ) : null}
+                    ) : null}
+                    {showRemove ? (
+                      removingMemberId === m.id ? (
+                        <ActivityIndicator size="small" color={theme.primary} />
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => {
+                            sfx.pop();
+                            confirmRemoveMember(m);
+                          }}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          accessibilityLabel={`Remove ${m.display_name}`}
+                        >
+                          <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                        </TouchableOpacity>
+                      )
+                    ) : !showEditHandles ? (
+                      <View style={{ width: 22 }} />
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
 
         {isArchived ? (
           <View
@@ -1389,6 +1407,7 @@ const s = StyleSheet.create({
   groupIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center", marginBottom: 12 },
   groupNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   groupName: { fontSize: 24, fontWeight: "800", fontFamily: font.bold, color: colors.text, textAlign: "center" },
+  membersToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 4 },
   membersCard: { marginBottom: 4 },
   memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, gap: 12 },
   memberRowText: { flex: 1, minWidth: 0 },

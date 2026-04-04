@@ -39,6 +39,18 @@ export interface GroupsSummary {
   totalsByCurrency: CurrencyTotalsRow[];
 }
 
+/**
+ * Module-level cache keyed by summary path. Survives across component
+ * mount/unmount so navigating to the Shared tab after the home tab has
+ * already fetched doesn't wait on AsyncStorage.
+ */
+const _memSummary = new Map<string, GroupsSummary>();
+
+/** Clear the in-memory summary cache (call alongside invalidateApiCache). */
+export function clearMemSummaryCache() {
+  _memSummary.clear();
+}
+
 export interface GroupMember {
   id: string;
   user_id: string | null;
@@ -144,8 +156,10 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   const contacts = options?.contacts === true;
   const summaryPath = contacts ? "/api/groups/summary?contacts=1" : "/api/groups/summary";
   const apiFetch = useApiFetch();
-  const [summary, setSummary] = useState<GroupsSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  const mem = _memSummary.get(summaryPath) ?? null;
+  const [summary, setSummary] = useState<GroupsSummary | null>(mem);
+  const [loading, setLoading] = useState(!mem);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
 
@@ -169,6 +183,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
             const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
             if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
           }
+          _memSummary.set(summaryPath, data);
           setSummary(data);
         } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
           if (retryCount.current < 5) {
@@ -192,11 +207,25 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
     retryCount.current = 0;
     let cancelled = false;
 
+    // If we already have in-memory data (from prefetch or previous mount),
+    // skip the AsyncStorage read and go straight to network refresh.
+    if (_memSummary.has(summaryPath)) {
+      const cached = _memSummary.get(summaryPath)!;
+      setSummary(cached);
+      setLoading(false);
+      fetchSummary(false);
+      return () => {
+        cancelled = true;
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+      };
+    }
+
     (async () => {
       const cached = await getPersistedResponse(summaryPath);
       if (cached && !cancelled && !summary) {
         try {
           const data = JSON.parse(cached.body);
+          _memSummary.set(summaryPath, data);
           setSummary(data);
           setLoading(false);
         } catch { /* corrupt cache */ }
@@ -212,6 +241,34 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   }, [fetchSummary]);
 
   return { summary, loading, refetch: fetchSummary };
+}
+
+/**
+ * Call from the home tab (or any early screen) to warm the contacts summary
+ * cache in the background. When the user later navigates to Shared, the hook
+ * picks up _memSummary instantly — no spinner.
+ */
+export function usePrefetchContactsSummary() {
+  const apiFetch = useApiFetch();
+  useEffect(() => {
+    const path = "/api/groups/summary?contacts=1";
+    if (_memSummary.has(path)) return;
+    (async () => {
+      try {
+        const persisted = await getPersistedResponse(path);
+        if (persisted) {
+          try {
+            _memSummary.set(path, JSON.parse(persisted.body));
+          } catch { /* corrupt */ }
+        }
+        const res = await apiFetch(path);
+        if (res.ok) {
+          const data = await res.json();
+          _memSummary.set(path, data);
+        }
+      } catch { /* best-effort */ }
+    })();
+  }, [apiFetch]);
 }
 
 export function useGroupDetail(id: string | null) {
@@ -236,9 +293,8 @@ export function useGroupDetail(id: string | null) {
           const data = await res.json();
           setDetail(data);
           hasDetail.current = true;
-        } else if (!silent) {
+        } else if (!hasDetail.current) {
           setDetail(null);
-          hasDetail.current = false;
         }
       } finally {
         setLoading(false);
@@ -285,9 +341,8 @@ export function usePersonDetail(key: string | null) {
           const data = await res.json();
           setDetail(data);
           hasDetail.current = true;
-        } else if (!silent) {
+        } else if (!hasDetail.current) {
           setDetail(null);
-          hasDetail.current = false;
         }
       } finally {
         setLoading(false);

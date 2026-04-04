@@ -58,8 +58,9 @@ function AuthSwitch() {
   const { isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
   const { isDemoOn, demoModeHydrated } = useDemoMode();
-  const { setupComplete, setupHydrated } = useSetup();
+  const { setupComplete, setupHydrated, markSetupComplete } = useSetup();
   const [forceSignOutDone, setForceSignOutDone] = useState(false);
+  const apiFetch = useApiFetch();
   const checkedStore = useRef(false);
 
   useEffect(() => {
@@ -109,6 +110,32 @@ function AuthSwitch() {
     })();
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn, setupHydrated]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !setupHydrated || setupComplete || isDemoOn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/plaid/status");
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.connected || data.items?.length > 0) {
+            markSetupComplete();
+          }
+        }
+        const groupsRes = await apiFetch("/api/groups/summary");
+        if (cancelled) return;
+        if (groupsRes.ok) {
+          const gData = await groupsRes.json();
+          if ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0) {
+            markSetupComplete();
+          }
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [isLoaded, isSignedIn, setupHydrated, setupComplete, isDemoOn, apiFetch, markSetupComplete]);
 
   if (SKIP_AUTH) {
     return (

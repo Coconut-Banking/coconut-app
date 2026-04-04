@@ -27,7 +27,7 @@ import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
-import { useGroupsSummary } from "../../../hooks/useGroups";
+import { useGroupsSummary, clearMemSummaryCache } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { SharedSkeletonScreen } from "../../../components/ui";
 import { useDemoData } from "../../../lib/demo-context";
@@ -104,6 +104,7 @@ export default function SharedIndex() {
   const [optimisticFriends, setOptimisticFriends] = useState<
     Array<{ key: string; displayName: string; balance: number; balances?: { currency: string; amount: number }[] }>
   >([]);
+  const [localGroupImages, setLocalGroupImages] = useState<Record<string, string>>({});
   const [showArchived, setShowArchived] = useState(false);
   const [archivedGroups, setArchivedGroups] = useState<Array<{ id: string; name: string; memberCount: number }>>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
@@ -233,6 +234,7 @@ export default function SharedIndex() {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
       if (!isDemoOn) {
         invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
         setOptimisticGroups([]);
         setOptimisticFriends([]);
         setFallbackGroups([]);
@@ -252,14 +254,36 @@ export default function SharedIndex() {
     if (!isDemoOn) void onRefresh();
   }, [isDemoOn, onRefresh]);
 
-  // Once the API returns, clear all optimistic data — the API is the source of truth
+  // Once the API returns, prune optimistic entries that now exist in the real summary
   useEffect(() => {
     if (!realSummary || isDemoOn) return;
-    if (optimisticGroups.length > 0 || optimisticFriends.length > 0) {
-      setOptimisticGroups([]);
+    const apiGroupIds = new Set((realSummary.groups ?? []).map((g: { id: string }) => g.id));
+    const remainingGroups = optimisticGroups.filter((og) => !apiGroupIds.has(og.id));
+    const changed = remainingGroups.length !== optimisticGroups.length || optimisticFriends.length > 0;
+    if (changed) {
+      setOptimisticGroups(remainingGroups);
       setOptimisticFriends([]);
-      void AsyncStorage.removeItem(optimisticStoreKey).catch(() => {});
+      if (remainingGroups.length === 0) {
+        void AsyncStorage.removeItem(optimisticStoreKey).catch(() => {});
+      } else {
+        void persistOptimistic(remainingGroups, []);
+      }
     }
+    // Clean up local images for groups that now have an image from the API
+    const apiGroupsWithImages = new Set(
+      (realSummary.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl).map((g: { id: string }) => g.id)
+    );
+    setLocalGroupImages((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const id of Object.keys(next)) {
+        if (apiGroupsWithImages.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realSummary]);
 
@@ -343,41 +367,50 @@ export default function SharedIndex() {
         Alert.alert("Error", data?.error ?? "Could not create group");
         return;
       }
-      setShowCreate(false);
-      setGroupName("");
-      setGroupType("trip");
-      const capturedBase64 = groupImageBase64;
-      setGroupImage(null);
-      setGroupImageBase64(null);
 
+      const capturedBase64 = groupImageBase64;
       let imageDataUri: string | null = null;
       if (capturedBase64) {
         imageDataUri = `data:image/jpeg;base64,${capturedBase64}`;
-        try {
-          const uploadRes = await apiFetch(`/api/groups/${data.id}/image`, {
-            method: "POST",
-            body: { image: imageDataUri } as object,
-          });
-          if (!uploadRes.ok) {
-            const err = await uploadRes.json().catch(() => ({}));
-            console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
-            toast.show("Group created but photo failed to save");
-          }
-        } catch (e) {
-          console.warn("[createGroup] image upload error:", e);
-          toast.show("Group created but photo failed to save");
-        }
+        setLocalGroupImages((prev) => ({ ...prev, [data.id]: imageDataUri! }));
       }
 
-      await refetch(true);
-      await onRefresh();
+      setShowCreate(false);
+      setGroupName("");
+      setGroupType("trip");
+      setGroupImage(null);
+      setGroupImageBase64(null);
+
       const nextGroups = [{ id: data.id, name, memberCount: 1, groupType, imageUrl: imageDataUri }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
-      await persistOptimistic(nextGroups, optimisticFriends);
+      void persistOptimistic(nextGroups, optimisticFriends);
+
       router.push({
         pathname: "/(tabs)/shared/group",
         params: { id: data.id, ...(imageDataUri ? { localImage: imageDataUri } : {}) },
       });
+
+      // Background: upload image then refresh
+      (async () => {
+        if (imageDataUri) {
+          try {
+            const uploadRes = await apiFetch(`/api/groups/${data.id}/image`, {
+              method: "POST",
+              body: { image: imageDataUri } as object,
+            });
+            if (!uploadRes.ok) {
+              const err = await uploadRes.json().catch(() => ({}));
+              console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
+            }
+          } catch (e) {
+            console.warn("[createGroup] image upload error:", e);
+          }
+        }
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
+        await refetch(true);
+        DeviceEventEmitter.emit("groups-updated");
+      })();
     } finally {
       setCreating(false);
     }
@@ -502,7 +535,7 @@ export default function SharedIndex() {
     if (aTime !== bTime) return bTime > aTime ? 1 : -1;
     return a.displayName.localeCompare(b.displayName);
   });
-  const groupsFromApi =
+  const groupsBase =
     !isDemoOn && realSummary != null
       ? summaryGroups
       : mergedFallbackGroups.map((g) => ({
@@ -514,6 +547,18 @@ export default function SharedIndex() {
           myBalances: [] as { currency: string; amount: number }[],
           lastActivityAt: new Date().toISOString(),
         }));
+  const optimisticNotInApi = optimisticGroups
+    .filter((og) => !groupsBase.some((g) => g.id === og.id))
+    .map((og) => ({
+      id: og.id,
+      name: og.name,
+      memberCount: og.memberCount,
+      imageUrl: og.imageUrl ?? null as string | null | undefined,
+      myBalance: 0,
+      myBalances: [] as { currency: string; amount: number }[],
+      lastActivityAt: new Date().toISOString(),
+    }));
+  const groupsFromApi = [...optimisticNotInApi, ...groupsBase];
   const groupsMerged = !isDemoOn && realSummary != null ? groupsFromApi : isDemoOn ? summaryGroups : groupsFromApi;
   const groupsById = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
   // Deduplicate by name — prefer the group with a nonzero balance or more members
@@ -538,11 +583,16 @@ export default function SharedIndex() {
     return a.name.localeCompare(b.name);
   });
   const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
-  const visibleGroups = groups.filter((g) => {
-    const groupName = g.name.trim().toLowerCase();
-    if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
-    return true;
-  });
+  const visibleGroups = groups
+    .filter((g) => {
+      const groupName = g.name.trim().toLowerCase();
+      if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
+      return true;
+    })
+    .map((g) => ({
+      ...g,
+      imageUrl: g.imageUrl || localGroupImages[g.id] || null,
+    }));
 
   if (loading && !summary) return <SharedSkeletonScreen />;
 

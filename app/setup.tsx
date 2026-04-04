@@ -33,6 +33,7 @@ import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useUser } from "@clerk/expo";
 import { useTheme } from "../lib/theme-context";
 import { useApiFetch, invalidateApiCache } from "../lib/api";
+import { clearMemSummaryCache } from "../hooks/useGroups";
 import { useSetup } from "../lib/setup-context";
 import { useToast } from "../components/Toast";
 import { sendEmailInvite, shareInvite, type InviteLink } from "../lib/invite";
@@ -95,6 +96,7 @@ export default function SetupScreen() {
         invalidateApiCache("/api/splitwise/status");
         invalidateApiCache("/api/gmail/status");
         invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
         try {
           const allKeys = await AsyncStorage.getAllKeys();
           const staleKeys = allKeys.filter((k) => k.startsWith("coconut.optimistic.friends."));
