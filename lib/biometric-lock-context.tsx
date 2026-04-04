@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, NativeModules, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ENABLED_KEY = "coconut.biometric_lock_enabled_v1";
@@ -97,7 +97,7 @@ export function BiometricLockProvider({
         }
       }
 
-      if (isEnabled && isSignedIn) {
+      if (isEnabled && isSignedIn && localAuth) {
         setIsLocked(true);
       }
       if (!cancelled) setHydrated(true);

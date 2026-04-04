@@ -529,7 +529,9 @@ export default function GroupScreen() {
                   </View>
                   <View style={s.suggInfo}>
                     <Text style={[s.suggText, { color: theme.textSecondary }]}>
-                      <Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>{toName}</Text>
+                      {iPayThem
+                        ? <><Text style={s.bold}>You</Text> pay <Text style={s.bold}>{toName}</Text></>
+                        : <><Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>you</Text></>}
                     </Text>
                     <Text style={[s.suggAmount, { color: theyPayMe ? theme.positive : theme.negative }]}>
                       {formatSplitCurrencyAmount(su.amount, su.currency)}

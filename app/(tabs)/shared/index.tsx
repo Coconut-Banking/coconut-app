@@ -80,7 +80,7 @@ export default function SharedIndex() {
   const isFocused = useIsFocused();
   const { isDemoOn, setIsDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: realSummary, loading, refetch } = useGroupsSummary();
+  const { summary: realSummary, loading, refetch } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
 
   const [refreshing, setRefreshing] = useState(false);
@@ -97,8 +97,8 @@ export default function SharedIndex() {
   const [contactSearch, setContactSearch] = useState("");
   const [showManualEntry, setShowManualEntry] = useState(false);
   const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
-  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
-  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>>([]);
+  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>>([]);
   const [optimisticFriends, setOptimisticFriends] = useState<
     Array<{ key: string; displayName: string; balance: number; balances?: { currency: string; amount: number }[] }>
   >([]);
@@ -163,7 +163,7 @@ export default function SharedIndex() {
 
   const persistOptimistic = useCallback(
     async (
-      groups: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>,
+      groups: Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>,
       friends: Array<{ key: string; displayName: string; balance: number }>
     ) => {
       try {
@@ -374,7 +374,7 @@ export default function SharedIndex() {
 
       await refetch(true);
       await onRefresh();
-      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType }, ...optimisticGroups.filter((g) => g.id !== data.id)];
+      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType, imageUrl: imageDataUri }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       await persistOptimistic(nextGroups, optimisticFriends);
       router.push({
@@ -506,7 +506,7 @@ export default function SharedIndex() {
           id: g.id,
           name: g.name,
           memberCount: g.memberCount,
-          imageUrl: null as string | null | undefined,
+          imageUrl: g.imageUrl ?? null as string | null | undefined,
           myBalance: 0,
           myBalances: [] as { currency: string; amount: number }[],
           lastActivityAt: new Date().toISOString(),
@@ -517,13 +517,26 @@ export default function SharedIndex() {
       id: g.id,
       name: g.name,
       memberCount: g.memberCount,
-      imageUrl: null as string | null | undefined,
+      imageUrl: (g.imageUrl ?? null) as string | null | undefined,
       myBalance: 0,
       myBalances: [] as { currency: string; amount: number }[],
       lastActivityAt: new Date().toISOString(),
     }));
   const groupsMerged = !isDemoOn && realSummary != null ? [...optimisticAsGroups, ...groupsFromApi] : isDemoOn ? summaryGroups : groupsFromApi;
-  const groups = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
+  const groupsById = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
+  // Deduplicate by name — prefer the group with a nonzero balance or more members
+  const groupsByName = new Map<string, (typeof groupsById)[0]>();
+  for (const g of groupsById) {
+    const key = g.name.trim().toLowerCase();
+    const prev = groupsByName.get(key);
+    if (!prev) { groupsByName.set(key, g); continue; }
+    const prevHasBalance = prev.myBalance !== 0 || (prev.myBalances?.length ?? 0) > 0;
+    const thisHasBalance = g.myBalance !== 0 || (g.myBalances?.length ?? 0) > 0;
+    if (thisHasBalance && !prevHasBalance) groupsByName.set(key, g);
+    else if (thisHasBalance === prevHasBalance && g.memberCount > prev.memberCount) groupsByName.set(key, g);
+    else if (thisHasBalance === prevHasBalance && g.memberCount === prev.memberCount && g.imageUrl && !prev.imageUrl) groupsByName.set(key, g);
+  }
+  const groups = [...groupsByName.values()];
   const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
   const visibleGroups = groups.filter((g) => {
     const groupName = g.name.trim().toLowerCase();

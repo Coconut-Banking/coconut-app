@@ -24,6 +24,15 @@ export function BiometricLockScreen() {
       return;
     }
 
+    // Module completely unavailable — don't lock the user out
+    if (!bioResult.error && !bioResult.errorCode) {
+      const fallback = await authenticate("Unlock Coconut");
+      if (fallback.success || (!fallback.error && !fallback.errorCode)) {
+        unlock();
+      }
+      return;
+    }
+
     // System not ready (error 6 / NotInteractive) -- retry after a delay
     if (isSystemError(bioResult) && retryCount.current < 3) {
       retryCount.current += 1;
@@ -32,12 +41,11 @@ export function BiometricLockScreen() {
     }
 
     if (bioResult.error !== "user_cancel" && bioResult.errorCode !== "user_cancel") {
-      const fallback = await authenticate(`Unlock Coconut`);
+      const fallback = await authenticate("Unlock Coconut");
       if (fallback.success) {
         unlock();
         return;
       }
-      // If passcode also fails with a system error, retry once more
       if (isSystemError(fallback) && retryCount.current < 3) {
         retryCount.current += 1;
         setTimeout(handleUnlock, 600 * retryCount.current);
