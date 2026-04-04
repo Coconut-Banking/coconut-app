@@ -42,6 +42,7 @@ import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
 import { useFeatureToggles } from "../../lib/feature-toggles-context";
 import { useProTier } from "../../lib/pro-tier-context";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
+import { useCurrency, SUPPORTED_CURRENCIES, type CurrencyCode } from "../../hooks/useCurrency";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -139,6 +140,8 @@ export default function SettingsScreen() {
   const biometricLabel = getBiometricLabel(biometricType);
   const { toggles, setToggle } = useFeatureToggles();
   const { isPro, loading: tierLoading } = useProTier();
+  const { currencyCode, symbol: currencySymbol, flag: currencyFlag, setCurrency } = useCurrency();
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
@@ -884,6 +887,9 @@ export default function SettingsScreen() {
         return;
       }
       setSplitwiseResult(null);
+      invalidateApiCache("/api/splitwise/status");
+      invalidateApiCache("/api/groups/summary");
+      invalidateApiCache("/api/groups/recent-activity");
       DeviceEventEmitter.emit("groups-updated");
       await fetchSplitwiseStatus();
     } catch {
@@ -1241,6 +1247,48 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
           ) : null}
+
+          <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginTop: 16 }]}>Default currency</Text>
+          <TouchableOpacity
+            style={[styles.currencyRow, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+            onPress={() => setShowCurrencyPicker(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 20 }}>{currencyFlag}</Text>
+            <Text style={[styles.currencyLabel, { color: theme.text }]}>
+              {currencyCode} — {currencySymbol}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
+          </TouchableOpacity>
+
+          <Modal visible={showCurrencyPicker} animationType="slide" transparent>
+            <Pressable style={styles.currencyOverlay} onPress={() => setShowCurrencyPicker(false)}>
+              <Pressable style={[styles.currencySheet, { backgroundColor: theme.surface }]} onPress={() => {}}>
+                <View style={styles.currencySheetHandle} />
+                <Text style={[styles.sectionTitle, { color: theme.text, textAlign: "center" }]}>Choose currency</Text>
+                <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                  {SUPPORTED_CURRENCIES.map((c) => {
+                    const selected = c.code === currencyCode;
+                    return (
+                      <TouchableOpacity
+                        key={c.code}
+                        style={[styles.currencyOption, selected && { backgroundColor: theme.primaryLight }]}
+                        onPress={() => { setCurrency(c.code as CurrencyCode); setShowCurrencyPicker(false); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ fontSize: 22 }}>{c.flag}</Text>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={[styles.currencyOptName, { color: theme.text }]}>{c.name}</Text>
+                          <Text style={{ fontSize: 13, fontFamily: font.regular, color: theme.textTertiary }}>{c.code} — {c.symbol}</Text>
+                        </View>
+                        {selected && <Ionicons name="checkmark-circle" size={22} color={theme.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </Pressable>
+            </Pressable>
+          </Modal>
         </View>
 
         {/* Security */}
@@ -1590,22 +1638,28 @@ export default function SettingsScreen() {
           ) : (
             <View style={{ gap: 12, marginTop: 4 }}>
               {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) === 0 && !splitwiseResult?.ok ? (
+                <>
+                  <Text style={[styles.muted, { color: theme.textTertiary, marginBottom: 4 }]}>
+                    Splitwise is linked to your account, but nothing is imported yet. Open the Shared tab after import, or tap
+                    Import now.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
+                    onPress={startSplitwiseImport}
+                    disabled={splitwiseImporting || splitwiseClearing}
+                  >
+                    {splitwiseImporting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>Import from Splitwise</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
                 <Text style={[styles.muted, { color: theme.textTertiary, marginBottom: 4 }]}>
-                  Splitwise is linked to your account, but nothing is imported yet. Open the Shared tab after import, or tap
-                  Import now.
+                  {splitwiseStatus?.importedSplitwiseGroupCount ?? 0} group{(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} imported from Splitwise.
                 </Text>
-              ) : null}
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
-                onPress={startSplitwiseImport}
-                disabled={splitwiseImporting || splitwiseClearing}
-              >
-                {splitwiseImporting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Import from Splitwise</Text>
-                )}
-              </TouchableOpacity>
+              )}
               {hasSplitwiseImportedData ? (
                 <TouchableOpacity
                   style={[
@@ -2327,5 +2381,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 17,
     fontFamily: font.regular,
+  },
+  currencyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  currencyLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: font.medium,
+  },
+  currencyOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  currencySheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 12,
+  },
+  currencySheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#CCC",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  currencyOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: radii.md,
+    marginBottom: 2,
+  },
+  currencyOptName: {
+    fontSize: 15,
+    fontFamily: font.medium,
   },
 });

@@ -209,6 +209,7 @@ export function useGroupDetail(id: string | null) {
   const apiFetch = useApiFetch();
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const prevId = useRef(id);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -217,26 +218,29 @@ export function useGroupDetail(id: string | null) {
         setLoading(false);
         return;
       }
-      if (!silent) {
-        setDetail(null);
-        setLoading(true);
-      }
+      if (!silent && !detail) setLoading(true);
       try {
         const res = await apiFetch(`/api/groups/${id}`);
         if (res.ok) {
           const data = await res.json();
           setDetail(data);
-        } else setDetail(null);
+        } else if (!silent) {
+          setDetail(null);
+        }
       } finally {
         setLoading(false);
       }
     },
-    [id, apiFetch]
+    [id, apiFetch, detail]
   );
 
   useEffect(() => {
+    if (prevId.current !== id) {
+      setDetail(null);
+      prevId.current = id;
+    }
     fetchDetail();
-  }, [fetchDetail]);
+  }, [fetchDetail, id]);
 
   return { detail, loading, refetch: fetchDetail };
 }
@@ -247,6 +251,7 @@ export function usePersonDetail(key: string | null) {
   const apiFetch = useApiFetch();
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const prevKey = useRef(key);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -255,10 +260,7 @@ export function usePersonDetail(key: string | null) {
         setLoading(false);
         return;
       }
-      if (!silent) {
-        setDetail(null);
-        setLoading(true);
-      }
+      if (!silent && !detail) setLoading(true);
       try {
         const res = await apiFetch(
           `/api/groups/person?key=${encodeURIComponent(key)}`
@@ -266,17 +268,23 @@ export function usePersonDetail(key: string | null) {
         if (res.ok) {
           const data = await res.json();
           setDetail(data);
-        } else setDetail(null);
+        } else if (!silent) {
+          setDetail(null);
+        }
       } finally {
         setLoading(false);
       }
     },
-    [key, apiFetch]
+    [key, apiFetch, detail]
   );
 
   useEffect(() => {
+    if (prevKey.current !== key) {
+      setDetail(null);
+      prevKey.current = key;
+    }
     fetchDetail();
-  }, [fetchDetail]);
+  }, [fetchDetail, key]);
 
   useEffect(() => {
     if (!key) return;
@@ -307,6 +315,7 @@ export function useTransactionDetail(id: string | null) {
   const apiFetch = useApiFetch();
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const prevId = useRef(id);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -315,24 +324,25 @@ export function useTransactionDetail(id: string | null) {
         setLoading(false);
         return;
       }
-      if (!silent) {
-        setDetail(null);
-        setLoading(true);
-      }
+      if (!silent && !detail) setLoading(true);
       try {
         const res = await apiFetch(`/api/groups/transaction?id=${encodeURIComponent(id)}`);
         if (res.ok) setDetail(await res.json());
-        else setDetail(null);
+        else if (!silent) setDetail(null);
       } finally {
-        if (!silent) setLoading(false);
+        setLoading(false);
       }
     },
-    [id, apiFetch]
+    [id, apiFetch, detail]
   );
 
   useEffect(() => {
+    if (prevId.current !== id) {
+      setDetail(null);
+      prevId.current = id;
+    }
     fetchDetail();
-  }, [fetchDetail]);
+  }, [fetchDetail, id]);
 
   return { detail, loading, refetch: fetchDetail };
 }
@@ -386,8 +396,25 @@ export function useRecentActivity(enabled = true) {
 
   useEffect(() => {
     retryCount.current = 0;
-    fetchActivity();
-    return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
+    let cancelled = false;
+
+    (async () => {
+      const cached = await getPersistedResponse("/api/groups/recent-activity");
+      if (cached && !cancelled && activity.length === 0) {
+        try {
+          const data = JSON.parse(cached.body);
+          setActivity(data.activity ?? []);
+          setLoading(false);
+        } catch { /* corrupt cache */ }
+      }
+      if (!cancelled) fetchActivity();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchActivity]);
 
   return { activity, loading, refetch: fetchActivity };

@@ -97,7 +97,7 @@ export function BiometricLockProvider({
         }
       }
 
-      if (isEnabled && isSignedIn && localAuth) {
+      if (isEnabled && localAuth) {
         setIsLocked(true);
       }
       if (!cancelled) setHydrated(true);
