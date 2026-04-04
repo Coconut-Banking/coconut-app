@@ -16,8 +16,6 @@ import {
   InteractionManager,
   Modal,
   Pressable,
-  Switch,
-  TextInput,
   type AppStateStatus,
 } from "react-native";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
@@ -39,9 +37,7 @@ import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { sendSmsInvite, sendEmailInvite, shareInvite, type InviteLink } from "../../lib/invite";
 import { useBiometricLock } from "../../lib/biometric-lock-context";
 import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
-import { useFeatureToggles } from "../../lib/feature-toggles-context";
-import { useProTier } from "../../lib/pro-tier-context";
-import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
+import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 import { useCurrency, SUPPORTED_CURRENCIES, type CurrencyCode } from "../../hooks/useCurrency";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
@@ -49,69 +45,6 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 /** Strip emoji and normalize whitespace — Plaid sometimes adds emoji to account names */
 function stripEmoji(str: string): string {
   return str.replace(/\p{Emoji_Presentation}/gu, "").replace(/\s+/g, " ").trim();
-}
-
-function normalizeEmailForMatch(e: string | null | undefined): string | null {
-  if (!e || typeof e !== "string") return null;
-  const t = e.trim().toLowerCase();
-  return t.length ? t : null;
-}
-
-function normalizePersonName(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function normalizePhoneForSms(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return "";
-  const hasPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D/g, "");
-  if (!digits) return trimmed;
-  return hasPlus ? `+${digits}` : digits;
-}
-
-/** One phone per selected member, from Contacts (email match, else unique name match). */
-function phonesForUninvitedSelection(
-  selectedMembers: { displayName: string; email: string | null }[],
-  deviceContacts: DeviceContact[]
-): string[] {
-  const phoneForMember = (m: (typeof selectedMembers)[0]): string | null => {
-    const emailKey = normalizeEmailForMatch(m.email);
-    if (emailKey) {
-      for (const c of deviceContacts) {
-        if (c.emails.some((e) => normalizeEmailForMatch(e) === emailKey)) {
-          for (const p of c.phones) {
-            const n = normalizePhoneForSms(p);
-            if (n) return n;
-          }
-        }
-      }
-    }
-    const nk = normalizePersonName(m.displayName);
-    if (nk) {
-      const withPhone = deviceContacts.filter(
-        (c) => normalizePersonName(c.name) === nk && c.phones.some((p) => normalizePhoneForSms(p))
-      );
-      if (withPhone.length === 1) {
-        for (const p of withPhone[0]!.phones) {
-          const n = normalizePhoneForSms(p);
-          if (n) return n;
-        }
-      }
-    }
-    return null;
-  };
-
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const m of selectedMembers) {
-    const p = phoneForMember(m);
-    if (p && !seen.has(p)) {
-      seen.add(p);
-      out.push(p);
-    }
-  }
-  return out;
 }
 
 type PlaidAccount = {
@@ -138,8 +71,6 @@ export default function SettingsScreen() {
   const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess, loading: contactsLoading } = useDeviceContacts();
   const { biometricAvailable, biometricType, enabled: biometricEnabled, setEnabled: setBiometricEnabled } = useBiometricLock();
   const biometricLabel = getBiometricLabel(biometricType);
-  const { toggles, setToggle } = useFeatureToggles();
-  const { isPro, loading: tierLoading } = useProTier();
   const { currencyCode, symbol: currencySymbol, flag: currencyFlag, setCurrency } = useCurrency();
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const isFocused = useIsFocused();
@@ -151,66 +82,6 @@ export default function SettingsScreen() {
   const [showAllAccounts, setShowAllAccounts] = useState(false);
   const ACCOUNTS_PREVIEW = 5;
   const [devToolsOpen, setDevToolsOpen] = useState(false);
-
-  const [show2faModal, setShow2faModal] = useState(false);
-  const [twoFaStep, setTwoFaStep] = useState<"info" | "phone" | "code" | "done">("info");
-  const [phoneInput, setPhoneInput] = useState("");
-  const [codeInput, setCodeInput] = useState("");
-  const [twoFaLoading, setTwoFaLoading] = useState(false);
-  const [twoFaError, setTwoFaError] = useState<string | null>(null);
-  const pendingPhoneRef = useRef<any>(null);
-
-  const verifiedPhone = useMemo(() => {
-    if (!user?.phoneNumbers) return null;
-    return user.phoneNumbers.find((p) => p.verification?.status === "verified") ?? null;
-  }, [user?.phoneNumbers]);
-
-  const has2fa = Boolean(verifiedPhone);
-
-  const start2faSetup = () => {
-    setTwoFaStep("info");
-    setPhoneInput("");
-    setCodeInput("");
-    setTwoFaError(null);
-    setShow2faModal(true);
-  };
-
-  const submitPhone = async () => {
-    if (!user || !phoneInput.trim()) return;
-    setTwoFaLoading(true);
-    setTwoFaError(null);
-    try {
-      const phone = await user.createPhoneNumber({ phoneNumber: phoneInput.trim() });
-      pendingPhoneRef.current = phone;
-      await phone.prepareVerification();
-      setTwoFaStep("code");
-    } catch (e: any) {
-      setTwoFaError(e?.errors?.[0]?.longMessage ?? e?.message ?? "Could not send verification code.");
-    } finally {
-      setTwoFaLoading(false);
-    }
-  };
-
-  const submitCode = async () => {
-    const phone = pendingPhoneRef.current;
-    if (!phone || !codeInput.trim()) return;
-    setTwoFaLoading(true);
-    setTwoFaError(null);
-    try {
-      await phone.attemptVerification({ code: codeInput.trim() });
-      await user?.reload();
-      setTwoFaStep("done");
-    } catch (e: any) {
-      setTwoFaError(e?.errors?.[0]?.longMessage ?? e?.message ?? "Invalid code. Please try again.");
-    } finally {
-      setTwoFaLoading(false);
-    }
-  };
-
-  const close2faModal = () => {
-    setShow2faModal(false);
-    pendingPhoneRef.current = null;
-  };
 
   const renameAccount = (a: PlaidAccount) => {
     Alert.prompt(
@@ -273,7 +144,6 @@ export default function SettingsScreen() {
   const [uninvitedMembers, setUninvitedMembers] = useState<UninvitedMember[]>([]);
   const [selectedInvites, setSelectedInvites] = useState<Set<number>>(new Set());
   const [sendingInvites, setSendingInvites] = useState(false);
-  const [sendingSmsInvites, setSendingSmsInvites] = useState(false);
 
   const splitwiseAutoImportStarted = useRef(false);
   const splitwiseStatusRef = useRef(splitwiseStatus);
@@ -556,11 +426,7 @@ export default function SettingsScreen() {
       if (res.ok) {
         const cleared = data.cleared ?? 0;
         const matched = data.matched ?? 0;
-        const after = data.after as { matched?: number; total?: number } | undefined;
-        const summary = after
-          ? `✓ ${after.matched}/${after.total} receipts matched (${matched} new, ${cleared} cleared)`
-          : `✓ ${matched} matched · ${cleared} wrong matches cleared`;
-        setRematchResult(summary);
+        setRematchResult(`✓ ${matched} matched · ${cleared} wrong matches cleared`);
       } else {
         setRematchResult(`Error: ${(data as { error?: string }).error ?? res.status}`);
       }
@@ -1072,9 +938,13 @@ export default function SettingsScreen() {
     }
   };
 
-  const getSelectedInvitePayload = () => {
+  const handleSendInvites = async () => {
+    if (selectedInvites.size === 0) return;
+    setSendingInvites(true);
+    const senderName = user?.fullName || user?.username || undefined;
     const selected = uninvitedMembers.filter((_, i) => selectedInvites.has(i));
     const emails = selected.filter((m) => m.email).map((m) => m.email!);
+
     const seen = new Set<string>();
     const inviteLinks: InviteLink[] = [];
     for (const m of selected) {
@@ -1083,14 +953,6 @@ export default function SettingsScreen() {
         inviteLinks.push({ groupName: m.groupName, token: m.inviteToken });
       }
     }
-    return { selected, emails, inviteLinks };
-  };
-
-  const handleSendInvites = async () => {
-    if (selectedInvites.size === 0) return;
-    setSendingInvites(true);
-    const senderName = user?.fullName || user?.username || undefined;
-    const { emails, inviteLinks } = getSelectedInvitePayload();
 
     try {
       if (emails.length > 0) {
@@ -1102,34 +964,6 @@ export default function SettingsScreen() {
       Alert.alert("Error", "Could not send invites. Try again.");
     } finally {
       setSendingInvites(false);
-      setShowInviteModal(false);
-    }
-  };
-
-  const handleInviteViaSms = async () => {
-    if (selectedInvites.size === 0 || Platform.OS === "web") return;
-    setSendingSmsInvites(true);
-    const senderName = user?.fullName || user?.username || undefined;
-    const { selected, inviteLinks } = getSelectedInvitePayload();
-    const phones = phonesForUninvitedSelection(selected, deviceContacts);
-
-    if (phones.length === 0) {
-      setSendingSmsInvites(false);
-      Alert.alert(
-        "No phone numbers",
-        contactsPerm !== "granted"
-          ? "Allow Contacts access in Settings so Coconut can match people by email or name, or add their details to your address book."
-          : "None of the selected people matched a contact with a phone number. Use the same email as Splitwise in Contacts, or add their phone number.",
-      );
-      return;
-    }
-
-    try {
-      await sendSmsInvite(phones, senderName, inviteLinks);
-    } catch {
-      Alert.alert("Error", "Could not open Messages. Try again.");
-    } finally {
-      setSendingSmsInvites(false);
       setShowInviteModal(false);
     }
   };
@@ -1150,31 +984,9 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Preferences</Text>
           {user ? (
             <View style={styles.accountBlock}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={[styles.profileName, { color: theme.text }]}>
-                  {user.fullName || user.username || "Account"}
-                </Text>
-                {!tierLoading && (
-                  <View
-                    style={[
-                      styles.tierBadge,
-                      {
-                        backgroundColor: isPro ? theme.primary : theme.surfaceSecondary,
-                        borderColor: isPro ? theme.primary : theme.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.tierBadgeText,
-                        { color: isPro ? "#fff" : theme.textSecondary },
-                      ]}
-                    >
-                      {isPro ? "Pro" : "Free"}
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <Text style={[styles.profileName, { color: theme.text }]}>
+                {user.fullName || user.username || "Account"}
+              </Text>
               <Text style={[styles.accountEmail, { color: theme.textTertiary }]} numberOfLines={1}>
                 {user.primaryEmailAddress?.emailAddress ?? ""}
               </Text>
@@ -1289,86 +1101,6 @@ export default function SettingsScreen() {
               </Pressable>
             </Pressable>
           </Modal>
-        </View>
-
-        {/* Security */}
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <Ionicons name="shield-checkmark-outline" size={24} color={theme.primary} />
-            <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Security</Text>
-          </View>
-          <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Add an extra layer of protection to your account with two-factor authentication.
-          </Text>
-
-          {has2fa ? (
-            <View style={[styles.resultBox, { backgroundColor: "#F5F3F2", borderColor: "#E3DBD8" }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
-                <Text style={[styles.resultTitle, { color: theme.text }]}>Two-factor authentication active</Text>
-              </View>
-              <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
-                Verified phone: {verifiedPhone?.phoneNumber}
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 4 }]}
-              onPress={start2faSetup}
-            >
-              <Text style={styles.primaryBtnText}>Enable two-factor authentication</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Features */}
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Features</Text>
-
-          <View style={styles.featureToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.featureToggleLabel, { color: theme.text }]}>Email Receipts</Text>
-              <Text style={[styles.featureToggleDesc, { color: theme.textTertiary }]}>
-                Show email receipt matching on the home screen
-              </Text>
-            </View>
-            <Switch
-              value={toggles.showEmailReceipts}
-              onValueChange={(v) => setToggle("showEmailReceipts", v)}
-              trackColor={{ false: theme.surfaceSecondary, true: theme.primary }}
-              thumbColor="#fff"
-            />
-          </View>
-
-          <View style={[styles.featureToggleRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.borderLight }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.featureToggleLabel, { color: theme.text }]}>Insights</Text>
-              <Text style={[styles.featureToggleDesc, { color: theme.textTertiary }]}>
-                Show spending insights and analytics
-              </Text>
-            </View>
-            <Switch
-              value={toggles.showInsights}
-              onValueChange={(v) => setToggle("showInsights", v)}
-              trackColor={{ false: theme.surfaceSecondary, true: theme.primary }}
-              thumbColor="#fff"
-            />
-          </View>
-
-          <View style={[styles.featureToggleRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.borderLight }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.featureToggleLabel, { color: theme.text }]}>Bank Sync</Text>
-              <Text style={[styles.featureToggleDesc, { color: theme.textTertiary }]}>
-                Show bank transactions on the home screen
-              </Text>
-            </View>
-            <Switch
-              value={toggles.showBankSync}
-              onValueChange={(v) => setToggle("showBankSync", v)}
-              trackColor={{ false: theme.surfaceSecondary, true: theme.primary }}
-              thumbColor="#fff"
-            />
-          </View>
         </View>
 
         {/* Contacts */}
@@ -1905,124 +1637,6 @@ export default function SettingsScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      {/* 2FA Setup Modal */}
-      <Modal visible={show2faModal} transparent animationType="slide" onRequestClose={close2faModal}>
-        <Pressable style={styles.inviteOverlay} onPress={close2faModal}>
-          <Pressable style={[styles.inviteSheet, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.inviteHandle} />
-
-            {twoFaStep === "info" ? (
-              <>
-                <Text style={[styles.inviteTitle, { color: theme.text }]}>Two-Factor Authentication</Text>
-                <Text style={[styles.inviteSubtitle, { color: theme.textTertiary }]}>
-                  Two-factor authentication adds an extra layer of security. When enabled,
-                  you&apos;ll need to enter a verification code sent to your phone number each
-                  time you sign in.
-                </Text>
-                <View style={{ gap: 12, marginBottom: 8 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    <Ionicons name="phone-portrait-outline" size={20} color={theme.primary} />
-                    <Text style={{ fontSize: 15, fontFamily: font.medium, color: theme.text }}>SMS verification</Text>
-                  </View>
-                  <Text style={{ fontSize: 14, fontFamily: font.regular, color: theme.textTertiary, lineHeight: 20 }}>
-                    We&apos;ll send a one-time code to your phone number each time you sign in.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 12 }]}
-                  onPress={() => setTwoFaStep("phone")}
-                >
-                  <Text style={styles.primaryBtnText}>Set up SMS verification</Text>
-                </TouchableOpacity>
-              </>
-            ) : twoFaStep === "phone" ? (
-              <>
-                <Text style={[styles.inviteTitle, { color: theme.text }]}>Add Phone Number</Text>
-                <Text style={[styles.inviteSubtitle, { color: theme.textTertiary }]}>
-                  Enter your phone number to receive verification codes via SMS.
-                </Text>
-                <TextInput
-                  style={[styles.twoFaInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surfaceSecondary }]}
-                  placeholder="+1 (555) 000-0000"
-                  placeholderTextColor={theme.textQuaternary}
-                  value={phoneInput}
-                  onChangeText={setPhoneInput}
-                  keyboardType="phone-pad"
-                  autoFocus
-                />
-                {twoFaError ? (
-                  <Text style={{ fontSize: 13, fontFamily: font.regular, color: theme.error, marginTop: 8 }}>{twoFaError}</Text>
-                ) : null}
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 16 }, (twoFaLoading || !phoneInput.trim()) && styles.disabled]}
-                  onPress={submitPhone}
-                  disabled={twoFaLoading || !phoneInput.trim()}
-                >
-                  {twoFaLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Send verification code</Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : twoFaStep === "code" ? (
-              <>
-                <Text style={[styles.inviteTitle, { color: theme.text }]}>Enter Verification Code</Text>
-                <Text style={[styles.inviteSubtitle, { color: theme.textTertiary }]}>
-                  We sent a 6-digit code to {phoneInput}. Enter it below to verify your phone number.
-                </Text>
-                <TextInput
-                  style={[styles.twoFaInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surfaceSecondary, letterSpacing: 8, textAlign: "center" }]}
-                  placeholder="000000"
-                  placeholderTextColor={theme.textQuaternary}
-                  value={codeInput}
-                  onChangeText={setCodeInput}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  autoFocus
-                />
-                {twoFaError ? (
-                  <Text style={{ fontSize: 13, fontFamily: font.regular, color: theme.error, marginTop: 8 }}>{twoFaError}</Text>
-                ) : null}
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 16 }, (twoFaLoading || !codeInput.trim()) && styles.disabled]}
-                  onPress={submitCode}
-                  disabled={twoFaLoading || !codeInput.trim()}
-                >
-                  {twoFaLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Verify</Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={{ alignItems: "center", marginVertical: 20 }}>
-                  <Ionicons name="checkmark-circle" size={56} color={theme.positive} />
-                </View>
-                <Text style={[styles.inviteTitle, { color: theme.text, textAlign: "center" }]}>Phone Verified</Text>
-                <Text style={[styles.inviteSubtitle, { color: theme.textTertiary, textAlign: "center" }]}>
-                  Your phone number has been verified. Two-factor authentication is now active on your account.
-                </Text>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 12 }]}
-                  onPress={close2faModal}
-                >
-                  <Text style={styles.primaryBtnText}>Done</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {twoFaStep !== "done" ? (
-              <TouchableOpacity style={styles.inviteSkip} onPress={close2faModal}>
-                <Text style={[styles.inviteSkipTxt, { color: theme.textTertiary }]}>Cancel</Text>
-              </TouchableOpacity>
-            ) : null}
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       {/* Invite modal after Splitwise import */}
       <Modal visible={showInviteModal} transparent animationType="slide" onRequestClose={() => setShowInviteModal(false)}>
         <Pressable style={styles.inviteOverlay} onPress={() => setShowInviteModal(false)}>
@@ -2079,15 +1693,15 @@ export default function SettingsScreen() {
               })}
             </ScrollView>
 
-            <View style={styles.inviteActionsColumn}>
+            <View style={styles.inviteActions}>
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  { backgroundColor: theme.primary },
-                  (selectedInvites.size === 0 || sendingInvites || sendingSmsInvites) && styles.disabled,
+                  { backgroundColor: theme.primary, flex: 1 },
+                  (selectedInvites.size === 0 || sendingInvites) && styles.disabled,
                 ]}
                 onPress={handleSendInvites}
-                disabled={selectedInvites.size === 0 || sendingInvites || sendingSmsInvites}
+                disabled={selectedInvites.size === 0 || sendingInvites}
               >
                 {sendingInvites ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -2098,31 +1712,6 @@ export default function SettingsScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
-
-              {Platform.OS !== "web" ? (
-                <TouchableOpacity
-                  style={[
-                    styles.inviteSecondaryBtn,
-                    {
-                      borderColor: theme.primary,
-                      backgroundColor: theme.surfaceSecondary,
-                    },
-                    (selectedInvites.size === 0 || sendingInvites || sendingSmsInvites) && styles.disabled,
-                  ]}
-                  onPress={handleInviteViaSms}
-                  disabled={selectedInvites.size === 0 || sendingInvites || sendingSmsInvites}
-                  activeOpacity={0.7}
-                >
-                  {sendingSmsInvites ? (
-                    <ActivityIndicator size="small" color={theme.primary} />
-                  ) : (
-                    <View style={styles.inviteSecondaryBtnInner}>
-                      <Ionicons name="chatbubble-outline" size={18} color={theme.primary} />
-                      <Text style={[styles.inviteSecondaryBtnText, { color: theme.primary }]}>Invite via SMS</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ) : null}
             </View>
 
             <TouchableOpacity
@@ -2155,18 +1744,6 @@ const styles = StyleSheet.create({
   accountBlock: { marginBottom: 16 },
   profileName: { fontSize: 16, fontFamily: font.semibold },
   accountEmail: { fontSize: 14, fontFamily: font.regular, marginTop: 4 },
-  tierBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  tierBadgeText: {
-    fontSize: 11,
-    fontFamily: font.semibold,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
   fieldLabel: { fontSize: 13, fontFamily: font.medium, marginBottom: 8 },
   segmentRow: { flexDirection: "row", gap: 8 },
   segment: {
@@ -2310,25 +1887,9 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     marginTop: 2,
   },
-  inviteActionsColumn: {
-    gap: 10,
-  },
-  inviteSecondaryBtn: {
-    paddingVertical: 14,
-    borderRadius: radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    minHeight: 48,
-  },
-  inviteSecondaryBtnInner: {
+  inviteActions: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  inviteSecondaryBtnText: {
-    fontSize: 16,
-    fontFamily: font.semibold,
+    gap: 10,
   },
   inviteSkip: {
     alignItems: "center",
@@ -2337,23 +1898,6 @@ const styles = StyleSheet.create({
   inviteSkipTxt: {
     fontSize: 15,
     fontFamily: font.medium,
-  },
-
-  // Feature toggles
-  featureToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-  },
-  featureToggleLabel: {
-    fontSize: 15,
-    fontFamily: font.semibold,
-  },
-  featureToggleDesc: {
-    fontSize: 13,
-    fontFamily: font.regular,
-    marginTop: 2,
   },
 
   // Biometric lock toggle
@@ -2385,15 +1929,6 @@ const styles = StyleSheet.create({
   },
   biometricToggleThumbOff: {
     alignSelf: "flex-start",
-  },
-
-  twoFaInput: {
-    height: 50,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    paddingHorizontal: 16,
-    fontSize: 17,
-    fontFamily: font.regular,
   },
   currencyRow: {
     flexDirection: "row",

@@ -36,7 +36,6 @@ import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
-import { simplifyDebtsByCurrency } from "../../../lib/simplify-debts";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { sfx } from "../../../lib/sounds";
@@ -481,10 +480,10 @@ export default function GroupScreen() {
   if (!detail) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
-        <View style={s.topBar}>
+        <View style={[s.topBar, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
-            <Ionicons name="chevron-back" size={20} color={theme.primary} />
-            <Text style={[s.backText, { color: theme.primary }]}>Back</Text>
+            <Ionicons name="chevron-back" size={20} color={theme.text} />
+            <Text style={[s.backText, { color: theme.text }]}>Back</Text>
           </TouchableOpacity>
         </View>
         <View style={s.center}>
@@ -518,18 +517,16 @@ export default function GroupScreen() {
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
-      <View style={s.topBar}>
+      <View style={[s.topBar, { borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
-          <Ionicons name="chevron-back" size={20} color={theme.primary} />
-          <Text style={[s.backText, { color: theme.primary }]}>Back</Text>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+          <Text style={[s.backText, { color: theme.text }]}>Back</Text>
         </TouchableOpacity>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         {/* Header: avatar + name + actions */}
@@ -661,43 +658,28 @@ export default function GroupScreen() {
           </View>
         ) : null}
 
-        {(() => {
-          const simplified = simplifyDebtsByCurrency(detail.balances ?? []);
-          const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
-          const mySuggestions = simplified.filter(
-            (su) => myMemberId && (su.from === myMemberId || su.to === myMemberId)
+        {detail.suggestions && detail.suggestions.length > 0 ? (() => {
+          const myMemberId =
+            detail.members.find((m) => m.user_id === userId)?.id ??
+            (detail.isOwner ? detail.members[0]?.id : undefined);
+          const mySuggestions = detail.suggestions.filter(
+            (su) => myMemberId && (su.fromMemberId === myMemberId || su.toMemberId === myMemberId)
           );
-          const otherSuggestions = simplified.filter(
-            (su) => !myMemberId || (su.from !== myMemberId && su.to !== myMemberId)
-          );
-          const allSuggestions = [...mySuggestions, ...otherSuggestions];
-
-          if (allSuggestions.length === 0 && hasActivity && allSettled) {
-            return (
-              <View style={[s.settledBadge, { marginBottom: 16, backgroundColor: theme.primaryLight }]}>
-                <Ionicons name="checkmark-circle" size={20} color={theme.primaryDark} />
-                <Text style={[s.settledBadgeText, { color: theme.primaryDark }]}>All settled up</Text>
-              </View>
-            );
-          }
-
-          if (allSuggestions.length === 0) return null;
-
-          return (
+          return mySuggestions.length > 0 ? (
           <>
             <Text style={[s.section, { color: theme.textTertiary }]}>Settle up</Text>
-            {allSuggestions.map((su) => {
-              const fromMember = detail.members.find((m) => m.id === su.from);
-              const toMember = detail.members.find((m) => m.id === su.to);
+            {mySuggestions.map((su) => {
+              const fromMember = detail.members.find((m) => m.id === su.fromMemberId);
+              const toMember = detail.members.find((m) => m.id === su.toMemberId);
               const fromName = fromMember?.display_name ?? "?";
               const toName = toMember?.display_name ?? "?";
-              const theyPayMe = myMemberId && su.to === myMemberId;
-              const iPayThem = myMemberId && su.from === myMemberId;
+              const theyPayMe = myMemberId && su.toMemberId === myMemberId;
+              const iPayThem = myMemberId && su.fromMemberId === myMemberId;
               const canMarkPaid =
                 Boolean(theyPayMe || iPayThem || (detail.isOwner && !isDemoOn));
               return (
                 <View
-                  key={`${su.currency}-${su.from}-${su.to}`}
+                  key={`${su.currency}-${su.fromMemberId}-${su.toMemberId}`}
                   style={[s.suggRow, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}
                 >
                   <View style={s.suggPeople}>
@@ -725,7 +707,7 @@ export default function GroupScreen() {
                           try {
                             const res = await apiFetch("/api/stripe/create-payment-link", {
                               method: "POST",
-                              body: { amount: su.amount, description: detail.name, recipientName: fromName, groupId: id, payerMemberId: su.from, receiverMemberId: su.to },
+                              body: { amount: su.amount, description: detail.name, recipientName: fromName, groupId: id, payerMemberId: su.fromMemberId, receiverMemberId: su.toMemberId },
                             });
                             const data = await res.json();
                             if (res.ok && data.url) {
@@ -743,7 +725,7 @@ export default function GroupScreen() {
                       <TouchableOpacity
                         style={[s.miniBtn, { borderWidth: 1, borderColor: theme.border }]}
                         onPress={() => {
-                          if (isDemoOn && id) { demo.settleGroupSuggestion(id, su.from, su.to); return; }
+                          if (isDemoOn && id) { demo.settleGroupSuggestion(id, su.fromMemberId, su.toMemberId); return; }
                           const who = `${fromName} → ${toName}`;
                           Alert.alert(
                             "Mark as paid",
@@ -761,8 +743,8 @@ export default function GroupScreen() {
                                     method: "POST",
                                     body: {
                                       groupId: id,
-                                      payerMemberId: su.from,
-                                      receiverMemberId: su.to,
+                                      payerMemberId: su.fromMemberId,
+                                      receiverMemberId: su.toMemberId,
                                       amount: su.amount,
                                       method: "manual",
                                       currency: su.currency,
@@ -785,8 +767,13 @@ export default function GroupScreen() {
               );
             })}
           </>
-          );
-        })()}
+          ) : null;
+        })() : hasActivity && allSettled ? (
+          <View style={[s.settledBadge, { marginBottom: 16, backgroundColor: theme.primaryLight }]}>
+            <Ionicons name="checkmark-circle" size={20} color={theme.primaryDark} />
+            <Text style={[s.settledBadgeText, { color: theme.primaryDark }]}>All settled up</Text>
+          </View>
+        ) : null}
 
         <Text style={[s.section, { color: theme.textTertiary }]}>Transactions</Text>
         {!hasActivity ? (
@@ -877,7 +864,6 @@ export default function GroupScreen() {
           )
         ) : null}
       </ScrollView>
-      </KeyboardAvoidingView>
 
       {/* Add members — full-screen multi-select picker */}
       <Modal
@@ -887,7 +873,6 @@ export default function GroupScreen() {
         onRequestClose={() => setShowAddMember(false)}
       >
         <SafeAreaView style={[s.pickerRoot, { backgroundColor: theme.surface }]} edges={["top", "bottom"]}>
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           {/* Top bar */}
           <View style={s.pickerTopBar}>
             <TouchableOpacity onPress={() => setShowAddMember(false)} hitSlop={10}>
@@ -1045,7 +1030,6 @@ export default function GroupScreen() {
               )}
             </TouchableOpacity>
           </View>
-          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 
@@ -1107,18 +1091,9 @@ const s = StyleSheet.create({
   backRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   backText: { fontSize: 16, fontFamily: font.medium },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  topBar: {
-    paddingHorizontal: 8,
-    paddingTop: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  backRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 8, paddingHorizontal: 8 },
-  backText: { fontSize: 15, fontFamily: font.semibold },
   scroll: { flex: 1 },
   content: { padding: 20, paddingBottom: 100 },
-  groupHeader: { alignItems: "center", marginBottom: 24, paddingTop: 0 },
+  groupHeader: { alignItems: "center", marginBottom: 24, paddingTop: 8 },
   groupPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
   groupIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center", marginBottom: 12 },
   groupNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },

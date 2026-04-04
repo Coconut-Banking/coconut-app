@@ -1,8 +1,7 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -37,20 +36,11 @@ export default function TransactionScreen() {
   const [editing, setEditing] = useState(false);
   const [editDesc, setEditDesc] = useState("");
   const [editAmount, setEditAmount] = useState("");
-  type EditShare = { memberId: string; displayName: string; isMe: boolean; amount: number; image_url?: string | null };
-  const [editShares, setEditShares] = useState<EditShare[]>([]);
-  const [splitMode, setSplitMode] = useState<"equal" | "custom">("equal");
-  const [editShareAmounts, setEditShareAmounts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (detail) {
       setEditDesc(detail.description ?? "");
       setEditAmount(String(detail.amount ?? 0));
-      setEditShares(detail.shares.map((sh) => ({ ...sh })));
-      setSplitMode("equal");
-      setEditShareAmounts(
-        Object.fromEntries(detail.shares.map((sh) => [sh.memberId, String(sh.amount)]))
-      );
     }
   }, [detail]);
 
@@ -94,79 +84,16 @@ export default function TransactionScreen() {
     );
   }, [id, detail, apiFetch]);
 
-  const editTotal = parseFloat(editAmount) || 0;
-
-  const computedShares = useMemo(() => {
-    if (splitMode === "equal" && editShares.length > 0 && editTotal > 0) {
-      const perPerson = Math.round((editTotal / editShares.length) * 100) / 100;
-      return editShares.map((sh) => ({ ...sh, amount: perPerson }));
-    }
-    return editShares.map((sh) => ({
-      ...sh,
-      amount: parseFloat(editShareAmounts[sh.memberId] ?? "0") || 0,
-    }));
-  }, [splitMode, editShares, editTotal, editShareAmounts]);
-
-  const shareSum = useMemo(
-    () => computedShares.reduce((sum, sh) => sum + sh.amount, 0),
-    [computedShares]
-  );
-
-  const splitMismatch = splitMode === "custom" && editTotal > 0 && Math.abs(shareSum - editTotal) >= 0.01;
-
-  const handleRemoveShare = useCallback(
-    (memberId: string) => {
-      if (editShares.length <= 1) {
-        Alert.alert("Can't remove", "At least one person must remain in the split.");
-        return;
-      }
-      setEditShares((prev) => prev.filter((sh) => sh.memberId !== memberId));
-      setEditShareAmounts((prev) => {
-        const next = { ...prev };
-        delete next[memberId];
-        return next;
-      });
-    },
-    [editShares.length]
-  );
-
   const handleSaveEdit = useCallback(async () => {
     if (!id || !detail) return;
     const desc = editDesc.trim();
     const amt = parseFloat(editAmount);
     if (!desc) { Alert.alert("Error", "Description can't be empty"); return; }
     if (!Number.isFinite(amt) || amt <= 0) { Alert.alert("Error", "Enter a valid amount"); return; }
-    if (editShares.length === 0) { Alert.alert("Error", "At least one person must be in the split"); return; }
-
-    const finalShares = splitMode === "equal"
-      ? editShares.map((sh) => ({
-          memberId: sh.memberId,
-          amount: Math.round((amt / editShares.length) * 100) / 100,
-        }))
-      : editShares.map((sh) => ({
-          memberId: sh.memberId,
-          amount: Math.round((parseFloat(editShareAmounts[sh.memberId] ?? "0") || 0) * 100) / 100,
-        }));
-
-    if (splitMode === "custom") {
-      const sum = finalShares.reduce((a, sh) => a + sh.amount, 0);
-      if (Math.abs(sum - amt) >= 0.01) {
-        Alert.alert("Error", `Amounts add up to $${sum.toFixed(2)} but total is $${amt.toFixed(2)}`);
-        return;
-      }
-    }
 
     const body: Record<string, unknown> = {};
     if (desc !== detail.description) body.description = desc;
-
-    const amountChanged = Math.abs(amt - (detail.amount ?? 0)) > 0.005;
-    const sharesChanged =
-      editShares.length !== detail.shares.length ||
-      editShares.some((sh) => !detail.shares.find((o) => o.memberId === sh.memberId));
-    const customAmountsChanged = splitMode === "custom";
-
-    if (amountChanged) body.amount = amt;
-    if (amountChanged || sharesChanged || customAmountsChanged) {
+    if (Math.abs(amt - (detail.amount ?? 0)) > 0.005) {
       body.amount = amt;
       const shares = detail.shares;
       const oldAmount = detail.amount ?? 0;
@@ -212,7 +139,7 @@ export default function TransactionScreen() {
     } catch {
       Alert.alert("Error", "Network error. Try again.");
     }
-  }, [id, detail, editDesc, editAmount, editShares, splitMode, editShareAmounts, apiFetch, refetch]);
+  }, [id, detail, editDesc, editAmount, apiFetch, refetch]);
 
   if (loading && !detail) {
     return (
@@ -305,115 +232,6 @@ export default function TransactionScreen() {
           </View>
         )}
 
-        {/* Edit Split — only in edit mode */}
-        {editing && editShares.length > 0 ? (
-          <>
-            <Text style={s.section}>Edit split</Text>
-
-            {/* Equal / Custom toggle */}
-            <View style={s.splitToggleRow}>
-              <TouchableOpacity
-                style={[s.splitToggleBtn, splitMode === "equal" && s.splitToggleBtnActive]}
-                onPress={() => setSplitMode("equal")}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="git-compare-outline" size={14} color={splitMode === "equal" ? "#fff" : "#6B7280"} />
-                <Text style={[s.splitToggleText, splitMode === "equal" && s.splitToggleTextActive]}>
-                  Split equally
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.splitToggleBtn, splitMode === "custom" && s.splitToggleBtnActive]}
-                onPress={() => {
-                  setSplitMode("custom");
-                  if (editTotal > 0) {
-                    setEditShareAmounts((prev) => {
-                      const next = { ...prev };
-                      editShares.forEach((sh) => {
-                        if (!next[sh.memberId]) {
-                          next[sh.memberId] = (editTotal / editShares.length).toFixed(2);
-                        }
-                      });
-                      return next;
-                    });
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="cash-outline" size={14} color={splitMode === "custom" ? "#fff" : "#6B7280"} />
-                <Text style={[s.splitToggleText, splitMode === "custom" && s.splitToggleTextActive]}>
-                  Custom amounts
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={s.card}>
-              {computedShares.map((share, i) => (
-                <View key={share.memberId}>
-                  <View style={s.shareRow}>
-                    <MemberAvatar name={share.displayName} size={32} imageUrl={share.image_url} />
-                    <Text style={[s.shareName, { flex: 1, marginLeft: 12 }]}>
-                      {share.isMe ? "You" : share.displayName}
-                    </Text>
-
-                    {splitMode === "custom" ? (
-                      <View style={s.shareInputWrap}>
-                        <Text style={s.shareInputPrefix}>$</Text>
-                        <TextInput
-                          style={s.shareInput}
-                          value={editShareAmounts[share.memberId] ?? ""}
-                          onChangeText={(v) => {
-                            const cleaned = v.replace(/[^0-9.]/g, "");
-                            setEditShareAmounts((prev) => ({ ...prev, [share.memberId]: cleaned }));
-                          }}
-                          keyboardType="decimal-pad"
-                          selectTextOnFocus
-                          placeholder="0.00"
-                          placeholderTextColor="#9CA3AF"
-                        />
-                      </View>
-                    ) : (
-                      <Text style={s.shareAmt}>
-                        {formatSplitCurrencyAmount(share.amount, currency)}
-                      </Text>
-                    )}
-
-                    <TouchableOpacity
-                      onPress={() => handleRemoveShare(share.memberId)}
-                      hitSlop={8}
-                      style={s.removeBtn}
-                    >
-                      <Ionicons name="close-circle" size={20} color="#D1D5DB" />
-                    </TouchableOpacity>
-                  </View>
-                  {i < computedShares.length - 1 ? <View style={s.sep} /> : null}
-                </View>
-              ))}
-            </View>
-
-            {/* Per-person hint for equal mode */}
-            {splitMode === "equal" && editTotal > 0 && editShares.length > 0 ? (
-              <Text style={s.splitHint}>
-                {formatSplitCurrencyAmount(editTotal / editShares.length, currency)} per person
-              </Text>
-            ) : null}
-
-            {/* Mismatch warning for custom mode */}
-            {splitMismatch ? (
-              <View style={s.splitWarning}>
-                <Ionicons name="warning-outline" size={16} color="#F59E0B" />
-                <Text style={s.splitWarningText}>
-                  Amounts total {formatSplitCurrencyAmount(shareSum, currency)} but expense is{" "}
-                  {formatSplitCurrencyAmount(editTotal, currency)}.{" "}
-                  {shareSum < editTotal
-                    ? `$${(editTotal - shareSum).toFixed(2)} remaining.`
-                    : `$${(shareSum - editTotal).toFixed(2)} over.`}
-                </Text>
-              </View>
-            ) : null}
-          </>
-        ) : null}
-
         {/* Category badge */}
         {detail.category ? (
           <View style={s.categoryRow}>
@@ -425,7 +243,7 @@ export default function TransactionScreen() {
         ) : null}
 
         {/* Paid by */}
-        {!editing && detail.paidBy ? (
+        {detail.paidBy ? (
           <>
             <Text style={s.section}>Paid by</Text>
             <View style={s.card}>
@@ -444,8 +262,8 @@ export default function TransactionScreen() {
           </>
         ) : null}
 
-        {/* Shares (view mode only) */}
-        {!editing && detail.shares.length > 0 ? (
+        {/* Shares */}
+        {detail.shares.length > 0 ? (
           <>
             <Text style={s.section}>Split between</Text>
             <View style={s.card}>
@@ -514,6 +332,7 @@ function EditInput({
   style?: object;
   prefix?: string;
 }) {
+  const { TextInput } = require("react-native");
   return (
     <View style={[s.editInputWrap, style]}>
       {prefix ? <Text style={s.editPrefix}>{prefix}</Text> : null}
@@ -598,92 +417,6 @@ const s = StyleSheet.create({
 
   topActions: { flexDirection: "row", gap: 12, alignItems: "center" },
   topActionBtn: { padding: 8 },
-
-  splitToggleRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  splitToggleBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E3DBD8",
-    backgroundColor: "#fff",
-  },
-  splitToggleBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  splitToggleText: {
-    fontSize: 13,
-    fontFamily: font.semibold,
-    color: "#6B7280",
-  },
-  splitToggleTextActive: {
-    color: "#fff",
-  },
-  shareInputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F7F3F0",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E3DBD8",
-    paddingHorizontal: 8,
-    width: 80,
-    height: 34,
-  },
-  shareInputPrefix: {
-    fontSize: 14,
-    fontFamily: font.bold,
-    color: "#1F2328",
-    marginRight: 2,
-  },
-  shareInput: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: font.bold,
-    color: "#1F2328",
-    paddingVertical: 0,
-    textAlign: "right",
-  },
-  removeBtn: {
-    marginLeft: 8,
-    padding: 2,
-  },
-  splitHint: {
-    fontSize: 13,
-    fontFamily: font.semibold,
-    color: "#7A8088",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  splitWarning: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    backgroundColor: "#FFFBEB",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    padding: 12,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  splitWarningText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: font.medium,
-    color: "#92400E",
-    lineHeight: 18,
-  },
   editInputWrap: {
     flexDirection: "row",
     alignItems: "center",

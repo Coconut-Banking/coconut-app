@@ -39,7 +39,6 @@ import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { useTheme } from "../../lib/theme-context";
-import { useFeatureToggles } from "../../lib/feature-toggles-context";
 import { BalanceHero } from "../../components/split/BalanceHero";
 import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
@@ -49,14 +48,10 @@ import { DEMO_HOME_DISPLAY_NAME, formatHomeGreetingLine } from "../../lib/home-g
 import {
   buildLiveMatchedStrip,
   demoChargeToStripRow,
-  formatTransactionAccountIndicator,
   merchantEmoji,
-  transactionsImplyMultipleAccounts,
   type HomeBankStripRow,
-  visibleDemoChargesImplyMultipleAccounts,
 } from "../../lib/home-bank-strip";
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
-import { useDebounce } from "../../hooks/useDebounce";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 import { sfx } from "../../lib/sounds";
@@ -64,13 +59,9 @@ import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
-function txToSheetRow(tx: Transaction, showAccountIndicator: boolean): HomeBankStripRow {
+function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null; category?: string }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
   const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
-  const accountIndicator =
-    showAccountIndicator
-      ? formatTransactionAccountIndicator(tx.accountName, tx.accountMask)
-      : null;
   return {
     stripId: tx.id,
     merchant,
@@ -84,7 +75,6 @@ function txToSheetRow(tx: Transaction, showAccountIndicator: boolean): HomeBankS
     receiptId: tx.receiptId ?? null,
     logoUrl: tx.logoUrl ?? null,
     category: tx.category ?? null,
-    accountIndicator: accountIndicator ?? undefined,
   };
 }
 
@@ -155,7 +145,6 @@ function filterOffsettingBankPairs(transactions: Transaction[]): Transaction[] {
 
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
-  const { toggles } = useFeatureToggles();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { user, isLoaded: userLoaded } = useUser();
   const { isDemoOn } = useDemoMode();
@@ -169,14 +158,12 @@ export default function BalancesPrototypeScreen() {
   const [showAllBank, setShowAllBank] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
-  const [bankSort, setBankSort] = useState<"newest" | "oldest" | "amount_high" | "amount_low">("newest");
   const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
   const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom" | "receipts">("all");
   const [customDateStart, setCustomDateStart] = useState<Date | null>(null);
   const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } = useSearch();
-  const debouncedBankSearch = useDebounce(bankSearch, 400);
   const [refreshing, setRefreshing] = useState(false);
   const apiFetch = useApiFetch();
   const [itemizedReceipt, setItemizedReceipt] = useState<{
@@ -224,10 +211,6 @@ export default function BalancesPrototypeScreen() {
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
   const { transactions, linked, loading: txLoading, status: txStatus, refetch: refetchTx, runFullSync } = useTransactions();
   const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
-  const hasMultipleBankAccounts = useMemo(
-    () => transactionsImplyMultipleAccounts(transactions),
-    [transactions]
-  );
   const initialHomeLoading =
     !isDemoOn &&
     isSignedIn &&
@@ -237,17 +220,16 @@ export default function BalancesPrototypeScreen() {
 
   const demoStripRows = useMemo(() => {
     if (!useDemoBankUi) return [];
-    const showAcct = visibleDemoChargesImplyMultipleAccounts(PROTOTYPE_DEMO_BANK_CHARGES, dismissedBank);
     return PROTOTYPE_DEMO_BANK_CHARGES.filter(
       (tx) => tx.unsplit && !dismissedBank.includes(tx.id)
-    ).map((tx) => demoChargeToStripRow(tx, { showAccountIndicator: showAcct }));
+    ).map(demoChargeToStripRow);
   }, [useDemoBankUi, dismissedBank]);
 
   const liveStripRows = useMemo(() => {
     if (useDemoBankUi || !linked) return [];
-    const built = buildLiveMatchedStrip(bankVisibleTransactions, transactions);
+    const built = buildLiveMatchedStrip(bankVisibleTransactions);
     return built.filter((r) => !dismissedBank.includes(r.stripId));
-  }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank, transactions]);
+  }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank]);
 
   const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
 
@@ -324,22 +306,9 @@ export default function BalancesPrototypeScreen() {
     return { start, end };
   }, [datePreset, customDateStart, customDateEnd]);
 
-  useEffect(() => {
-    if (searchMode !== "natural" || !showAllBank) return;
-    const q = debouncedBankSearch.trim();
-    if (!q) {
-      askClear();
-      return;
-    }
-    const dateOpts = dateFilterRange
-      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
-      : undefined;
-    void askSearch(debouncedBankSearch, dateOpts);
-  }, [debouncedBankSearch, searchMode, showAllBank, dateFilterRange, askSearch, askClear]);
-
   const filteredAllBankRows = useMemo(() => {
     const q = bankSearch.trim().toLowerCase();
-    const filtered = allLinkedBankRows.filter((tx) => {
+    return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
       if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
       if (dateFilterRange) {
@@ -356,30 +325,7 @@ export default function BalancesPrototypeScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-    const timeMs = (tx: Transaction) => {
-      const t = new Date(tx.date || "").getTime();
-      return Number.isNaN(t) ? 0 : t;
-    };
-    const absAmt = (tx: Transaction) => Math.abs(Number(tx.amount));
-    return [...filtered].sort((a, b) => {
-      const ta = timeMs(a);
-      const tb = timeMs(b);
-      const aa = absAmt(a);
-      const ab = absAmt(b);
-      switch (bankSort) {
-        case "newest":
-          return tb - ta;
-        case "oldest":
-          return ta - tb;
-        case "amount_high":
-          return ab - aa || tb - ta;
-        case "amount_low":
-          return aa - ab || tb - ta;
-        default:
-          return 0;
-      }
-    });
-  }, [allLinkedBankRows, bankFilter, bankSearch, bankSort, dateFilterRange, datePreset]);
+  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange, datePreset]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -511,7 +457,7 @@ export default function BalancesPrototypeScreen() {
           </View>
         ) : null}
 
-        {toggles.showBankSync && useDemoBankUi && stripRows.length > 0 ? (
+        {useDemoBankUi && stripRows.length > 0 ? (
           <View style={{ marginBottom: 18 }}>
             <View style={styles.sectionRow}>
               <SLabel>From your bank</SLabel>
@@ -557,14 +503,6 @@ export default function BalancesPrototypeScreen() {
                   <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
                     {item.merchant}
                   </Text>
-                  {item.accountIndicator ? (
-                    <Text
-                      style={[styles.bankAccountIndicator, { color: theme.textTertiary }]}
-                      numberOfLines={1}
-                    >
-                      {item.accountIndicator}
-                    </Text>
-                  ) : null}
                   <Text
                     style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
                     numberOfLines={1}
@@ -581,7 +519,7 @@ export default function BalancesPrototypeScreen() {
               )}
             />
           </View>
-        ) : toggles.showBankSync && !useDemoBankUi ? (
+        ) : !useDemoBankUi ? (
           <View style={{ marginBottom: 18 }}>
             <View style={styles.sectionRow}>
               <SLabel>From your bank</SLabel>
@@ -649,14 +587,6 @@ export default function BalancesPrototypeScreen() {
                     <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
                       {item.merchant}
                     </Text>
-                    {item.accountIndicator ? (
-                      <Text
-                        style={[styles.bankAccountIndicator, { color: theme.textTertiary }]}
-                        numberOfLines={1}
-                      >
-                        {item.accountIndicator}
-                      </Text>
-                    ) : null}
                     <Text
                       style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
                       numberOfLines={1}
@@ -773,7 +703,7 @@ export default function BalancesPrototypeScreen() {
                       onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
                       activeOpacity={0.75}
                     >
-                      <MemberAvatar name={f.displayName} size={42} imageUrl={f.image_url} variant="soft" />
+                      <MemberAvatar name={f.displayName} size={42} imageUrl={null} variant="soft" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={[styles.friendName, { color: theme.text }]}>{f.displayName}</Text>
                         <Text style={[styles.friendMeta, { color: theme.textTertiary }]}>{meta}</Text>
@@ -891,16 +821,11 @@ export default function BalancesPrototypeScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.sheetMerchant}>{selectedStrip.merchant}</Text>
-                    {selectedStrip.accountIndicator ? (
-                      <Text style={[styles.sheetAccountIndicator, { color: theme.textTertiary }]} numberOfLines={1}>
-                        {selectedStrip.accountIndicator}
-                      </Text>
-                    ) : null}
                     <Text style={styles.sheetDate}>{selectedStrip.sheetDateLine}</Text>
                   </View>
                   <Text style={styles.sheetAmt}>${selectedStrip.amount.toFixed(2)}</Text>
                 </View>
-                {toggles.showEmailReceipts && selectedStrip.showReceiptBox ? (
+                {selectedStrip.showReceiptBox ? (
                   <View style={styles.emailBox}>
                     <View style={styles.emailRow}>
                       <Ionicons name="mail-outline" size={12} color={prototype.blue} />
@@ -908,18 +833,16 @@ export default function BalancesPrototypeScreen() {
                     </View>
                   </View>
                 ) : null}
-                {toggles.showEmailReceipts && selectedStrip.receiptId ? (
+                {selectedStrip.receiptId ? (
                   itemizedReceipt?.merchantType === "rideshare" ? (
                     <>
                       <Text style={styles.itemizedSectionTitle}>Trip details</Text>
                       {itemizedReceipt.rideshare?.map_url ? (
-                        <View style={styles.rideshareMapContainer}>
-                          <Image
-                            source={{ uri: itemizedReceipt.rideshare.map_url }}
-                            style={styles.rideshareMap}
-                            resizeMode="contain"
-                          />
-                        </View>
+                        <Image
+                          source={{ uri: itemizedReceipt.rideshare.map_url }}
+                          style={styles.rideshareMap}
+                          resizeMode="cover"
+                        />
                       ) : null}
                       <View style={styles.rideshareRoute}>
                         <View style={styles.rideshareRouteDots}>
@@ -1093,7 +1016,7 @@ export default function BalancesPrototypeScreen() {
                       />
                     </>
                   )
-                ) : toggles.showEmailReceipts && selectedStrip.showReceiptBox && !selectedStrip.receiptId ? (
+                ) : selectedStrip.showReceiptBox && !selectedStrip.receiptId ? (
                   <Text style={styles.receiptIdHint}>
                     Line items appear when each transaction includes a receipt id from your backend (same id as web
                     receipt split).
@@ -1157,8 +1080,6 @@ export default function BalancesPrototypeScreen() {
                     setCustomDateStart(null);
                     setCustomDateEnd(null);
                     setShowCalendar(false);
-                    setBankFilter("all");
-                    setBankSort("newest");
                   }}
                   style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
                 >
@@ -1179,7 +1100,12 @@ export default function BalancesPrototypeScreen() {
                 value={bankSearch}
                 onChangeText={(text) => {
                   setBankSearch(text);
-                  if (searchMode === "natural" && !text.trim()) {
+                  if (searchMode === "natural" && text.trim()) {
+                    const dateOpts = dateFilterRange
+                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
+                      : undefined;
+                    askSearch(text, dateOpts);
+                  } else if (searchMode === "natural" && !text.trim()) {
                     askClear();
                   }
                 }}
@@ -1202,81 +1128,6 @@ export default function BalancesPrototypeScreen() {
                 </TouchableOpacity>
               )}
             </View>
-
-            {searchMode === "keyword" ? (
-              <>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={{ flexGrow: 0, marginBottom: 8 }}
-                  contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}
-                >
-                  {(
-                    [
-                      ["newest", "Newest first"] as const,
-                      ["oldest", "Oldest first"] as const,
-                      ["amount_high", "Amount: High to Low"] as const,
-                      ["amount_low", "Amount: Low to High"] as const,
-                    ] as const
-                  ).map(([value, label]) => (
-                    <TouchableOpacity
-                      key={value}
-                      onPress={() => setBankSort(value)}
-                      style={[searchStyles.dateChip, bankSort === value && searchStyles.dateChipActive]}
-                    >
-                      <Text
-                        style={[
-                          searchStyles.dateChipText,
-                          bankSort === value && searchStyles.dateChipTextActive,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={{ flexGrow: 0, marginBottom: 10 }}
-                  contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}
-                >
-                  <TouchableOpacity
-                    onPress={() => setBankFilter("all")}
-                    style={[searchStyles.dateChip, bankFilter === "all" && searchStyles.dateChipActive]}
-                  >
-                    <Text
-                      style={[
-                        searchStyles.dateChipText,
-                        bankFilter === "all" && searchStyles.dateChipTextActive,
-                      ]}
-                    >
-                      All charges
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setBankFilter("unsplit")}
-                    style={[searchStyles.dateChip, bankFilter === "unsplit" && searchStyles.dateChipActive]}
-                  >
-                    <Ionicons
-                      name="git-branch-outline"
-                      size={13}
-                      color={bankFilter === "unsplit" ? "#fff" : "#7a7d80"}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
-                      style={[
-                        searchStyles.dateChipText,
-                        bankFilter === "unsplit" && searchStyles.dateChipTextActive,
-                      ]}
-                    >
-                      Unsplit only
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
-              </>
-            ) : null}
 
             {/* Date filter presets */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
@@ -1363,12 +1214,7 @@ export default function BalancesPrototypeScreen() {
                   </View>
                 ) : (
                   <View style={styles.groupedCard}>
-                    {filteredAllBankRows.map((tx, i) => {
-                      const acctLine =
-                        hasMultipleBankAccounts
-                          ? formatTransactionAccountIndicator(tx.accountName, tx.accountMask)
-                          : null;
-                      return (
+                    {filteredAllBankRows.map((tx, i) => (
                       <View key={tx.id}>
                         <TouchableOpacity
                           style={styles.friendRow}
@@ -1377,7 +1223,7 @@ export default function BalancesPrototypeScreen() {
                             openedFromListRef.current = true;
                             setShowAllBank(false);
                             sfx.pop();
-                            setSelectedStrip(txToSheetRow(tx, hasMultipleBankAccounts));
+                            setSelectedStrip(txToSheetRow(tx));
                           }}
                         >
                           <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -1394,14 +1240,6 @@ export default function BalancesPrototypeScreen() {
                             <Text style={styles.friendName} numberOfLines={1}>
                               {tx.merchant || tx.rawDescription || "Purchase"}
                             </Text>
-                            {acctLine ? (
-                              <Text
-                                style={[styles.txAccountIndicator, { color: theme.textTertiary }]}
-                                numberOfLines={1}
-                              >
-                                {acctLine}
-                              </Text>
-                            ) : null}
                             <Text style={styles.friendMeta} numberOfLines={1}>
                               {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
                             </Text>
@@ -1436,8 +1274,7 @@ export default function BalancesPrototypeScreen() {
                         </TouchableOpacity>
                         {i < filteredAllBankRows.length - 1 ? <View style={styles.rowSep} /> : null}
                       </View>
-                      );
-                    })}
+                    ))}
                   </View>
                 )
               ) : (
@@ -1561,7 +1398,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   bankMerchant: { fontSize: 13, fontFamily: font.bold, color: "#1F2328", marginBottom: 2 },
-  bankAccountIndicator: { fontSize: 10, fontFamily: font.regular, marginBottom: 3 },
   bankHint: { fontSize: 10, fontFamily: font.regular, color: "#81868D", marginBottom: 7 },
   bankEmailLine: { fontSize: 10, fontFamily: font.regular, color: prototype.blue, marginBottom: 7 },
   bankAmt: {
@@ -1603,7 +1439,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   friendName: { fontSize: 15, fontFamily: font.bold, color: "#1F2328" },
-  txAccountIndicator: { fontSize: 11, fontFamily: font.regular, marginTop: 2 },
   friendMeta: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   friendAmt: { fontSize: 16, fontFamily: font.black, marginRight: 4, letterSpacing: -0.3 },
   rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 70 },
@@ -1742,7 +1577,6 @@ const styles = StyleSheet.create({
     borderColor: "#E3DBD8",
   },
   sheetMerchant: { fontSize: 17, fontFamily: font.extrabold, color: "#1F2328" },
-  sheetAccountIndicator: { fontSize: 11, fontFamily: font.regular, marginTop: 2 },
   sheetDate: { fontSize: 12, fontFamily: font.regular, color: "#7A8088", marginTop: 2 },
   sheetAmt: { fontSize: 22, fontFamily: font.black, color: "#1F2328", letterSpacing: -1 },
   emailBox: {
@@ -1826,17 +1660,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 14,
   },
-  rideshareMapContainer: {
+  rideshareMap: {
     width: "100%",
-    aspectRatio: 1.6,
+    height: 160,
     borderRadius: radii.md,
     marginBottom: 12,
     backgroundColor: "#f0f0f0",
-    overflow: "hidden",
-  },
-  rideshareMap: {
-    width: "100%",
-    height: "100%",
   },
   rideshareRoute: {
     flexDirection: "row",

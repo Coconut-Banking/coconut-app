@@ -30,7 +30,6 @@ import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme"
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
-import { MemberAvatar } from "../../components/MemberAvatar";
 import { useCurrency } from "../../hooks/useCurrency";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
@@ -43,7 +42,9 @@ type GroupMember = {
   venmo_username?: string | null;
 };
 
-const SPLITS: { key: SplitMethod; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const ACCENT = ["#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
+
+const SPLIT_METHODS: { key: SplitMethod; label: string; icon: string }[] = [
   { key: "equal", label: "Equal", icon: "git-compare-outline" },
   { key: "percent", label: "%", icon: "pie-chart-outline" },
   { key: "exact", label: "Amt", icon: "cash-outline" },
@@ -822,6 +823,7 @@ export default function AddExpenseScreen() {
                       const isGroupBackedFriend = !!groupBackedId;
                       const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
                       const on = selectedKeys.has(targetKey);
+                      const hue = ACCENT[i % ACCENT.length];
                       return (
                         <TouchableOpacity
                           key={f.key}
@@ -829,7 +831,9 @@ export default function AddExpenseScreen() {
                           onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
                           activeOpacity={0.7}
                         >
-                          <MemberAvatar name={f.displayName} size={44} variant="soft" />
+                          <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                            <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
+                          </View>
                           <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
                           <View style={[s.radio, on && s.radioOn]}>
                             {on && <View style={s.radioDot} />}
@@ -853,7 +857,9 @@ export default function AddExpenseScreen() {
                         onPress={() => startAddFriend(c)}
                         activeOpacity={0.7}
                       >
-                        <MemberAvatar name={c.name} size={44} variant="soft" />
+                        <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
+                          <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
+                        </View>
                         <View style={{ flex: 1 }}>
                           <Text style={s.listRowTitle}>{c.name}</Text>
                           {c.email ? (
@@ -1083,10 +1089,13 @@ export default function AddExpenseScreen() {
                   <Text style={[s.secLabel, { marginTop: 20 }]}>They owe you</Text>
                   <View style={s.listCard}>
                     {oweList.map((person, i) => {
+                      const hue = ACCENT[i % ACCENT.length];
                       return (
                         <View key={person.memberId} style={[s.oweRow, i < oweList.length - 1 && s.listRowBorder]}>
                           <View style={s.oweTop}>
-                            <MemberAvatar name={person.displayName} size={44} variant="soft" />
+                            <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                              <Text style={[s.friendAvatarTxt, { color: hue }]}>{person.initials}</Text>
+                            </View>
                             <View style={{ flex: 1 }}>
                               <Text style={s.listRowTitle}>{person.displayName}</Text>
                               <Text style={s.listRowSub}>their share</Text>
@@ -1186,6 +1195,7 @@ export default function AddExpenseScreen() {
               {groupMembers.map((m, mi) => {
                 const isMe = resolvedMeId != null && m.id === resolvedMeId;
                 const selected = paidByMe ? isMe : payerMemberId === m.id;
+                const hue = ACCENT[mi % ACCENT.length];
                 return (
                   <TouchableOpacity
                     key={m.id}
@@ -1197,7 +1207,9 @@ export default function AddExpenseScreen() {
                     }}
                     activeOpacity={0.7}
                   >
-                    <MemberAvatar name={m.display_name} size={44} variant="soft" />
+                    <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                      <Text style={[s.friendAvatarTxt, { color: hue }]}>{m.display_name.slice(0, 2).toUpperCase()}</Text>
+                    </View>
                     <Text style={[s.listRowTitle, { flex: 1 }]}>{isMe ? "You" : m.display_name}</Text>
                     <View style={[s.radio, selected && s.radioOn]}>
                       {selected && <View style={s.radioDot} />}
@@ -1278,10 +1290,13 @@ export default function AddExpenseScreen() {
               <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
               <View style={s.listCard}>
                 {splitPeople.map((p, i) => {
+                  const hue = ACCENT[i % ACCENT.length];
                   const sh = shares.find((x) => x.key === p.key);
                   return (
                     <View key={p.key} style={[s.splitDetailRow, i < splitPeople.length - 1 && s.listRowBorder]}>
-                      <MemberAvatar name={p.name} size={44} variant="soft" />
+                      <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                        <Text style={[s.friendAvatarTxt, { color: hue }]}>{p.name.slice(0, 2).toUpperCase()}</Text>
+                      </View>
                       <View style={{ flex: 1 }}>
                         <Text style={s.listRowTitle}>{p.name}</Text>
                         <Text style={s.listRowSub}>
@@ -1492,6 +1507,13 @@ const s = StyleSheet.create({
     backgroundColor: prototype.greenBg, borderWidth: 2, borderColor: prototype.greenMid,
     alignItems: "center", justifyContent: "center",
   },
+
+  // Friend avatar
+  friendAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 1.5, alignItems: "center", justifyContent: "center",
+  },
+  friendAvatarTxt: { fontSize: 14, fontFamily: font.bold },
 
   // Radio button
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: darkUI.stroke, alignItems: "center", justifyContent: "center" },

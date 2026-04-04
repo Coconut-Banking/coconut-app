@@ -13,7 +13,6 @@ import {
   Pressable,
   Image,
   AppState,
-  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -190,7 +189,6 @@ export default function PersonScreen() {
                 },
               });
             }
-            DeviceEventEmitter.emit("groups-updated");
             router.back();
           } catch {
             Alert.alert("Error", "Could not record settlement");
