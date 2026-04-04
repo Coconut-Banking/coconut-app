@@ -29,7 +29,8 @@
         "NSLocationWhenInUseUsageDescription": "Location access is required to accept payments."
       },
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": ["Default"],
+        "aps-environment": "production"
       }
     },
     "android": {
