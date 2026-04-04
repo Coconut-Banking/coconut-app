@@ -223,7 +223,8 @@ export default function PersonScreen() {
   };
 
   const handles = detail.p2pHandles;
-  const hasVenmo = !!handles?.venmo_username;
+  const venmoRecipient = handles?.venmo_username || detail.email;
+  const hasVenmo = !!venmoRecipient;
   const hasPayPal = !!handles?.paypal_username;
   const hasCashApp = !!handles?.cashapp_cashtag;
   const hasAnyP2P = hasVenmo || hasPayPal || hasCashApp;
@@ -240,7 +241,7 @@ export default function PersonScreen() {
     setPendingP2PPlatform(platform);
     try {
       if (platform === "venmo") {
-        await openVenmo(settleAmount, handles?.venmo_username, settleNote);
+        await openVenmo(settleAmount, venmoRecipient, settleNote);
       } else if (platform === "paypal") {
         await openPayPal(settleAmount, handles?.paypal_username);
       } else {
@@ -450,7 +451,9 @@ export default function PersonScreen() {
                 <Ionicons name="logo-venmo" size={18} color="#3D95CE" />
                 <View style={{ flex: 1 }}>
                   <Text style={s.sheetBtnOutlineText}>Venmo</Text>
-                  <Text style={s.sheetBtnOutlineSub}>Pay @{handles!.venmo_username}</Text>
+                  <Text style={s.sheetBtnOutlineSub}>
+                    {handles?.venmo_username ? `Pay @${handles.venmo_username}` : `Pay ${venmoRecipient}`}
+                  </Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -487,7 +490,7 @@ export default function PersonScreen() {
               <View style={[s.sheetBtnOutline, { opacity: 0.45 }]}>
                 <Ionicons name="logo-venmo" size={18} color="#1F2328" />
                 <View style={{ flex: 1 }}>
-                  <Text style={s.sheetBtnOutlineText}>Venmo / PayPal</Text>
+                  <Text style={s.sheetBtnOutlineText}>PayPal / Cash App</Text>
                   <Text style={s.sheetBtnOutlineSub}>Add handles in group settings</Text>
                 </View>
               </View>

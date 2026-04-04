@@ -481,7 +481,9 @@ export default function GroupScreen() {
         ) : null}
 
         {detail.suggestions && detail.suggestions.length > 0 ? (() => {
-          const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
+          const myMemberId =
+            detail.members.find((m) => m.user_id === userId)?.id ??
+            (detail.isOwner ? detail.members[0]?.id : undefined);
           const mySuggestions = detail.suggestions.filter(
             (su) => myMemberId && (su.fromMemberId === myMemberId || su.toMemberId === myMemberId)
           );
@@ -509,7 +511,9 @@ export default function GroupScreen() {
                   </View>
                   <View style={s.suggInfo}>
                     <Text style={[s.suggText, { color: theme.textSecondary }]}>
-                      <Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>{toName}</Text>
+                      {iPayThem
+                        ? <><Text style={s.bold}>You</Text> pay <Text style={s.bold}>{toName}</Text></>
+                        : <><Text style={s.bold}>{fromName}</Text> pays <Text style={s.bold}>you</Text></>}
                     </Text>
                     <Text style={[s.suggAmount, { color: theyPayMe ? theme.positive : theme.negative }]}>
                       {formatSplitCurrencyAmount(su.amount, su.currency)}
