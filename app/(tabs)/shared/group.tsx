@@ -39,6 +39,7 @@ import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { sfx } from "../../../lib/sounds";
+import { BASE_URL } from "../../../lib/invite";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -84,6 +85,11 @@ export default function GroupScreen() {
   const [renameGroupDraft, setRenameGroupDraft] = useState("");
   const [renamingGroup, setRenamingGroup] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [handlesMember, setHandlesMember] = useState<GroupMember | null>(null);
+  const [handlesVenmo, setHandlesVenmo] = useState("");
+  const [handlesCashapp, setHandlesCashapp] = useState("");
+  const [handlesPaypal, setHandlesPaypal] = useState("");
+  const [savingHandles, setSavingHandles] = useState(false);
 
   const { summary } = useGroupsSummary({ contacts: true });
   const existingMemberNames = useMemo(
@@ -477,6 +483,47 @@ export default function GroupScreen() {
     [apiFetch, id, isDemoOn, refetch, refetchSummary]
   );
 
+  const openEditHandles = useCallback(
+    (m: GroupMember) => {
+      if (!detail?.isOwner || isDemoOn || detail.archivedAt) return;
+      sfx.pop();
+      setHandlesMember(m);
+      setHandlesVenmo((m.venmo_username ?? "").trim());
+      setHandlesCashapp((m.cashapp_cashtag ?? "").replace(/^\$/, "").trim());
+      setHandlesPaypal((m.paypal_username ?? "").trim());
+    },
+    [detail?.isOwner, detail?.archivedAt, isDemoOn]
+  );
+
+  const saveMemberHandles = useCallback(async () => {
+    if (!id || !handlesMember || isDemoOn) return;
+    const cashRaw = handlesCashapp.trim().replace(/^\$/, "");
+    setSavingHandles(true);
+    try {
+      const res = await apiFetch(`/api/groups/${id}/members`, {
+        method: "PATCH",
+        body: {
+          memberId: handlesMember.id,
+          venmo_username: handlesVenmo.trim() || null,
+          cashapp_cashtag: cashRaw || null,
+          paypal_username: handlesPaypal.trim() || null,
+        } as object,
+      });
+      if (res.ok) {
+        setHandlesMember(null);
+        await refetch(true);
+        toast.show("Payment handles saved");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert("Couldn't save", (err as { error?: string }).error ?? "Try again.");
+      }
+    } catch {
+      Alert.alert("Error", "Could not save handles.");
+    } finally {
+      setSavingHandles(false);
+    }
+  }, [id, handlesMember, handlesVenmo, handlesCashapp, handlesPaypal, isDemoOn, apiFetch, refetch, toast]);
+
   if (!detail) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -581,7 +628,7 @@ export default function GroupScreen() {
                 style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
                 onPress={async () => {
                   sfx.pop();
-                  const link = `https://coconut-app.dev/join/${detail.invite_token}`;
+                  const link = `${BASE_URL.replace(/\/$/, "")}/join/${detail.invite_token}`;
                   await Clipboard.setStringAsync(link);
                   toast.show("Link copied");
                 }}
@@ -601,6 +648,7 @@ export default function GroupScreen() {
             const isMe = Boolean(userId && m.user_id === userId);
             const showRemove =
               detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
+            const showEditHandles = detail.isOwner && !isDemoOn && !isArchived;
             return (
               <View
                 key={m.id}
@@ -616,25 +664,43 @@ export default function GroupScreen() {
                     {isMe ? " (you)" : ""}
                     {isOwnerMember ? " · Owner" : ""}
                   </Text>
+                  {(m.venmo_username || m.cashapp_cashtag || m.paypal_username) ? (
+                    <Text style={[s.memberRowHandles, { color: theme.textQuaternary }]} numberOfLines={2}>
+                      {[m.venmo_username ? `Venmo @${m.venmo_username}` : null, m.cashapp_cashtag ? `Cash ${m.cashapp_cashtag.startsWith("$") ? m.cashapp_cashtag : `$${m.cashapp_cashtag}`}` : null, m.paypal_username ? `PayPal ${m.paypal_username}` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Text>
+                  ) : null}
                 </View>
-                {showRemove ? (
-                  removingMemberId === m.id ? (
-                    <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 8 }} />
-                  ) : (
+                <View style={s.memberRowActions}>
+                  {showEditHandles ? (
                     <TouchableOpacity
-                      onPress={() => {
-                        sfx.pop();
-                        confirmRemoveMember(m);
-                      }}
-                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      accessibilityLabel={`Remove ${m.display_name}`}
+                      onPress={() => openEditHandles(m)}
+                      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                      accessibilityLabel={`Edit payment handles for ${m.display_name}`}
                     >
-                      <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                      <Ionicons name="wallet-outline" size={20} color={theme.textTertiary} />
                     </TouchableOpacity>
-                  )
-                ) : (
-                  <View style={{ width: 22 }} />
-                )}
+                  ) : null}
+                  {showRemove ? (
+                    removingMemberId === m.id ? (
+                      <ActivityIndicator size="small" color={theme.primary} />
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => {
+                          sfx.pop();
+                          confirmRemoveMember(m);
+                        }}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        accessibilityLabel={`Remove ${m.display_name}`}
+                      >
+                        <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                      </TouchableOpacity>
+                    )
+                  ) : !showEditHandles ? (
+                    <View style={{ width: 22 }} />
+                  ) : null}
+                </View>
               </View>
             );
           })}
@@ -750,7 +816,14 @@ export default function GroupScreen() {
                                       currency: su.currency,
                                     },
                                   });
-                                  if (res.ok) { refetch(); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
+                                  const data = (await res.json().catch(() => ({}))) as { error?: string };
+                                  if (res.ok) {
+                                    refetch();
+                                    refetchSummary();
+                                    DeviceEventEmitter.emit("groups-updated");
+                                  } else {
+                                    Alert.alert("Error", data?.error ?? "Failed to record settlement");
+                                  }
                                 } finally { setRecordingSettlement(false); }
                               },
                             },
@@ -1081,6 +1154,82 @@ export default function GroupScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={handlesMember != null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => !savingHandles && setHandlesMember(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={s.renameModalOverlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !savingHandles && setHandlesMember(null)} />
+          <View style={[s.renameModalCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <Text style={[s.renameModalTitle, { color: theme.text }]}>Payment handles</Text>
+            <Text style={[s.handlesModalSubtitle, { color: theme.textSecondary }]}>
+              {handlesMember?.display_name ?? ""}
+            </Text>
+            <Text style={[s.handlesModalLabel, { color: theme.textTertiary }]}>Venmo</Text>
+            <TextInput
+              style={[s.renameModalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceSecondary, marginBottom: 10 }]}
+              value={handlesVenmo}
+              onChangeText={setHandlesVenmo}
+              placeholder="@username"
+              placeholderTextColor={theme.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={100}
+              editable={!savingHandles}
+            />
+            <Text style={[s.handlesModalLabel, { color: theme.textTertiary }]}>Cash App</Text>
+            <TextInput
+              style={[s.renameModalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceSecondary, marginBottom: 10 }]}
+              value={handlesCashapp}
+              onChangeText={setHandlesCashapp}
+              placeholder="$cashtag"
+              placeholderTextColor={theme.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={100}
+              editable={!savingHandles}
+            />
+            <Text style={[s.handlesModalLabel, { color: theme.textTertiary }]}>PayPal</Text>
+            <TextInput
+              style={[s.renameModalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceSecondary, marginBottom: 8 }]}
+              value={handlesPaypal}
+              onChangeText={setHandlesPaypal}
+              placeholder="username or email"
+              placeholderTextColor={theme.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={100}
+              editable={!savingHandles}
+            />
+            <View style={s.renameModalActions}>
+              <TouchableOpacity
+                onPress={() => !savingHandles && setHandlesMember(null)}
+                style={s.renameModalBtn}
+                disabled={savingHandles}
+              >
+                <Text style={{ color: theme.textSecondary, fontFamily: font.medium, fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void saveMemberHandles()}
+                style={s.renameModalBtn}
+                disabled={savingHandles}
+              >
+                {savingHandles ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Text style={{ color: theme.primary, fontFamily: font.semibold, fontSize: 16 }}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1102,6 +1251,10 @@ const s = StyleSheet.create({
   memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, gap: 12 },
   memberRowText: { flex: 1, minWidth: 0 },
   memberRowName: { fontSize: 15, fontFamily: font.medium },
+  memberRowHandles: { fontSize: 11, fontFamily: font.regular, marginTop: 3 },
+  memberRowActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  handlesModalSubtitle: { fontSize: 14, fontFamily: font.medium, marginBottom: 14, marginTop: -6 },
+  handlesModalLabel: { fontSize: 11, fontFamily: font.bold, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
   renameModalOverlay: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.45)" },
   renameModalCard: { borderRadius: radii.lg, borderWidth: 1, padding: 20, ...shadow.md },
   renameModalTitle: { fontSize: 17, fontFamily: font.bold, marginBottom: 12 },

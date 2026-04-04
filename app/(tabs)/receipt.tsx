@@ -795,9 +795,12 @@ function SummaryStep({
           method: "POST",
           body: { name: rs.editMerchant ? `${rs.editMerchant} split` : "Receipt split", ownerDisplayName: "You" },
         });
-        const gd = await res.json();
+        const gd = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
         if (res.ok && gd.id) gid = gd.id;
-        else { setFinished(true); setFinishing(false); return; }
+        else {
+          Alert.alert("Error", gd?.error ?? "Could not create group for this split.");
+          return;
+        }
       }
 
       setResolvedGroupId(gid);
@@ -805,17 +808,22 @@ function SummaryStep({
         method: "POST",
         body: { groupId: gid, people: rs.people.map(p => ({ name: p.name, email: p.email })) },
       });
-      const data = await res.json();
+      const data = (await res.json().catch(() => ({}))) as {
+        suggestions?: Array<{ fromMemberId: string; toMemberId: string; fromName: string; toName: string; amount: number }>;
+        groupName?: string;
+        members?: Array<{ id: string; displayName: string; email: string | null }>;
+        error?: string;
+      };
       if (res.ok) {
         setFinished(true);
         setSuggestions(data.suggestions || []);
         setGroupName(data.groupName || "");
         setMembers(data.members || []);
       } else {
-        setFinished(true);
+        Alert.alert("Error", data?.error ?? "Failed to save receipt split.");
       }
     } catch {
-      setFinished(true);
+      Alert.alert("Error", "Could not save receipt split.");
     } finally {
       setFinishing(false);
     }

@@ -173,8 +173,24 @@ function PushNotificationRegistrar() {
     });
 
     const responseSub = addNotificationResponseListener((response) => {
-      const data = response.notification.request.content.data;
+      const raw = response.notification.request.content.data;
+      const data =
+        raw && typeof raw === "object" && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : {};
+      const type = typeof data.type === "string" ? data.type : undefined;
+      const groupId = typeof data.groupId === "string" ? data.groupId : undefined;
+
       console.log("[push] Notification tapped:", data);
+
+      if (
+        (type === "manual_expense" || type === "split_transaction" || type === "settlement") &&
+        groupId
+      ) {
+        router.push({ pathname: "/(tabs)/shared/group", params: { id: groupId } });
+        return;
+      }
+      router.push("/(tabs)/activity");
     });
 
     const receivedSub = addNotificationReceivedListener((notification) => {

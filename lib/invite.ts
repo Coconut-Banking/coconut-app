@@ -1,6 +1,9 @@
 import { Share, Linking, Platform } from "react-native";
+import Constants from "expo-constants";
 
-const BASE_URL = "https://coconut-app.dev";
+export const BASE_URL =
+  (Constants.expoConfig?.extra?.EXPO_PUBLIC_API_URL as string) ||
+  "https://coconut-app.dev";
 
 export type InviteLink = { groupName: string; token: string };
 
@@ -13,8 +16,9 @@ function inviteMessage(
     : "You're invited to";
 
   if (inviteLinks && inviteLinks.length > 0) {
+    const origin = BASE_URL.replace(/\/$/, "");
     const lines = inviteLinks.map(
-      (l) => `${l.groupName}: ${BASE_URL}/join/${l.token}`
+      (l) => `${l.groupName}: ${origin}/join/${l.token}`
     );
     return `${prefix} Coconut — the fastest way to split expenses.\n\nJoin:\n${lines.join("\n")}`;
   }

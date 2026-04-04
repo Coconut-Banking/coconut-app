@@ -44,6 +44,9 @@ export interface GroupMember {
   email: string | null;
   display_name: string;
   image_url?: string | null;
+  venmo_username?: string | null;
+  cashapp_cashtag?: string | null;
+  paypal_username?: string | null;
 }
 
 export interface GroupDetail {

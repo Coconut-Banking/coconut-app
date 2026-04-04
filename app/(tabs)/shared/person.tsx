@@ -13,6 +13,7 @@ import {
   Pressable,
   Image,
   AppState,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -176,8 +177,9 @@ export default function PersonScreen() {
         onPress: async () => {
           setRecordingSettlement(true);
           try {
+            let anyFailed = false;
             for (const se of detail.settlements ?? []) {
-              await apiFetch("/api/settlements", {
+              const res = await apiFetch("/api/settlements", {
                 method: "POST",
                 body: {
                   groupId: se.groupId,
@@ -188,8 +190,14 @@ export default function PersonScreen() {
                   currency: se.currency ?? "USD",
                 },
               });
+              if (!res.ok) anyFailed = true;
             }
-            router.back();
+            if (anyFailed) {
+              Alert.alert("Error", "Some settlements could not be recorded");
+            } else {
+              DeviceEventEmitter.emit("groups-updated");
+              router.back();
+            }
           } catch {
             Alert.alert("Error", "Could not record settlement");
           } finally {
@@ -228,6 +236,9 @@ export default function PersonScreen() {
   const hasPayPal = !!handles?.paypal_username;
   const hasCashApp = !!handles?.cashapp_cashtag;
   const hasAnyP2P = hasVenmo || hasPayPal || hasCashApp;
+  const uniqueSettlementGroupIds = [...new Set((detail.settlements ?? []).map((se) => se.groupId))];
+  const singleGroupIdForHandles =
+    uniqueSettlementGroupIds.length === 1 ? uniqueSettlementGroupIds[0] : null;
   const settleAmount = firstLine ? Math.abs(firstLine.amount) : 0;
   const settleNote = `Coconut – ${detail.displayName}`;
 
@@ -487,12 +498,29 @@ export default function PersonScreen() {
             )}
 
             {!hasAnyP2P && (
-              <View style={[s.sheetBtnOutline, { opacity: 0.45 }]}>
-                <Ionicons name="logo-venmo" size={18} color="#1F2328" />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.sheetBtnOutlineText}>PayPal / Cash App</Text>
-                  <Text style={s.sheetBtnOutlineSub}>Add handles in group settings</Text>
+              <View style={{ gap: 10 }}>
+                <View style={[s.sheetBtnOutline, { opacity: 0.45, marginBottom: 0 }]}>
+                  <Ionicons name="wallet-outline" size={18} color="#1F2328" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.sheetBtnOutlineText}>Venmo / PayPal / Cash App</Text>
+                    <Text style={s.sheetBtnOutlineSub}>
+                      Add payment handles in each shared group's Members section (group owners can edit them).
+                    </Text>
+                  </View>
                 </View>
+                {singleGroupIdForHandles ? (
+                  <TouchableOpacity
+                    style={s.sheetLinkRow}
+                    onPress={() => {
+                      setSettleSheetOpen(false);
+                      router.push({ pathname: "/(tabs)/shared/group", params: { id: singleGroupIdForHandles } });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.sheetLinkText}>Open group to add handles</Text>
+                    <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
 
@@ -653,6 +681,15 @@ const s = StyleSheet.create({
   },
   sheetBtnOutlineText: { fontFamily: font.semibold, fontSize: 15, color: "#1F2328" },
   sheetBtnOutlineSub: { fontFamily: font.regular, fontSize: 12, color: "#7A8088", marginTop: 1 },
+  sheetLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginBottom: 10,
+  },
+  sheetLinkText: { fontFamily: font.semibold, fontSize: 15, color: colors.primary },
   sheetDone: { alignItems: "center", marginTop: 8, paddingVertical: 12 },
   sheetDoneText: { fontFamily: font.semibold, fontSize: 15, color: "#7A8088" },
   confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
