@@ -487,12 +487,21 @@ export default function SharedIndex() {
   ];
   // When the API returns successfully, trust it — including empty lists (all settled). Do not fall back
   // to “everyone from /api/groups” or we’d show people with $0 net like Splitwise hides.
-  const friends =
+  const unsortedFriends =
     !isDemoOn && realSummary != null
       ? summaryFriends
       : isDemoOn
         ? summaryFriends
         : mergedFallbackFriends;
+  const friends = [...unsortedFriends].sort((a, b) => {
+    const aHasBalance = a.balances.length > 0 ? 1 : 0;
+    const bHasBalance = b.balances.length > 0 ? 1 : 0;
+    if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+    const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? "";
+    const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? "";
+    if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+    return a.displayName.localeCompare(b.displayName);
+  });
   const groupsFromApi =
     !isDemoOn && realSummary != null
       ? summaryGroups
@@ -519,7 +528,15 @@ export default function SharedIndex() {
     else if (thisHasBalance === prevHasBalance && g.memberCount > prev.memberCount) groupsByName.set(key, g);
     else if (thisHasBalance === prevHasBalance && g.memberCount === prev.memberCount && g.imageUrl && !prev.imageUrl) groupsByName.set(key, g);
   }
-  const groups = [...groupsByName.values()];
+  const groups = [...groupsByName.values()].sort((a, b) => {
+    const aHasBalance = (a.myBalances?.length ?? 0) > 0 ? 1 : 0;
+    const bHasBalance = (b.myBalances?.length ?? 0) > 0 ? 1 : 0;
+    if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+    const aTime = a.lastActivityAt ?? "";
+    const bTime = b.lastActivityAt ?? "";
+    if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
   const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
   const visibleGroups = groups.filter((g) => {
     const groupName = g.name.trim().toLowerCase();

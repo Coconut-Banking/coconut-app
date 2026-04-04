@@ -19,6 +19,7 @@ export interface FriendBalance {
   /** Single-currency shortcut when `balances.length === 1`; null when multiple currencies. */
   balance: number | null;
   balances: Array<{ currency: string; amount: number }>;
+  lastActivityAt?: string | null;
 }
 
 export interface CurrencyTotalsRow {
@@ -214,33 +215,38 @@ export function useGroupDetail(id: string | null) {
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const prevId = useRef(id);
+  const hasDetail = useRef(false);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
       if (!id) {
         setDetail(null);
+        hasDetail.current = false;
         setLoading(false);
         return;
       }
-      if (!silent && !detail) setLoading(true);
+      if (!silent && !hasDetail.current) setLoading(true);
       try {
         const res = await apiFetch(`/api/groups/${id}`);
         if (res.ok) {
           const data = await res.json();
           setDetail(data);
+          hasDetail.current = true;
         } else if (!silent) {
           setDetail(null);
+          hasDetail.current = false;
         }
       } finally {
         setLoading(false);
       }
     },
-    [id, apiFetch, detail]
+    [id, apiFetch]
   );
 
   useEffect(() => {
     if (prevId.current !== id) {
       setDetail(null);
+      hasDetail.current = false;
       prevId.current = id;
     }
     fetchDetail();
@@ -256,15 +262,17 @@ export function usePersonDetail(key: string | null) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const prevKey = useRef(key);
+  const hasDetail = useRef(false);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
       if (!key) {
         setDetail(null);
+        hasDetail.current = false;
         setLoading(false);
         return;
       }
-      if (!silent && !detail) setLoading(true);
+      if (!silent && !hasDetail.current) setLoading(true);
       try {
         const res = await apiFetch(
           `/api/groups/person?key=${encodeURIComponent(key)}`
@@ -272,19 +280,22 @@ export function usePersonDetail(key: string | null) {
         if (res.ok) {
           const data = await res.json();
           setDetail(data);
+          hasDetail.current = true;
         } else if (!silent) {
           setDetail(null);
+          hasDetail.current = false;
         }
       } finally {
         setLoading(false);
       }
     },
-    [key, apiFetch, detail]
+    [key, apiFetch]
   );
 
   useEffect(() => {
     if (prevKey.current !== key) {
       setDetail(null);
+      hasDetail.current = false;
       prevKey.current = key;
     }
     fetchDetail();
@@ -320,29 +331,37 @@ export function useTransactionDetail(id: string | null) {
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const prevId = useRef(id);
+  const hasDetail = useRef(false);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
       if (!id) {
         setDetail(null);
+        hasDetail.current = false;
         setLoading(false);
         return;
       }
-      if (!silent && !detail) setLoading(true);
+      if (!silent && !hasDetail.current) setLoading(true);
       try {
         const res = await apiFetch(`/api/groups/transaction?id=${encodeURIComponent(id)}`);
-        if (res.ok) setDetail(await res.json());
-        else if (!silent) setDetail(null);
+        if (res.ok) {
+          setDetail(await res.json());
+          hasDetail.current = true;
+        } else if (!silent) {
+          setDetail(null);
+          hasDetail.current = false;
+        }
       } finally {
         setLoading(false);
       }
     },
-    [id, apiFetch, detail]
+    [id, apiFetch]
   );
 
   useEffect(() => {
     if (prevId.current !== id) {
       setDetail(null);
+      hasDetail.current = false;
       prevId.current = id;
     }
     fetchDetail();
