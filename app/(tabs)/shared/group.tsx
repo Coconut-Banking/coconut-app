@@ -263,6 +263,7 @@ export default function GroupScreen() {
       aspect: [1, 1],
       quality: 0.8,
       exif: false,
+      base64: true,
     };
     const result = source === "camera"
       ? await ImagePicker.launchCameraAsync(opts)
@@ -279,18 +280,20 @@ export default function GroupScreen() {
       Alert.alert("File too large", "Image must be under 2MB.");
       return;
     }
+    if (!asset.base64) {
+      Alert.alert("Upload failed", "Could not read image data. Try again.");
+      return;
+    }
 
     setUploadingIcon(true);
     try {
-      const formData = new FormData();
-      formData.append("image", { uri: asset.uri, name: `icon.${mimeType === "image/png" ? "png" : "jpg"}`, type: mimeType } as unknown as Blob);
-      if (__DEV__) console.log(`[group-icon] uploading to /api/groups/${id}/icon, mimeType:`, mimeType, "uri:", asset.uri.slice(0, 80));
-      const res = await apiFetch(`/api/groups/${id}/icon`, { method: "POST", body: formData });
+      const imageDataUri = `data:${mimeType};base64,${asset.base64}`;
+      if (__DEV__) console.log(`[group-icon] uploading base64 to /api/groups/${id}/image, mimeType:`, mimeType, "length:", imageDataUri.length);
+      const res = await apiFetch(`/api/groups/${id}/image`, { method: "POST", body: { image: imageDataUri } as object });
       if (__DEV__) console.log("[group-icon] response status:", res.status);
       if (res.ok) {
-        const data = await res.json();
-        if (__DEV__) console.log("[group-icon] success, imageUrl:", data.imageUrl);
-        setLocalIconUrl(data.imageUrl);
+        if (__DEV__) console.log("[group-icon] success");
+        setLocalIconUrl(imageDataUri);
         toast.show("Group icon updated");
         refetch(true);
         DeviceEventEmitter.emit("groups-updated");
