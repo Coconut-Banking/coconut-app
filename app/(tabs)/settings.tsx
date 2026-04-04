@@ -1657,9 +1657,22 @@ export default function SettingsScreen() {
                 </>
               ) : (
                 <Text style={[styles.muted, { color: theme.textTertiary, marginBottom: 4 }]}>
-                  {splitwiseStatus?.importedSplitwiseGroupCount ?? 0} group{(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} imported from Splitwise.
+                  {splitwiseStatus?.importedSplitwiseGroupCount ?? 0} group{(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} imported. Sync to refresh balances from Splitwise.
                 </Text>
               )}
+              {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) > 0 ? (
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
+                  onPress={startSplitwiseImport}
+                  disabled={splitwiseImporting || splitwiseClearing}
+                >
+                  {splitwiseImporting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Sync from Splitwise</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
               {hasSplitwiseImportedData ? (
                 <TouchableOpacity
                   style={[
