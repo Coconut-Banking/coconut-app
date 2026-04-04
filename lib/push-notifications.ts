@@ -1,17 +1,28 @@
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
 import { Platform } from "react-native";
-import Constants from "expo-constants";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+let Notifications: typeof import("expo-notifications") | null = null;
+let Device: typeof import("expo-device") | null = null;
+let Constants: typeof import("expo-constants").default | null = null;
+
+try {
+  Notifications = require("expo-notifications");
+  Device = require("expo-device");
+  Constants = require("expo-constants").default;
+
+  Notifications!.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+} catch {
+  console.warn("[push] expo-notifications native module not available — push disabled until next native rebuild");
+}
 
 export async function registerForPushNotifications(): Promise<string | null> {
+  if (!Notifications || !Device || !Constants) return null;
+
   if (!Device.isDevice) {
     console.log("Push notifications require a physical device");
     return null;
@@ -43,14 +54,21 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
+type NotificationResponse = import("expo-notifications").NotificationResponse;
+type Notification = import("expo-notifications").Notification;
+
+const noopSubscription = { remove: () => {} };
+
 export function addNotificationResponseListener(
-  callback: (response: Notifications.NotificationResponse) => void
+  callback: (response: NotificationResponse) => void
 ) {
+  if (!Notifications) return noopSubscription;
   return Notifications.addNotificationResponseReceivedListener(callback);
 }
 
 export function addNotificationReceivedListener(
-  callback: (notification: Notifications.Notification) => void
+  callback: (notification: Notification) => void
 ) {
+  if (!Notifications) return noopSubscription;
   return Notifications.addNotificationReceivedListener(callback);
 }
