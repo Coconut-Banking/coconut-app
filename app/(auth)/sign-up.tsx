@@ -25,7 +25,7 @@ import { CoconutMark } from "../../components/brand/CoconutMark";
 
 const SIGN_UP_GOOGLE_OAUTH_TIMEOUT_MS = 120000;
 
-const TIMEOUT_MS = 20000;
+const SIGN_IN_TIMEOUT_MS = 20000;
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -77,7 +77,7 @@ export default function SignUpScreen() {
     try {
       const { createdSessionId, setActive: setActiveGoogle } = await startGoogleAuthenticationFlow();
       if (createdSessionId && setActiveGoogle) {
-        await setActiveGoogle({ session: createdSessionId });
+        await withTimeout(setActiveGoogle({ session: createdSessionId }), SIGN_IN_TIMEOUT_MS, "Google setActive");
         setIsDemoOn(false);
         router.replace("/(tabs)");
         return;
@@ -143,7 +143,7 @@ export default function SignUpScreen() {
     try {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === "complete" && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
+        await withTimeout(setActive({ session: result.createdSessionId }), SIGN_IN_TIMEOUT_MS, "Email verification setActive");
         setIsDemoOn(false);
       } else {
         setError("Verification is not complete yet. Please try again.");

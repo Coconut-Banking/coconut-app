@@ -189,6 +189,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   const confirmItems = useCallback(
     async () => {
       if (!receiptId) return;
+      setSaveError(null);
       if (demoMode) {
         const withExtras = distributeExtras(
           editItems,

@@ -353,7 +353,10 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
         </View>
       </View>
 
-        {/* Nav */}
+      {rs.saveError && (
+        <Text style={[st.errorText, { color: theme.error }]}>{rs.saveError}</Text>
+      )}
+      {/* Nav */}
       <View style={st.nav}>
         <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("upload")}>
           <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
@@ -672,7 +675,16 @@ function AssignStep({
           )}
           <TouchableOpacity
             style={[st.btn, { backgroundColor: theme.primary }, (!allAssigned || rs.people.length === 0 || rs.saving) && st.btnOff]}
-            onPress={async () => { sfx.success(); await rs.saveAssignments(); rs.computeSummary(); }}
+            onPress={async () => {
+              sfx.success();
+              try {
+                await rs.saveAssignments();
+              } catch {
+                Alert.alert("Error", "Failed to save assignments. Please try again.");
+                return;
+              }
+              rs.computeSummary();
+            }}
             disabled={!allAssigned || rs.people.length === 0 || rs.saving}
           >
             {rs.saving ? <ActivityIndicator size="small" color="#fff" /> : (
