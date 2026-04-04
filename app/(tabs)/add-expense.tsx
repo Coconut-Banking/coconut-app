@@ -51,6 +51,19 @@ const SPLIT_METHODS: { key: SplitMethod; label: string; icon: string }[] = [
   { key: "shares", label: "Shares", icon: "layers-outline" },
 ];
 
+const EXPENSE_CATEGORIES: { label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { label: "Food & Drink", icon: "restaurant-outline" },
+  { label: "Transportation", icon: "car-outline" },
+  { label: "Entertainment", icon: "game-controller-outline" },
+  { label: "Shopping", icon: "bag-outline" },
+  { label: "Utilities", icon: "flash-outline" },
+  { label: "Rent", icon: "home-outline" },
+  { label: "Travel", icon: "airplane-outline" },
+  { label: "Health", icon: "medkit-outline" },
+  { label: "Education", icon: "school-outline" },
+  { label: "Other", icon: "ellipsis-horizontal-outline" },
+];
+
 function normalizeDesc(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -140,6 +153,8 @@ export default function AddExpenseScreen() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
   const [splitMethod, setSplitMethod] = useState<SplitMethod>("equal");
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -193,6 +208,8 @@ export default function AddExpenseScreen() {
     setSplitExpanded(false);
     setAmount("");
     setDescription("");
+    setCategory(null);
+    setNotes("");
     setShowSettlement(false);
     setRetryCount(0);
     savedRef.current = false;
@@ -637,6 +654,9 @@ export default function AddExpenseScreen() {
         payerMemberId: effPayer,
         currency: currencyCode,
       };
+      if (category) body.category = category;
+      const notesTrim = notes.trim();
+      if (notesTrim) body.notes = notesTrim;
       if (splitMethod === "equal" && t.type === "friend") {
         body.personKey = t.key;
       } else if (splitMethod !== "equal") {
@@ -935,6 +955,53 @@ export default function AddExpenseScreen() {
                   maxLength={500}
                 />
 
+                <Text style={[s.secLabel, { marginTop: 16 }]}>Category</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  contentContainerStyle={s.categoryChipsContent}
+                  style={s.categoryChipsScroll}
+                >
+                  {EXPENSE_CATEGORIES.map((c) => {
+                    const selected = category === c.label;
+                    return (
+                      <TouchableOpacity
+                        key={c.label}
+                        style={[s.categoryChip, selected && s.categoryChipSelected]}
+                        onPress={() => {
+                          sfx.toggle();
+                          setCategory(selected ? null : c.label);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons
+                          name={c.icon}
+                          size={16}
+                          color={selected ? colors.primary : darkUI.labelSecondary}
+                        />
+                        <Text style={[s.categoryChipLabel, selected && s.categoryChipLabelSelected]} numberOfLines={1}>
+                          {c.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                <Text style={[s.secLabel, { marginTop: 16 }]}>Notes</Text>
+                <TextInput
+                  style={s.notesField}
+                  value={notes}
+                  onChangeText={(t) => { setNotes(t); setError(null); }}
+                  placeholder="Add a note (optional)"
+                  placeholderTextColor={darkUI.labelMuted}
+                  multiline
+                  numberOfLines={2}
+                  textAlignVertical="top"
+                  maxLength={2000}
+                />
+
                 {/* Amount */}
                 <Text style={[s.secLabel, { marginTop: 16 }]}>Amount</Text>
                 <View style={s.amountField}>
@@ -1005,6 +1072,12 @@ export default function AddExpenseScreen() {
                 <Text style={s.expenseCardLabel}>Expense</Text>
                 <Text style={s.expenseCardAmount}>{currSymbol}{total.toFixed(2)}</Text>
                 <Text style={s.expenseCardDesc}>{description.trim() || "Expense"}</Text>
+                {category ? (
+                  <Text style={[s.expenseCardMeta, { marginTop: 6 }]}>{category}</Text>
+                ) : null}
+                {notes.trim() ? (
+                  <Text style={[s.expenseCardNotes, { marginTop: 6 }]}>{notes.trim()}</Text>
+                ) : null}
                 <Text style={s.expenseCardMeta}>
                   Paid by {payerDisplay === "you" ? "You" : payerDisplay} · {splitPeople.length} people
                 </Text>
@@ -1456,6 +1529,24 @@ const s = StyleSheet.create({
     backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
     paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontFamily: font.semibold, color: darkUI.label,
   },
+  categoryChipsScroll: { marginHorizontal: -4, flexGrow: 0 },
+  categoryChipsContent: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2, paddingHorizontal: 4 },
+  categoryChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: darkUI.card, flexShrink: 0,
+  },
+  categoryChipSelected: {
+    borderColor: colors.primary, backgroundColor: darkUI.bgElevated,
+  },
+  categoryChipLabel: { fontSize: 13, fontFamily: font.semibold, color: darkUI.labelSecondary, maxWidth: 140 },
+  categoryChipLabelSelected: { color: darkUI.label },
+  notesField: {
+    backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
+    paddingHorizontal: 16, paddingVertical: 12, minHeight: 72,
+    fontSize: 14, fontFamily: font.regular, color: darkUI.label,
+  },
   amountField: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
@@ -1488,6 +1579,7 @@ const s = StyleSheet.create({
   expenseCardAmount: { fontSize: 32, fontFamily: font.black, color: darkUI.label, letterSpacing: -1 },
   expenseCardDesc: { fontSize: 15, fontFamily: font.semibold, color: darkUI.label, marginTop: 4 },
   expenseCardMeta: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4 },
+  expenseCardNotes: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelSecondary, lineHeight: 18 },
 
   // Step 3: owe rows
   oweRow: { paddingVertical: 12, paddingHorizontal: 8 },
