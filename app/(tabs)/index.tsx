@@ -617,26 +617,6 @@ export default function BalancesPrototypeScreen() {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          onPress={() => {
-            sfx.pop();
-            router.push("/(tabs)/insights");
-          }}
-          activeOpacity={0.85}
-        >
-          <View style={[ttpStyles.iconWrap, { backgroundColor: theme.primaryLight }]}>
-            <Ionicons name="bar-chart-outline" size={22} color={theme.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[ttpStyles.title, { color: theme.text }]}>View Insights</Text>
-            <Text style={[ttpStyles.sub, { color: theme.textTertiary }]}>
-              Spending, subscriptions, and top categories
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
-        </TouchableOpacity>
-
         {Platform.OS !== "web" ? (
           <TouchableOpacity
             style={[ttpStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
