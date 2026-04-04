@@ -84,6 +84,8 @@ export const DEMO_GROUP_DETAILS: Record<string, GroupDetail> = {
   g1: {
     id: "g1",
     name: "NYC Trip",
+    isOwner: true,
+    owner_id: "me",
     members: NYC_MEMBERS,
     activity: [
       { id: "a1", merchant: "Uber to JFK", amount: 68.0, currency: "USD", paidBy: "m1", splitCount: 4, createdAt: daysAgo(1) },
@@ -109,6 +111,8 @@ export const DEMO_GROUP_DETAILS: Record<string, GroupDetail> = {
   g2: {
     id: "g2",
     name: "Roommates",
+    isOwner: true,
+    owner_id: "me",
     members: [
       { id: "m1", user_id: "me", email: "me@co.co", display_name: "You" },
       { id: "m5", user_id: null, email: "mike@email.com", display_name: "Mike Johnson" },
@@ -134,6 +138,8 @@ export const DEMO_GROUP_DETAILS: Record<string, GroupDetail> = {
   g3: {
     id: "g3",
     name: "Dinner Club",
+    isOwner: true,
+    owner_id: "me",
     members: [
       { id: "m1", user_id: "me", email: "me@co.co", display_name: "You" },
       { id: "m2", user_id: null, email: "sarah@email.com", display_name: "Sarah Chen" },
@@ -159,6 +165,8 @@ export const DEMO_GROUP_DETAILS: Record<string, GroupDetail> = {
   g4: {
     id: "g4",
     name: "Road Trip 2026",
+    isOwner: true,
+    owner_id: "me",
     members: [
       { id: "m1", user_id: "me", email: "me@co.co", display_name: "You" },
       { id: "m4", user_id: null, email: "alex@email.com", display_name: "Alex Rivera" },

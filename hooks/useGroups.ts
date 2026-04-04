@@ -51,6 +51,8 @@ export interface GroupDetail {
   id: string;
   name: string;
   isOwner?: boolean;
+  /** Clerk user id of the group owner; used to mark the owner row in the member list. */
+  owner_id?: string | null;
   invite_token?: string | null;
   image_url?: string | null;
   /** ISO timestamp when archived; null/undefined = active */

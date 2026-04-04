@@ -168,7 +168,33 @@ export default function TransactionScreen() {
     if (amountChanged) body.amount = amt;
     if (amountChanged || sharesChanged || customAmountsChanged) {
       body.amount = amt;
-      body.shares = finalShares;
+      const shares = detail.shares;
+      const oldAmount = detail.amount ?? 0;
+      if (shares.length === 0) {
+        body.shares = [];
+      } else if (oldAmount > 0 && Number.isFinite(oldAmount)) {
+        const ratio = amt / oldAmount;
+        let sumPrev = 0;
+        body.shares = shares.map((sh, i) => {
+          if (i === shares.length - 1) {
+            return { memberId: sh.memberId, amount: Math.round((amt - sumPrev) * 100) / 100 };
+          }
+          const scaled = Math.round(sh.amount * ratio * 100) / 100;
+          sumPrev += scaled;
+          return { memberId: sh.memberId, amount: scaled };
+        });
+      } else {
+        const n = shares.length;
+        let sumPrev = 0;
+        const per = Math.round((amt / n) * 100) / 100;
+        body.shares = shares.map((sh, i) => {
+          if (i === n - 1) {
+            return { memberId: sh.memberId, amount: Math.round((amt - sumPrev) * 100) / 100 };
+          }
+          sumPrev += per;
+          return { memberId: sh.memberId, amount: per };
+        });
+      }
     }
 
     if (Object.keys(body).length === 0) { setEditing(false); return; }

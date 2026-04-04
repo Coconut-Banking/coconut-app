@@ -27,7 +27,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import * as ImagePicker from "expo-image-picker";
 import { useApiFetch } from "../../../lib/api";
-import { useGroupDetail, useGroupsSummary, type FriendBalance } from "../../../hooks/useGroups";
+import { useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { useTheme } from "../../../lib/theme-context";
@@ -81,6 +81,10 @@ export default function GroupScreen() {
   const [addingMembers, setAddingMembers] = useState(false);
   const [manualName, setManualName] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
+  const [showRenameGroupModal, setShowRenameGroupModal] = useState(false);
+  const [renameGroupDraft, setRenameGroupDraft] = useState("");
+  const [renamingGroup, setRenamingGroup] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const { summary } = useGroupsSummary({ contacts: true });
   const existingMemberNames = useMemo(
@@ -358,6 +362,122 @@ export default function GroupScreen() {
     if (archived) router.back();
   };
 
+  const applyGroupRename = useCallback(
+    async (raw: string) => {
+      if (!id || isDemoOn) return;
+      const name = raw.trim();
+      if (!name) return;
+      setRenamingGroup(true);
+      try {
+        const res = await apiFetch(`/api/groups/${id}`, {
+          method: "PATCH",
+          body: { name } as object,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          Alert.alert("Couldn't rename group", (err as { error?: string }).error ?? "Try again.");
+          return;
+        }
+        DeviceEventEmitter.emit("groups-updated");
+        await refetch(true);
+        await refetchSummary();
+        toast.show("Group renamed");
+        setShowRenameGroupModal(false);
+      } catch {
+        Alert.alert("Error", "Could not rename group.");
+      } finally {
+        setRenamingGroup(false);
+      }
+    },
+    [id, isDemoOn, apiFetch, refetch, refetchSummary, toast]
+  );
+
+  const openRenameGroup = useCallback(() => {
+    if (!detail?.isOwner || isDemoOn || detail.archivedAt) return;
+    sfx.pop();
+    if (Platform.OS === "ios") {
+      Alert.prompt(
+        "Rename group",
+        "Enter a new name for this group.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Save", onPress: (value?: string) => void applyGroupRename(value ?? "") },
+        ],
+        "plain-text",
+        detail.name
+      );
+    } else {
+      setRenameGroupDraft(detail.name);
+      setShowRenameGroupModal(true);
+    }
+  }, [detail?.isOwner, detail?.name, detail?.archivedAt, isDemoOn, applyGroupRename]);
+
+  const leaveGroup = useCallback(() => {
+    if (!id || isDemoOn) return;
+    Alert.alert(
+      "Leave group?",
+      "You will lose access to this group's expenses and balances.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await apiFetch(`/api/groups/${id}/members`, { method: "DELETE" });
+              if (res.ok) {
+                DeviceEventEmitter.emit("groups-updated");
+                await refetchSummary();
+                router.back();
+              } else {
+                const err = await res.json().catch(() => ({}));
+                Alert.alert("Couldn't leave", (err as { error?: string }).error ?? "Try again.");
+              }
+            } catch {
+              Alert.alert("Error", "Could not leave group.");
+            }
+          },
+        },
+      ]
+    );
+  }, [apiFetch, id, isDemoOn, refetchSummary]);
+
+  const confirmRemoveMember = useCallback(
+    (m: GroupMember) => {
+      if (!id || isDemoOn) return;
+      Alert.alert(
+        "Remove member?",
+        `Remove ${m.display_name} from this group?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: async () => {
+              setRemovingMemberId(m.id);
+              try {
+                const res = await apiFetch(`/api/groups/${id}/members/${m.id}`, { method: "DELETE" });
+                if (res.ok) {
+                  DeviceEventEmitter.emit("groups-updated");
+                  await refetch(true);
+                  await refetchSummary();
+                } else {
+                  const err = await res.json().catch(() => ({}));
+                  Alert.alert("Couldn't remove member", (err as { error?: string }).error ?? "Try again.");
+                }
+              } catch {
+                Alert.alert("Error", "Could not remove member.");
+              } finally {
+                setRemovingMemberId(null);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [apiFetch, id, isDemoOn, refetch, refetchSummary]
+  );
+
   if (!detail) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -392,6 +512,9 @@ export default function GroupScreen() {
   const hasActivity = (detail.activity?.length ?? 0) > 0;
   const allSettled = (detail.balances?.filter((b) => Math.abs(b.total) >= 0.005).length ?? 0) === 0;
   const isArchived = Boolean(detail.archivedAt);
+  const ownerUserId = detail.owner_id ?? (detail.isOwner && userId ? userId : null);
+  const memberIsGroupOwner = (m: GroupMember) =>
+    ownerUserId != null && m.user_id != null && m.user_id === ownerUserId;
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -427,7 +550,16 @@ export default function GroupScreen() {
               <Ionicons name="camera" size={12} color="#fff" />
             </View>
           </TouchableOpacity>
-          <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
+          {detail.isOwner && !isDemoOn && !isArchived ? (
+            <Pressable onPress={openRenameGroup} style={({ pressed }) => [pressed && { opacity: 0.65 }]}>
+              <View style={s.groupNameRow}>
+                <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
+                <Ionicons name="pencil" size={16} color={theme.textTertiary} style={{ marginLeft: 6, marginTop: 2 }} />
+              </View>
+            </Pressable>
+          ) : (
+            <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
+          )}
           <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
             {detail.members.length} member{detail.members.length !== 1 ? "s" : ""} ·{" "}
             {detail.totalSpend != null
@@ -463,6 +595,52 @@ export default function GroupScreen() {
               </TouchableOpacity>
             </View>
           ) : null}
+        </View>
+
+        <Text style={[s.section, { color: theme.textTertiary, marginTop: 4 }]}>Members</Text>
+        <View style={[s.card, s.membersCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          {detail.members.map((m, i) => {
+            const isOwnerMember = memberIsGroupOwner(m);
+            const isMe = Boolean(userId && m.user_id === userId);
+            const showRemove =
+              detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
+            return (
+              <View
+                key={m.id}
+                style={[
+                  s.memberRow,
+                  i < detail.members.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.borderLight },
+                ]}
+              >
+                <MemberAvatar name={m.display_name} imageUrl={m.image_url} />
+                <View style={s.memberRowText}>
+                  <Text style={[s.memberRowName, { color: theme.text }]} numberOfLines={1}>
+                    {m.display_name}
+                    {isMe ? " (you)" : ""}
+                    {isOwnerMember ? " · Owner" : ""}
+                  </Text>
+                </View>
+                {showRemove ? (
+                  removingMemberId === m.id ? (
+                    <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 8 }} />
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => {
+                        sfx.pop();
+                        confirmRemoveMember(m);
+                      }}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      accessibilityLabel={`Remove ${m.display_name}`}
+                    >
+                      <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                    </TouchableOpacity>
+                  )
+                ) : (
+                  <View style={{ width: 22 }} />
+                )}
+              </View>
+            );
+          })}
         </View>
 
         {isArchived ? (
@@ -667,23 +845,36 @@ export default function GroupScreen() {
           </View>
         )}
 
-        {!isDemoOn && detail.isOwner && !isArchived ? (
-          <TouchableOpacity
-            style={{ marginTop: 28, paddingVertical: 12 }}
-            onPress={() =>
-              Alert.alert(
-                "Archive this group?",
-                "It will disappear from your main list. Open People & groups → Show archived groups to restore it.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Archive", style: "destructive", onPress: () => void patchArchive(true) },
-                ]
-              )
-            }
-            activeOpacity={0.7}
-          >
-            <Text style={[s.archiveLink, { color: theme.textQuaternary }]}>Archive group</Text>
-          </TouchableOpacity>
+        {!isDemoOn && !isArchived ? (
+          detail.isOwner ? (
+            <TouchableOpacity
+              style={{ marginTop: 28, paddingVertical: 12 }}
+              onPress={() =>
+                Alert.alert(
+                  "Archive this group?",
+                  "It will disappear from your main list. Open People & groups → Show archived groups to restore it.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Archive", style: "destructive", onPress: () => void patchArchive(true) },
+                  ]
+                )
+              }
+              activeOpacity={0.7}
+            >
+              <Text style={[s.archiveLink, { color: theme.textQuaternary }]}>Archive group</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={{ marginTop: 28, paddingVertical: 12 }}
+              onPress={() => {
+                sfx.pop();
+                leaveGroup();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.archiveLink, { color: theme.negative }]}>Leave group</Text>
+            </TouchableOpacity>
+          )
         ) : null}
       </ScrollView>
       </KeyboardAvoidingView>
@@ -857,6 +1048,55 @@ export default function GroupScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      <Modal
+        visible={showRenameGroupModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => !renamingGroup && setShowRenameGroupModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={s.renameModalOverlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !renamingGroup && setShowRenameGroupModal(false)} />
+          <View style={[s.renameModalCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <Text style={[s.renameModalTitle, { color: theme.text }]}>Rename group</Text>
+            <TextInput
+              style={[s.renameModalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+              value={renameGroupDraft}
+              onChangeText={setRenameGroupDraft}
+              placeholder="Group name"
+              placeholderTextColor={theme.textTertiary}
+              autoFocus
+              maxLength={100}
+              returnKeyType="done"
+              onSubmitEditing={() => void applyGroupRename(renameGroupDraft)}
+              editable={!renamingGroup}
+            />
+            <View style={s.renameModalActions}>
+              <TouchableOpacity
+                onPress={() => !renamingGroup && setShowRenameGroupModal(false)}
+                style={s.renameModalBtn}
+                disabled={renamingGroup}
+              >
+                <Text style={{ color: theme.textSecondary, fontFamily: font.medium, fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void applyGroupRename(renameGroupDraft)}
+                style={s.renameModalBtn}
+                disabled={renamingGroup || !renameGroupDraft.trim()}
+              >
+                {renamingGroup ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Text style={{ color: theme.primary, fontFamily: font.semibold, fontSize: 16 }}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -881,7 +1121,26 @@ const s = StyleSheet.create({
   groupHeader: { alignItems: "center", marginBottom: 24, paddingTop: 0 },
   groupPhoto: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
   groupIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primaryLight, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  groupNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   groupName: { fontSize: 24, fontWeight: "800", fontFamily: font.bold, color: colors.text, textAlign: "center" },
+  membersCard: { marginBottom: 4 },
+  memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, gap: 12 },
+  memberRowText: { flex: 1, minWidth: 0 },
+  memberRowName: { fontSize: 15, fontFamily: font.medium },
+  renameModalOverlay: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.45)" },
+  renameModalCard: { borderRadius: radii.lg, borderWidth: 1, padding: 20, ...shadow.md },
+  renameModalTitle: { fontSize: 17, fontFamily: font.bold, marginBottom: 12 },
+  renameModalInput: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontFamily: font.regular,
+    marginBottom: 16,
+  },
+  renameModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 20 },
+  renameModalBtn: { paddingVertical: 8, paddingHorizontal: 4, minWidth: 72, alignItems: "center" },
   groupMeta: { fontSize: 13, fontFamily: font.regular, color: colors.textTertiary, marginTop: 4, textAlign: "center" },
   actionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   actionBtn: {
