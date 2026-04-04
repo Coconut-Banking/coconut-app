@@ -16,6 +16,9 @@ export type PrototypeBankCharge = {
   emailLine?: string;
   /** Demo itemized receipt preview (no API) */
   receiptId?: string;
+  /** Optional — home strip shows account tag when multiple demo accounts exist */
+  accountName?: string | null;
+  accountMask?: string | null;
 };
 
 export const PROTOTYPE_DEMO_BANK_CHARGES: PrototypeBankCharge[] = [
@@ -27,6 +30,8 @@ export const PROTOTYPE_DEMO_BANK_CHARGES: PrototypeBankCharge[] = [
     date: "Mar 21",
     hint: "Groceries charge",
     unsplit: true,
+    accountName: "Chase Checking",
+    accountMask: "1234",
   },
   {
     id: "b2",
@@ -39,6 +44,8 @@ export const PROTOTYPE_DEMO_BANK_CHARGES: PrototypeBankCharge[] = [
     hasEmail: true,
     emailLine: "11:48 PM · Nobu → Mission",
     receiptId: "__demo__",
+    accountName: "Amex",
+    accountMask: "1001",
   },
   {
     id: "b3",

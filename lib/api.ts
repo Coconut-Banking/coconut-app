@@ -312,7 +312,7 @@ export function useApiFetch() {
 
           return response;
         } catch (e) {
-          const isAbort = e instanceof DOMException && e.name === "AbortError";
+          const isAbort = e instanceof Error && e.name === "AbortError";
           const msg = isAbort ? "Network request timed out" : (e instanceof Error ? e.message : "Network request failed");
           if (__DEV__) console.warn(`[api] fetch failed: ${path}`, msg);
           return new Response(

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -14,10 +14,18 @@ import { ToastProvider } from "../components/Toast";
 import { DemoModeProvider, useDemoMode } from "../lib/demo-mode-context";
 import { DemoProvider } from "../lib/demo-context";
 import { SetupProvider, useSetup } from "../lib/setup-context";
+import { FeatureToggleProvider } from "../lib/feature-toggles-context";
 import { BiometricLockProvider, useBiometricLock } from "../lib/biometric-lock-context";
 import { BiometricLockScreen } from "../components/BiometricLockScreen";
 import { BiometricEnablePrompt } from "../components/BiometricEnablePrompt";
 import { RealtimeSyncProvider } from "../lib/realtime-sync";
+import { ProTierProvider } from "../lib/pro-tier-context";
+import {
+  registerForPushNotifications,
+  addNotificationResponseListener,
+  addNotificationReceivedListener,
+} from "../lib/push-notifications";
+import { useApiFetch } from "../lib/api";
 import {
   useFonts,
   Inter_400Regular,
@@ -138,14 +146,57 @@ function AuthSwitch() {
       </Stack>
       <NavigateOnChange target={target} />
       {signedInAndReady && <RealtimeSyncWrapper />}
+      {signedInAndReady && !needsSetup && <PushNotificationRegistrar />}
       {signedInAndReady && !needsSetup && <BiometricLockGate />}
       {signedInAndReady && !needsSetup && <BiometricFirstTimePrompt />}
     </BiometricLockProvider>
   );
 }
 
+function PushNotificationRegistrar() {
+  const apiFetch = useApiFetch();
+  const registered = useRef(false);
+
+  useEffect(() => {
+    if (registered.current) return;
+    registered.current = true;
+
+    registerForPushNotifications().then((token) => {
+      if (!token) return;
+      console.log("[push] Expo push token:", token);
+      apiFetch("/api/push-token", {
+        method: "POST",
+        body: { token, platform: Platform.OS },
+      }).catch((e: unknown) =>
+        console.warn("[push] Failed to register push token:", e)
+      );
+    });
+
+    const responseSub = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      console.log("[push] Notification tapped:", data);
+    });
+
+    const receivedSub = addNotificationReceivedListener((notification) => {
+      console.log("[push] Notification received:", notification.request.content);
+    });
+
+    return () => {
+      responseSub.remove();
+      receivedSub.remove();
+    };
+  }, [apiFetch]);
+
+  return null;
+}
+
 function RealtimeSyncWrapper() {
   return <RealtimeSyncProvider>{null}</RealtimeSyncProvider>;
+}
+
+function ProTierWrapper({ children }: { children: ReactNode }) {
+  const apiFetch = useApiFetch();
+  return <ProTierProvider apiFetch={apiFetch}>{children}</ProTierProvider>;
 }
 
 function NavigateOnChange({ target }: { target: string | null }) {
@@ -243,13 +294,17 @@ export default function RootLayout() {
           <DemoModeProvider>
             <DemoProvider>
               <SetupProvider>
-                <ErrorBoundary>
-                  <ToastProvider>
-                    <StatusBarFromTheme />
-                    <AuthHandoffHandler />
-                    <AuthSwitch />
-                  </ToastProvider>
-                </ErrorBoundary>
+                <FeatureToggleProvider>
+                  <ProTierWrapper>
+                    <ErrorBoundary>
+                      <ToastProvider>
+                        <StatusBarFromTheme />
+                        <AuthHandoffHandler />
+                        <AuthSwitch />
+                      </ToastProvider>
+                    </ErrorBoundary>
+                  </ProTierWrapper>
+                </FeatureToggleProvider>
               </SetupProvider>
             </DemoProvider>
           </DemoModeProvider>

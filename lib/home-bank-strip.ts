@@ -6,6 +6,48 @@ import type { PrototypeBankCharge } from "./prototype-bank-demo";
 
 const EMOJI_BUCKETS = ["🛒", "🚗", "🍕", "☕", "✈️", "🏠", "💳", "🎯", "📱", "🎬"] as const;
 
+/** Last 4 / mask line for display (e.g. "1234" → "••1234"). */
+export function formatTransactionAccountIndicator(
+  accountName?: string | null,
+  accountMask?: string | null
+): string | null {
+  const name = (accountName ?? "").trim();
+  const rawMask = (accountMask ?? "").trim();
+  if (!name && !rawMask) return null;
+  const maskPart =
+    rawMask === ""
+      ? ""
+      : /[•*]/.test(rawMask)
+        ? rawMask
+        : `••${rawMask}`;
+  if (name && maskPart) return `${name} ${maskPart}`;
+  if (name) return name;
+  return maskPart || null;
+}
+
+/** True when two or more distinct account name/mask pairs appear on transactions. */
+export function transactionsImplyMultipleAccounts(transactions: Transaction[]): boolean {
+  const keys = new Set<string>();
+  for (const tx of transactions) {
+    const n = (tx.accountName ?? "").trim();
+    const m = (tx.accountMask ?? "").trim();
+    if (!n && !m) continue;
+    keys.add(`${n}\0${m}`);
+  }
+  return keys.size >= 2;
+}
+
+function prototypeChargesImplyMultipleAccounts(charges: PrototypeBankCharge[]): boolean {
+  const keys = new Set<string>();
+  for (const tx of charges) {
+    const n = (tx.accountName ?? "").trim();
+    const m = (tx.accountMask ?? "").trim();
+    if (!n && !m) continue;
+    keys.add(`${n}\0${m}`);
+  }
+  return keys.size >= 2;
+}
+
 export function merchantEmoji(merchant: string): string {
   let h = 0;
   const s = merchant || "?";
@@ -34,9 +76,18 @@ export type HomeBankStripRow = {
   logoUrl?: string | null;
   /** Transaction category for icon fallback (e.g. "FOOD_AND_DRINK"). */
   category?: string | null;
+  /** Shown under merchant when user has multiple linked accounts (e.g. "Chase ••1234"). */
+  accountIndicator?: string | null;
 };
 
-export function demoChargeToStripRow(tx: PrototypeBankCharge): HomeBankStripRow {
+export function demoChargeToStripRow(
+  tx: PrototypeBankCharge,
+  options?: { showAccountIndicator?: boolean }
+): HomeBankStripRow {
+  const accountIndicator =
+    options?.showAccountIndicator
+      ? formatTransactionAccountIndicator(tx.accountName, tx.accountMask)
+      : null;
   return {
     stripId: tx.id,
     merchant: tx.merchant,
@@ -49,13 +100,26 @@ export function demoChargeToStripRow(tx: PrototypeBankCharge): HomeBankStripRow 
     showReceiptBox: Boolean(tx.hasEmail && tx.emailLine),
     receiptBoxText: tx.emailLine,
     receiptId: tx.receiptId ?? null,
+    accountIndicator: accountIndicator ?? undefined,
   };
+}
+
+/** Whether visible demo charges include two or more distinct accounts (for strip labels). */
+export function visibleDemoChargesImplyMultipleAccounts(
+  charges: PrototypeBankCharge[],
+  dismissedIds: string[]
+): boolean {
+  const visible = charges.filter((c) => c.unsplit && !dismissedIds.includes(c.id));
+  return prototypeChargesImplyMultipleAccounts(visible);
 }
 
 /**
  * Convert any debit transaction into a strip row, tagging receipt-matched ones.
  */
-export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | null {
+export function transactionToHomeStripRow(
+  tx: Transaction,
+  options?: { showAccountIndicator?: boolean }
+): HomeBankStripRow | null {
   const amt = Number(tx.amount);
   if (!(amt < 0)) return null;
 
@@ -64,6 +128,10 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
   const hasReceiptSnippet = Boolean(tx.hasReceipt && receiptSnippet);
   const hasReceipt = Boolean(tx.hasReceipt || tx.receiptId);
   const dateLine = tx.dateStr || tx.date || "";
+  const accountIndicator =
+    options?.showAccountIndicator
+      ? formatTransactionAccountIndicator(tx.accountName, tx.accountMask)
+      : null;
 
   return {
     stripId: tx.id,
@@ -79,6 +147,7 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
     receiptId: tx.receiptId ?? null,
     logoUrl: tx.logoUrl ?? null,
     category: tx.category ?? null,
+    accountIndicator: accountIndicator ?? undefined,
   };
 }
 
@@ -86,9 +155,17 @@ export function transactionToHomeStripRow(tx: Transaction): HomeBankStripRow | n
  * All recent debit transactions for the home strip.
  * Receipt-matched ones are tagged (hasMailBadge, showReceiptBox) but all are included.
  */
-export function buildLiveMatchedStrip(transactions: Transaction[]): HomeBankStripRow[] {
+/**
+ * @param forStrip — transactions shown in the strip (often filtered)
+ * @param allForAccountCount — full list used to detect multiple linked accounts; defaults to `forStrip`
+ */
+export function buildLiveMatchedStrip(
+  forStrip: Transaction[],
+  allForAccountCount: Transaction[] = forStrip
+): HomeBankStripRow[] {
+  const showAccountIndicator = transactionsImplyMultipleAccounts(allForAccountCount);
   const eligible: Transaction[] = [];
-  for (const tx of transactions) {
+  for (const tx of forStrip) {
     const amt = Number(tx.amount);
     if (!(amt < 0)) continue;
     eligible.push(tx);
@@ -96,7 +173,7 @@ export function buildLiveMatchedStrip(transactions: Transaction[]): HomeBankStri
   eligible.sort((a, b) => b.date.localeCompare(a.date));
   const rows: HomeBankStripRow[] = [];
   for (const tx of eligible.slice(0, 24)) {
-    const row = transactionToHomeStripRow(tx);
+    const row = transactionToHomeStripRow(tx, { showAccountIndicator });
     if (row) rows.push(row);
   }
   return rows;

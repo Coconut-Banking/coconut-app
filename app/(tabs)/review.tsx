@@ -23,6 +23,7 @@ import { useApiFetch } from "../../lib/api";
 import { colors, font, fontSize, shadow, radii, space, type as T } from "../../lib/theme";
 import * as SecureStore from "expo-secure-store";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
+import { MemberAvatar } from "../../components/MemberAvatar";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
@@ -360,11 +361,7 @@ export default function ReviewScreen() {
                   style={s.optionRow}
                   onPress={() => handlePickTarget({ type: "friend", key: f.key, name: f.displayName })}
                 >
-                  <View style={[s.avatar, { backgroundColor: hashColor(f.displayName) + "20" }]}>
-                    <Text style={[s.avatarText, { color: hashColor(f.displayName) }]}>
-                      {f.displayName.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <MemberAvatar name={f.displayName} size={40} imageUrl={f.image_url} variant="soft" />
                   <Text style={[T.bodyMedium, { flex: 1 }]}>{f.displayName}</Text>
                   <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                 </TouchableOpacity>
@@ -493,15 +490,17 @@ export default function ReviewScreen() {
             <View style={s.confirmCard}>
               <Text style={T.label}>{isSelf ? "FOR" : "SPLITTING WITH"}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.md, marginTop: space.sm }}>
-                <View style={[s.avatar, { backgroundColor: isSelf ? colors.primaryLight : hashColor(target.name) + "20" }]}>
-                  {target.type === "group" ? (
+                {target.type === "group" ? (
+                  <View style={[s.avatar, { backgroundColor: colors.primaryLight }]}>
                     <Ionicons name="people" size={18} color={colors.primary} />
-                  ) : isSelf ? (
+                  </View>
+                ) : isSelf ? (
+                  <View style={[s.avatar, { backgroundColor: colors.primaryLight }]}>
                     <Ionicons name="person" size={18} color={colors.primary} />
-                  ) : (
-                    <Text style={[s.avatarText, { color: hashColor(target.name) }]}>{target.name.charAt(0).toUpperCase()}</Text>
-                  )}
-                </View>
+                  </View>
+                ) : (
+                  <MemberAvatar name={target.name} size={40} imageUrl={friends.find((f) => f.key === target.key)?.image_url} variant="soft" />
+                )}
                 <Text style={T.bodyMedium}>{target.name}</Text>
               </View>
             </View>

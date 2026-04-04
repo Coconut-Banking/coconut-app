@@ -16,6 +16,7 @@ export interface GroupSummary {
 export interface FriendBalance {
   key: string;
   displayName: string;
+  image_url?: string | null;
   /** Single-currency shortcut when `balances.length === 1`; null when multiple currencies. */
   balance: number | null;
   balances: Array<{ currency: string; amount: number }>;

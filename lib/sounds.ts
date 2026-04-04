@@ -1,20 +1,14 @@
 /**
- * Micro-interaction sound & haptic feedback system.
+ * Micro-interaction haptic feedback system.
  *
- * Uses expo-av for audio when available, falls back to crafted haptic
- * patterns via expo-haptics. Each named event maps to a specific tactile
- * "shape" so the app feels responsive and alive.
+ * Crafted haptic patterns via expo-haptics. Each named event maps to a
+ * specific tactile "shape" so the app feels responsive and alive. Short
+ * audio can be wired in later via expo-av + bundled assets if needed.
  */
 
 let Haptics: typeof import("expo-haptics") | null = null;
 try {
   Haptics = require("expo-haptics");
-} catch {}
-
-let Audio: { playFromPositionAsync?: unknown } | null = null;
-try {
-  const av = require("expo-av");
-  Audio = av.Audio;
 } catch {}
 
 const canHaptic = !!Haptics?.impactAsync;
@@ -73,7 +67,21 @@ async function coin() {
   notifSuccess();
 }
 
-/** Ascending double-tap for generic success. */
+/** Soft tap when adding line items or quick-add actions. */
+async function add() {
+  if (!canHaptic) return;
+  impactLight();
+}
+
+/** Medium "thunk" plus light follow-through when settling debts / balances. */
+async function settle() {
+  if (!canHaptic) return;
+  impactMedium();
+  await delay(70);
+  impactLight();
+}
+
+/** Notification success — toasts, payment completion, confirmations. */
 async function success() {
   if (!canHaptic) return;
   notifSuccess();
@@ -116,6 +124,8 @@ export const sfx = {
   fabPress,
   pop,
   coin,
+  add,
+  settle,
   success,
   warning,
   error,

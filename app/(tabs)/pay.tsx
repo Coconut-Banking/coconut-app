@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   AppState,
   Share,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useStripeTerminal } from "@stripe/stripe-terminal-react-native";
@@ -649,6 +650,7 @@ function PayScreenInner() {
       } else {
         logPaymentIntentStep("after process (success)", processResult.paymentIntent);
         setPaymentOutcome("approved");
+        DeviceEventEmitter.emit("groups-updated");
         setLastOutcomeAmount(amt);
         setLastPayment(
           directPayout
