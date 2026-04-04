@@ -250,18 +250,13 @@ export default function SharedIndex() {
     if (!isDemoOn) void onRefresh();
   }, [isDemoOn, onRefresh]);
 
-  // Prune stale optimistic groups once the API has returned them
+  // Once the API returns, clear all optimistic data — the API is the source of truth
   useEffect(() => {
     if (!realSummary || isDemoOn) return;
-    const apiIds = new Set(realSummary.groups.map((g) => g.id));
-    const pruned = optimisticGroups.filter((o) => !apiIds.has(o.id));
-    if (pruned.length < optimisticGroups.length) {
-      setOptimisticGroups(pruned);
-      const prunedFriends = optimisticFriends.filter(
-        (f) => !realSummary.friends.some((s) => s.displayName === f.displayName)
-      );
-      setOptimisticFriends(prunedFriends);
-      void persistOptimistic(pruned, prunedFriends);
+    if (optimisticGroups.length > 0 || optimisticFriends.length > 0) {
+      setOptimisticGroups([]);
+      setOptimisticFriends([]);
+      void AsyncStorage.removeItem(optimisticStoreKey).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realSummary]);
@@ -492,10 +487,7 @@ export default function SharedIndex() {
   // to “everyone from /api/groups” or we’d show people with $0 net like Splitwise hides.
   const friends =
     !isDemoOn && realSummary != null
-      ? [
-          ...optimisticFriends.filter((o) => !summaryFriends.some((s) => s.displayName === o.displayName)),
-          ...summaryFriends,
-        ]
+      ? summaryFriends
       : isDemoOn
         ? summaryFriends
         : mergedFallbackFriends;
@@ -511,18 +503,7 @@ export default function SharedIndex() {
           myBalances: [] as { currency: string; amount: number }[],
           lastActivityAt: new Date().toISOString(),
         }));
-  const optimisticAsGroups = optimisticGroups
-    .filter((o) => !groupsFromApi.some((s) => s.id === o.id))
-    .map((g) => ({
-      id: g.id,
-      name: g.name,
-      memberCount: g.memberCount,
-      imageUrl: (g.imageUrl ?? null) as string | null | undefined,
-      myBalance: 0,
-      myBalances: [] as { currency: string; amount: number }[],
-      lastActivityAt: new Date().toISOString(),
-    }));
-  const groupsMerged = !isDemoOn && realSummary != null ? [...optimisticAsGroups, ...groupsFromApi] : isDemoOn ? summaryGroups : groupsFromApi;
+  const groupsMerged = !isDemoOn && realSummary != null ? groupsFromApi : isDemoOn ? summaryGroups : groupsFromApi;
   const groupsById = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
   // Deduplicate by name — prefer the group with a nonzero balance or more members
   const groupsByName = new Map<string, (typeof groupsById)[0]>();
