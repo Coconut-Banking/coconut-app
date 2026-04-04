@@ -21,7 +21,7 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 22 : 10);
   const current = state.routes[state.index]?.name;
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
-  const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "review", "tap-to-pay-education"]);
+  const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "tap-to-pay-education"]);
 
   const popTabToRoot = (tabName: string) => {
     const route = state.routes.find((r) => r.name === tabName);

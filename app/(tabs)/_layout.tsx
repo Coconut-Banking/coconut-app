@@ -32,7 +32,7 @@ export default function TabLayout() {
       <Tabs.Screen name="activity" options={{ title: "Activity", headerShown: false }} />
       <Tabs.Screen name="settings" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="shared" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="review" options={{ href: null, headerShown: false }} />
+
       <Tabs.Screen name="insights" options={{ href: null }} />
       <Tabs.Screen name="receipt" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="pay" options={{ href: null, headerShown: false }} />
