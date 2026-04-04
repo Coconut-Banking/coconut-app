@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Share,
   RefreshControl,
   DeviceEventEmitter,
   Image,
@@ -19,6 +18,7 @@ import {
   Pressable,
   FlatList,
   ActionSheetIOS,
+  AppState,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -40,6 +40,7 @@ import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { sfx } from "../../../lib/sounds";
 import { BASE_URL } from "../../../lib/invite";
+import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -67,7 +68,6 @@ export default function GroupScreen() {
   const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
   const toast = useToast();
 
-  const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -90,6 +90,21 @@ export default function GroupScreen() {
   const [handlesCashapp, setHandlesCashapp] = useState("");
   const [handlesPaypal, setHandlesPaypal] = useState("");
   const [savingHandles, setSavingHandles] = useState(false);
+  const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
+  const [pendingP2PSuggestion, setPendingP2PSuggestion] = useState<{ fromMemberId: string; toMemberId: string; amount: number; currency: string } | null>(null);
+  const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appStateRef.current.match(/inactive|background/) && next === "active" && pendingP2PPlatform) {
+        setConfirmPaymentOpen(true);
+        setPendingP2PPlatform(null);
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [pendingP2PPlatform]);
 
   const { summary } = useGroupsSummary({ contacts: true });
   const existingMemberNames = useMemo(
@@ -524,6 +539,71 @@ export default function GroupScreen() {
     }
   }, [id, handlesMember, handlesVenmo, handlesCashapp, handlesPaypal, isDemoOn, apiFetch, refetch, toast]);
 
+  const handleGroupP2P = useCallback(
+    async (
+      platform: "venmo" | "paypal" | "cashapp",
+      su: { fromMemberId: string; toMemberId: string; amount: number; currency: string },
+      toMember?: GroupMember,
+    ) => {
+      if (isDemoOn) {
+        const names = { venmo: "Venmo", paypal: "PayPal", cashapp: "Cash App" };
+        Alert.alert("Demo", `Opening ${names[platform]}...`);
+        return;
+      }
+      setPendingP2PPlatform(platform);
+      setPendingP2PSuggestion(su);
+      const note = `Coconut – ${detail?.name ?? "group"}`;
+      try {
+        if (platform === "venmo") {
+          await openVenmo(su.amount, toMember?.venmo_username ?? null, note);
+        } else if (platform === "paypal") {
+          await openPayPal(su.amount, toMember?.paypal_username ?? null);
+        } else {
+          await openCashApp(su.amount, toMember?.cashapp_cashtag ?? null);
+        }
+      } catch {
+        setPendingP2PPlatform(null);
+        setPendingP2PSuggestion(null);
+        const names = { venmo: "Venmo", paypal: "PayPal", cashapp: "Cash App" };
+        Alert.alert("Could not open app", `Make sure ${names[platform]} is installed.`);
+      }
+    },
+    [isDemoOn, detail?.name],
+  );
+
+  const handleConfirmGroupP2P = useCallback(async () => {
+    setConfirmPaymentOpen(false);
+    const su = pendingP2PSuggestion;
+    if (!su || !id) return;
+    setPendingP2PSuggestion(null);
+    setRecordingSettlement(true);
+    try {
+      const res = await apiFetch("/api/settlements", {
+        method: "POST",
+        body: {
+          groupId: id,
+          payerMemberId: su.fromMemberId,
+          receiverMemberId: su.toMemberId,
+          amount: su.amount,
+          method: "manual",
+          currency: su.currency,
+        },
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (res.ok) {
+        refetch();
+        refetchSummary();
+        DeviceEventEmitter.emit("groups-updated");
+      } else {
+        Alert.alert("Error", data?.error ?? "Failed to record settlement");
+      }
+    } catch {
+      Alert.alert("Error", "Could not record settlement");
+    } finally {
+      setRecordingSettlement(false);
+    }
+  }, [pendingP2PSuggestion, id, apiFetch, refetch, refetchSummary]);
+
   if (!detail) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -743,6 +823,10 @@ export default function GroupScreen() {
               const iPayThem = myMemberId && su.fromMemberId === myMemberId;
               const canMarkPaid =
                 Boolean(theyPayMe || iPayThem || (detail.isOwner && !isDemoOn));
+              const targetMember = iPayThem ? toMember : fromMember;
+              const hasVenmoHandle = !!(targetMember?.venmo_username);
+              const hasPayPalHandle = !!(targetMember?.paypal_username);
+              const hasCashAppHandle = !!(targetMember?.cashapp_cashtag);
               return (
                 <View
                   key={`${su.currency}-${su.fromMemberId}-${su.toMemberId}`}
@@ -764,27 +848,31 @@ export default function GroupScreen() {
                     </Text>
                   </View>
                   <View style={s.suggActions}>
-                    {theyPayMe && (
+                    {iPayThem && hasVenmoHandle && (
                       <TouchableOpacity
-                        style={[s.miniBtn, { backgroundColor: theme.primary }]}
-                        onPress={async () => {
-                          if (isDemoOn) { Alert.alert("Sent", `Payment request for $${su.amount.toFixed(2)} sent!`); return; }
-                          setRequestingPayment(true);
-                          try {
-                            const res = await apiFetch("/api/stripe/create-payment-link", {
-                              method: "POST",
-                              body: { amount: su.amount, description: detail.name, recipientName: fromName, groupId: id, payerMemberId: su.fromMemberId, receiverMemberId: su.toMemberId },
-                            });
-                            const data = await res.json();
-                            if (res.ok && data.url) {
-                              await Share.share({ message: `You owe me $${su.amount.toFixed(2)} for ${detail.name}. Pay here: ${data.url}`, url: data.url, title: "Payment request" });
-                            }
-                          } finally { setRequestingPayment(false); }
-                        }}
-                        disabled={requestingPayment}
+                        style={[s.miniBtn, { backgroundColor: "#3D95CE" }]}
+                        onPress={() => handleGroupP2P("venmo", su, toMember)}
                         activeOpacity={0.7}
                       >
-                        <Text style={s.miniBtnText}>Request</Text>
+                        <Ionicons name="logo-venmo" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                    {iPayThem && hasPayPalHandle && (
+                      <TouchableOpacity
+                        style={[s.miniBtn, { backgroundColor: "#003087" }]}
+                        onPress={() => handleGroupP2P("paypal", su, toMember)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="logo-paypal" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                    {iPayThem && hasCashAppHandle && (
+                      <TouchableOpacity
+                        style={[s.miniBtn, { backgroundColor: "#00D632" }]}
+                        onPress={() => handleGroupP2P("cashapp", su, toMember)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="cash-outline" size={14} color="#fff" />
                       </TouchableOpacity>
                     )}
                     {canMarkPaid && (
@@ -1230,6 +1318,31 @@ export default function GroupScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal visible={confirmPaymentOpen} transparent animationType="fade" onRequestClose={() => setConfirmPaymentOpen(false)}>
+        <Pressable style={s.confirmOverlay} onPress={() => setConfirmPaymentOpen(false)}>
+          <Pressable style={[s.confirmCard, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ marginBottom: 12 }}>
+              <Ionicons name="checkmark-circle" size={44} color={theme.positive} />
+            </View>
+            <Text style={[s.confirmTitle, { color: theme.text }]}>Payment sent?</Text>
+            <Text style={[s.confirmSub, { color: theme.textSecondary }]}>
+              If you completed the payment, mark it as settled.
+            </Text>
+            <TouchableOpacity
+              style={[s.confirmBtn, { backgroundColor: theme.positive }]}
+              onPress={handleConfirmGroupP2P}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-done" size={18} color="#fff" />
+              <Text style={s.confirmBtnText}>Mark as paid</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ paddingVertical: 10 }} onPress={() => { setConfirmPaymentOpen(false); setPendingP2PSuggestion(null); }}>
+              <Text style={[s.confirmDismissText, { color: theme.textTertiary }]}>Not yet</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1358,6 +1471,13 @@ const s = StyleSheet.create({
   archivedBannerText: { flex: 1, fontSize: 13, fontFamily: font.regular },
   archivedRestore: { fontSize: 14, fontFamily: font.semibold },
   archiveLink: { fontSize: 14, fontFamily: font.medium, textAlign: "center" },
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
+  confirmCard: { borderRadius: 24, marginHorizontal: 32, paddingHorizontal: 28, paddingTop: 28, paddingBottom: 24, alignItems: "center", alignSelf: "center" },
+  confirmTitle: { fontFamily: font.black, fontSize: 20, marginBottom: 6, textAlign: "center" },
+  confirmSub: { fontFamily: font.regular, fontSize: 14, textAlign: "center", marginBottom: 20, lineHeight: 20 },
+  confirmBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, paddingHorizontal: 24, borderRadius: radii.md, width: "100%", marginBottom: 10 },
+  confirmBtnText: { fontFamily: font.bold, fontSize: 15, color: "#fff" },
+  confirmDismissText: { fontFamily: font.semibold, fontSize: 15 },
   bold: { fontWeight: "700", fontFamily: font.bold },
   avatar: { justifyContent: "center", alignItems: "center" },
   avatarText: { color: "#fff", fontWeight: "700", fontFamily: font.bold },

@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Share,
   RefreshControl,
   Modal,
   Pressable,
@@ -40,7 +39,6 @@ export default function PersonScreen() {
   const { detail: realDetail, loading, refetch } = usePersonDetail(isDemoOn ? null : (key ?? null));
   const detail = isDemoOn && key ? demo.personDetails[key] ?? null : realDetail;
 
-  const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [settleSheetOpen, setSettleSheetOpen] = useState(false);
@@ -116,47 +114,6 @@ export default function PersonScreen() {
   const singleOwedYou = balLines.length === 1 && balLines[0].amount > EPS;
   const firstLine = balLines[0];
   const canStripeUsd = singleOwedYou && firstLine.currency === "USD";
-
-  const handleRequest = async () => {
-    if (!singleOwedYou) return;
-    if (!canStripeUsd) {
-      Alert.alert(
-        "Payment request",
-        "In-app payment links are available for USD-only balances. Use Mark paid after settling outside the app."
-      );
-      return;
-    }
-    if (isDemoOn) {
-      Alert.alert("Demo", "Payment request sent!");
-      return;
-    }
-    setRequestingPayment(true);
-    try {
-      const se = (detail.settlements ?? [])[0];
-      const amt = firstLine.amount;
-      const res = await apiFetch("/api/stripe/create-payment-link", {
-        method: "POST",
-        body: {
-          amount: amt,
-          description: "expenses",
-          recipientName: detail.displayName,
-          groupId: se?.groupId,
-          payerMemberId: se?.fromMemberId,
-          receiverMemberId: se?.toMemberId,
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        await Share.share({
-          message: `You owe me ${formatSplitCurrencyAmount(amt, "USD")}. Pay here: ${data.url}`,
-          url: data.url,
-          title: "Payment request",
-        });
-      }
-    } finally {
-      setRequestingPayment(false);
-    }
-  };
 
   const handleMarkPaid = () => {
     if ((detail.settlements ?? []).length === 0) return;
@@ -240,7 +197,13 @@ export default function PersonScreen() {
   const singleGroupIdForHandles =
     uniqueSettlementGroupIds.length === 1 ? uniqueSettlementGroupIds[0] : null;
   const settleAmount = firstLine ? Math.abs(firstLine.amount) : 0;
-  const settleNote = `Coconut – ${detail.displayName}`;
+  const topExpenses = detail.activity
+    .slice(0, 3)
+    .map((a) => a.merchant)
+    .filter(Boolean);
+  const settleNote = topExpenses.length > 0
+    ? `Coconut – ${topExpenses.join(", ")}`
+    : `Coconut – ${detail.displayName}`;
 
   const handleP2P = async (platform: "venmo" | "paypal" | "cashapp") => {
     if (isDemoOn) {
@@ -265,9 +228,43 @@ export default function PersonScreen() {
     }
   };
 
-  const handleConfirmP2PPayment = () => {
+  const handleConfirmP2PPayment = async () => {
     setConfirmPaymentOpen(false);
-    handleMarkPaid();
+    if ((detail.settlements ?? []).length === 0) return;
+    if (isDemoOn && key) {
+      sfx.coin();
+      demo.settlePerson(key);
+      router.back();
+      return;
+    }
+    setRecordingSettlement(true);
+    try {
+      let anyFailed = false;
+      for (const se of detail.settlements ?? []) {
+        const res = await apiFetch("/api/settlements", {
+          method: "POST",
+          body: {
+            groupId: se.groupId,
+            payerMemberId: se.fromMemberId,
+            receiverMemberId: se.toMemberId,
+            amount: se.amount,
+            method: "manual",
+            currency: se.currency ?? "USD",
+          },
+        });
+        if (!res.ok) anyFailed = true;
+      }
+      if (anyFailed) {
+        Alert.alert("Error", "Some settlements could not be recorded");
+      } else {
+        DeviceEventEmitter.emit("groups-updated");
+        router.back();
+      }
+    } catch {
+      Alert.alert("Error", "Could not record settlement");
+    } finally {
+      setRecordingSettlement(false);
+    }
   };
 
   return (
@@ -434,21 +431,6 @@ export default function PersonScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={s.sheetBtnAccentText}>Tap to Pay</Text>
                   <Text style={s.sheetBtnAccentSub}>Collect in person with NFC</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
-            {singleOwedYou && canStripeUsd && (
-              <TouchableOpacity
-                style={s.sheetBtnOutline}
-                onPress={() => { setSettleSheetOpen(false); handleRequest(); }}
-                disabled={requestingPayment}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="send-outline" size={18} color="#1F2328" />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.sheetBtnOutlineText}>Request</Text>
-                  <Text style={s.sheetBtnOutlineSub}>Send a payment link</Text>
                 </View>
               </TouchableOpacity>
             )}

@@ -12,7 +12,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Share,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -733,7 +732,6 @@ function SummaryStep({
   const [suggestions, setSuggestions] = useState<Array<{ fromMemberId: string; toMemberId: string; fromName: string; toName: string; amount: number }>>([]);
   const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
-  const [requestingPayment, setRequestingPayment] = useState<string | null>(null);
   const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
 
   const detectedGroupId = useMemo(() => {
@@ -849,41 +847,6 @@ function SummaryStep({
     } finally {
       setExportingPdf(false);
     }
-  };
-
-  const handleRequest = async (s: (typeof suggestions)[0]) => {
-    if (isDemoOn) {
-      const key = `${s.fromMemberId}-${s.toMemberId}`;
-      setRequestingPayment(key);
-      try {
-        const mail = members.find((m) => m.id === s.fromMemberId)?.email;
-        if (mail) {
-          Linking.openURL(
-            `mailto:${encodeURIComponent(mail)}?subject=${encodeURIComponent(
-              `Payment: $${s.amount.toFixed(2)}`
-            )}&body=${encodeURIComponent(
-              `You owe $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}.`
-            )}`
-          );
-        } else {
-          Alert.alert("No email", "Add their email to send a request.");
-        }
-      } finally { setRequestingPayment(null); }
-      return;
-    }
-    const key = `${s.fromMemberId}-${s.toMemberId}`;
-    setRequestingPayment(key);
-    try {
-      const res = await apiFetch("/api/stripe/create-payment-link", { method: "POST", body: { amount: s.amount, description: `${rs.editMerchant || "Receipt"} split`, recipientName: s.fromName, groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        await Share.share({ message: `You owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}. Pay here: ${data.url}`, url: data.url, title: "Payment request" });
-      } else {
-        const payer = members.find(m => m.id === s.fromMemberId);
-        if (payer?.email) { Linking.openURL(`mailto:${payer.email}?subject=${encodeURIComponent(`Payment: $${s.amount.toFixed(2)}`)}&body=${encodeURIComponent(`You owe $${s.amount.toFixed(2)} for ${groupName}.`)}`); }
-        else Alert.alert("No email", "Add their email to send a request.");
-      }
-    } finally { setRequestingPayment(null); }
   };
 
   const handleCash = async (s: (typeof suggestions)[0]) => {
