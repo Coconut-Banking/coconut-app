@@ -89,6 +89,10 @@ export interface GroupDetail {
   /** Total paid into the group when one currency; null when expenses use multiple currencies. */
   totalSpend: number | null;
   totalSpendByCurrency: Array<{ currency: string; amount: number }>;
+  /** Current user's share of all split expenses (single currency); null if multi-currency. */
+  mySpend?: number | null;
+  mySpendByCurrency?: Array<{ currency: string; amount: number }>;
+  categoryBreakdown?: Array<{ category: string; amount: number; percent: number }>;
 }
 
 export interface PersonDetail {
