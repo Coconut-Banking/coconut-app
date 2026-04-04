@@ -34,6 +34,7 @@ import { useDemoData } from "../../../lib/demo-context";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { useTheme } from "../../../lib/theme-context";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../../lib/format-split-money";
+import { useCurrency } from "../../../hooks/useCurrency";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { useDeviceContacts, type DeviceContact } from "../../../hooks/useDeviceContacts";
@@ -82,6 +83,7 @@ export default function SharedIndex() {
   const demo = useDemoData();
   const { summary: realSummary, loading, refetch } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
+  const { currencyCode: myCurrency } = useCurrency();
 
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -882,10 +884,15 @@ export default function SharedIndex() {
                           const p = b.amount > 0.005;
                           const n = b.amount < -0.005;
                           return (
-                            <Text key={b.currency} style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
-                              {p ? "+" : n ? "−" : ""}
-                              {formatSplitCurrencyAmount(b.amount, b.currency)}
-                            </Text>
+                            <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              {b.currency.toUpperCase() !== myCurrency && (
+                                <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
+                              )}
+                              <Text style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
+                                {p ? "+" : n ? "−" : ""}
+                                {formatSplitCurrencyAmount(b.amount, b.currency)}
+                              </Text>
+                            </View>
                           );
                         })
                       )}
@@ -937,10 +944,15 @@ export default function SharedIndex() {
                         <Text style={[st.rowBal, st.muted]}>—</Text>
                       ) : (
                         groupBalanceLines(g).map((b) => (
-                          <Text key={b.currency} style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
-                            {b.amount > 0 ? "+" : "−"}
-                            {formatSplitCurrencyAmount(b.amount, b.currency)}
-                          </Text>
+                          <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                            {b.currency.toUpperCase() !== myCurrency && (
+                              <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
+                            )}
+                            <Text style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
+                              {b.amount > 0 ? "+" : "−"}
+                              {formatSplitCurrencyAmount(b.amount, b.currency)}
+                            </Text>
+                          </View>
                         ))
                       )}
                     </View>
@@ -1307,6 +1319,7 @@ const st = StyleSheet.create({
   balIn: { color: prototype.green },
   balOut: { color: prototype.red },
   muted: { color: "#8A9098" },
+  currBadge: { fontSize: 10, fontFamily: font.semibold, borderRadius: 4, overflow: "hidden", paddingHorizontal: 4, paddingVertical: 1 },
   rowSep: { height: 1, backgroundColor: "#EEE8E4", marginLeft: 70 },
   groupIcon: {
     width: 40,

@@ -30,6 +30,7 @@ import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme"
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
+import { useCurrency } from "../../hooks/useCurrency";
 
 type Target = { type: "group" | "friend"; key: string; name: string };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -43,10 +44,10 @@ type GroupMember = {
 
 const ACCENT = ["#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#8B5CF6"];
 
-const SPLITS: { key: SplitMethod; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const SPLIT_METHODS: { key: SplitMethod; label: string; icon: string }[] = [
   { key: "equal", label: "Equal", icon: "git-compare-outline" },
   { key: "percent", label: "%", icon: "pie-chart-outline" },
-  { key: "exact", label: "$", icon: "cash-outline" },
+  { key: "exact", label: "Amt", icon: "cash-outline" },
   { key: "shares", label: "Shares", icon: "layers-outline" },
 ];
 
@@ -131,6 +132,7 @@ export default function AddExpenseScreen() {
   const { summary: realSummary, loading } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
   const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
+  const { currencyCode, symbol: currSymbol } = useCurrency();
 
   // ── State ──
   const [targets, setTargets] = useState<Target[]>([]);
@@ -573,7 +575,7 @@ export default function AddExpenseScreen() {
     if (!effPayer) { setError("Missing payer"); return; }
     if (!splitValid) {
       if (splitMethod === "percent") setError("Percents must add to 100%");
-      else setError(`Amounts must add up to $${total.toFixed(2)}`);
+      else setError(`Amounts must add up to ${currSymbol}${total.toFixed(2)}`);
       return;
     }
 
@@ -618,7 +620,7 @@ export default function AddExpenseScreen() {
       savedRef.current = true;
       demo.addExpense(total, desc, t.key, t.type);
       sfx.coin();
-      toast.show(`Expense saved · $${total.toFixed(2)} with ${t.name}`);
+        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${t.name}`);
       DeviceEventEmitter.emit("expense-added");
       DeviceEventEmitter.emit("groups-updated");
       return;
@@ -633,6 +635,7 @@ export default function AddExpenseScreen() {
         description: desc,
         groupId: resolvedGroupId,
         payerMemberId: effPayer,
+        currency: currencyCode,
       };
       if (splitMethod === "equal" && t.type === "friend") {
         body.personKey = t.key;
@@ -643,7 +646,7 @@ export default function AddExpenseScreen() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         sfx.coin();
-        toast.show(`Expense saved · $${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
+        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
         DeviceEventEmitter.emit("expense-added");
         DeviceEventEmitter.emit("groups-updated");
       } else {
@@ -935,7 +938,7 @@ export default function AddExpenseScreen() {
                 {/* Amount */}
                 <Text style={[s.secLabel, { marginTop: 16 }]}>Amount</Text>
                 <View style={s.amountField}>
-                  <Text style={s.amountPrefix}>$</Text>
+                  <Text style={s.amountPrefix}>{currSymbol}</Text>
                   <TextInput
                     style={s.amountFieldInput}
                     value={amount}
@@ -961,7 +964,7 @@ export default function AddExpenseScreen() {
                 </View>
 
                 {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
-                  <Text style={s.eqHint}>${(total / splitPeople.length).toFixed(2)} per person</Text>
+                  <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
                 )}
 
                 {error ? <Text style={s.err}>{error}</Text> : null}
@@ -1000,7 +1003,7 @@ export default function AddExpenseScreen() {
               {/* Expense card */}
               <View style={s.expenseCard}>
                 <Text style={s.expenseCardLabel}>Expense</Text>
-                <Text style={s.expenseCardAmount}>${total.toFixed(2)}</Text>
+                <Text style={s.expenseCardAmount}>{currSymbol}{total.toFixed(2)}</Text>
                 <Text style={s.expenseCardDesc}>{description.trim() || "Expense"}</Text>
                 <Text style={s.expenseCardMeta}>
                   Paid by {payerDisplay === "you" ? "You" : payerDisplay} · {splitPeople.length} people
@@ -1024,7 +1027,7 @@ export default function AddExpenseScreen() {
                               <Text style={s.listRowTitle}>{person.displayName}</Text>
                               <Text style={s.listRowSub}>their share</Text>
                             </View>
-                            <Text style={s.oweAmount}>${person.amount.toFixed(2)}</Text>
+                            <Text style={s.oweAmount}>{currSymbol}{person.amount.toFixed(2)}</Text>
                           </View>
                           <TouchableOpacity
                             style={[s.tapToPayBtn, saving && { opacity: 0.5 }]}
@@ -1159,7 +1162,7 @@ export default function AddExpenseScreen() {
             </View>
             <View style={s.listCard}>
               {([
-                { key: "equal" as SplitMethod, icon: "git-compare-outline" as const, title: "Split equally", desc: total > 0 && splitPeople.length > 0 ? `$${(total / splitPeople.length).toFixed(2)} each` : "Even split" },
+                { key: "equal" as SplitMethod, icon: "git-compare-outline" as const, title: "Split equally", desc: total > 0 && splitPeople.length > 0 ? `${currSymbol}${(total / splitPeople.length).toFixed(2)} each` : "Even split" },
                 { key: "exact" as SplitMethod, icon: "cash-outline" as const, title: "Unequal amounts", desc: "Enter exact amounts" },
                 { key: "percent" as SplitMethod, icon: "pie-chart-outline" as const, title: "By percentages", desc: "Split by % of total" },
                 { key: "shares" as SplitMethod, icon: "layers-outline" as const, title: "By shares", desc: "Use ratio (e.g., 2:1:1)" },
@@ -1225,9 +1228,9 @@ export default function AddExpenseScreen() {
                         <Text style={s.listRowTitle}>{p.name}</Text>
                         <Text style={s.listRowSub}>
                           {splitMethod === "shares" && `${customSplits[p.key] || "1"} share${(customSplits[p.key] || "1") === "1" ? "" : "s"}`}
-                          {splitMethod === "exact" && `$${sh?.share.toFixed(2) ?? "0.00"}`}
+                          {splitMethod === "exact" && `${currSymbol}${sh?.share.toFixed(2) ?? "0.00"}`}
                           {splitMethod === "percent" && total > 0
-                            ? `= $${((total * (parseFloat(customSplits[p.key] || "0") || 0)) / 100).toFixed(2)}`
+                            ? `= ${currSymbol}${((total * (parseFloat(customSplits[p.key] || "0") || 0)) / 100).toFixed(2)}`
                             : splitMethod === "percent" ? "0%" : null}
                         </Text>
                       </View>
@@ -1291,12 +1294,12 @@ export default function AddExpenseScreen() {
                         <Text style={{ fontSize: 12, fontFamily: font.semibold, color: "#EF4444" }}>
                           {splitMethod === "percent"
                             ? `${(100 - inputSum).toFixed(1)}% left`
-                            : `$${(total - inputSum).toFixed(2)} left`}
+                            : `${currSymbol}${(total - inputSum).toFixed(2)} left`}
                         </Text>
                       )}
                       <Text style={[s.remainingValue, !isBalanced && { color: "#EF4444" }]}>
                         {splitMethod === "shares" && `${inputSum.toFixed(0)} shares`}
-                        {splitMethod === "exact" && `$${inputSum.toFixed(2)} / $${total.toFixed(2)}`}
+                        {splitMethod === "exact" && `${currSymbol}${inputSum.toFixed(2)} / ${currSymbol}${total.toFixed(2)}`}
                         {splitMethod === "percent" && `${inputSum.toFixed(1)}% / 100%`}
                       </Text>
                     </View>

@@ -88,24 +88,13 @@ export default function ActivityTabScreen() {
     return () => sub.remove();
   }, [isDemoOn, refetch]);
 
-  if (!isDemoOn && loading && activity.length === 0) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
-        <View style={styles.pad}>
-          <ActivityHeader />
-        </View>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const showInitialLoading = !isDemoOn && loading && activity.length === 0;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.page}
+        contentContainerStyle={[styles.page, showInitialLoading && styles.pageLoading]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           isDemoOn ? undefined : (
@@ -116,6 +105,13 @@ export default function ActivityTabScreen() {
         <View style={styles.pad}>
           <ActivityHeader />
         </View>
+
+        {showInitialLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : (
+          <>
 
         <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Ionicons name="search" size={18} color={theme.textTertiary} />
@@ -164,6 +160,8 @@ export default function ActivityTabScreen() {
               <ActivityRow key={it.id} it={it} showSep={i < filteredActivity.length - 1} />
             ))}
           </View>
+        )}
+        </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -254,7 +252,8 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F3F2" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  center: { justifyContent: "center", alignItems: "center", paddingTop: 60 },
+  pageLoading: { flexGrow: 1 },
   scroll: { flex: 1 },
   page: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 8 },
   pad: { paddingHorizontal: 0, paddingTop: 4, marginBottom: 16 },

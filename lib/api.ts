@@ -27,21 +27,27 @@ const CACHE_TTL_MS: Record<string, number> = {
   "/api/plaid/status": 10_000,
   "/api/plaid/transactions": 30_000,
   "/api/groups/summary": 15_000,
+  "/api/groups/recent-activity": 15_000,
+  "/api/groups/person": 10_000,
   "/api/plaid/accounts": 30_000,
   "/api/splitwise/status": 30_000,
   "/api/gmail/status": 60_000,
   "/api/stripe/connect/status": 60_000,
 };
 
+const GROUP_DETAIL_RE = /^\/api\/groups\/[a-f0-9-]+$/;
+
 function getCacheTtl(path: string): number {
   for (const [prefix, ttl] of Object.entries(CACHE_TTL_MS)) {
     if (path === prefix || path.startsWith(prefix + "?")) return ttl;
   }
+  if (GROUP_DETAIL_RE.test(path)) return 10_000;
   return 0;
 }
 
 const PERSIST_PATHS = new Set([
   "/api/groups/summary",
+  "/api/groups/recent-activity",
   "/api/plaid/transactions",
   "/api/plaid/status",
   "/api/plaid/accounts",
