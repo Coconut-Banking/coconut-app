@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
 import type { Href } from "expo-router";
-import { useRecentActivity, type RecentActivityItem } from "../../hooks/useGroups";
+import { useRecentActivity, markActivitySeen, type RecentActivityItem } from "../../hooks/useGroups";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { font, radii, prototype, colors } from "../../lib/theme";
@@ -82,6 +82,7 @@ export default function ActivityTabScreen() {
 
   useEffect(() => {
     if (isFocused && !prevFocused.current && !isDemoOn) refetch();
+    if (isFocused) markActivitySeen();
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
 

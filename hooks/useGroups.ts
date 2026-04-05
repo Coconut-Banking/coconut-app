@@ -446,10 +446,46 @@ export interface RecentActivityItem {
   receiptUrl?: string | null;
 }
 
+const ACTIVITY_PATH = "/api/groups/recent-activity";
+let _memActivity: RecentActivityItem[] | null = null;
+
+/** Clear the in-memory activity cache (call alongside invalidateApiCache). */
+export function clearMemActivityCache() {
+  _memActivity = null;
+}
+
+let _lastSeenActivityId: string | null = null;
+let _hasUnseen = false;
+const _unseenListeners = new Set<(v: boolean) => void>();
+
+function _setHasUnseen(v: boolean) {
+  if (_hasUnseen === v) return;
+  _hasUnseen = v;
+  _unseenListeners.forEach((fn) => fn(v));
+}
+
+/** Mark all current activity as "seen" — call when the Activity tab is focused. */
+export function markActivitySeen() {
+  if (_memActivity?.[0]) _lastSeenActivityId = _memActivity[0].id;
+  _setHasUnseen(false);
+}
+
+/** Hook that returns true when there's unseen activity (for badge dot). */
+export function useHasUnseenActivity(): boolean {
+  const [unseen, setUnseen] = useState(_hasUnseen);
+  useEffect(() => {
+    _unseenListeners.add(setUnseen);
+    setUnseen(_hasUnseen);
+    return () => { _unseenListeners.delete(setUnseen); };
+  }, []);
+  return unseen;
+}
+
 export function useRecentActivity(enabled = true) {
   const apiFetch = useApiFetch();
-  const [activity, setActivity] = useState<RecentActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const mem = _memActivity;
+  const [activity, setActivity] = useState<RecentActivityItem[]>(mem ?? []);
+  const [loading, setLoading] = useState(!mem);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
 
@@ -459,11 +495,16 @@ export function useRecentActivity(enabled = true) {
       return;
     }
     try {
-      const res = await apiFetch("/api/groups/recent-activity");
+      const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
         retryCount.current = 0;
         const data = await res.json();
-        setActivity(data.activity ?? []);
+        const items: RecentActivityItem[] = data.activity ?? [];
+        _memActivity = items;
+        setActivity(items);
+        if (items[0] && items[0].id !== _lastSeenActivityId) {
+          _setHasUnseen(true);
+        }
       } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
         if (retryCount.current < 5) {
           retryCount.current += 1;
@@ -473,7 +514,6 @@ export function useRecentActivity(enabled = true) {
           retryTimer.current = setTimeout(() => fetchActivity(), delay);
         }
       }
-      // Never clear activity on error — keep stale data visible
     } finally {
       setLoading(false);
     }
@@ -483,12 +523,21 @@ export function useRecentActivity(enabled = true) {
     retryCount.current = 0;
     let cancelled = false;
 
+    if (_memActivity) {
+      setActivity(_memActivity);
+      setLoading(false);
+      fetchActivity();
+      return () => { cancelled = true; if (retryTimer.current) clearTimeout(retryTimer.current); };
+    }
+
     (async () => {
-      const cached = await getPersistedResponse("/api/groups/recent-activity");
+      const cached = await getPersistedResponse(ACTIVITY_PATH);
       if (cached && !cancelled && activity.length === 0) {
         try {
           const data = JSON.parse(cached.body);
-          setActivity(data.activity ?? []);
+          const items = data.activity ?? [];
+          _memActivity = items;
+          setActivity(items);
           setLoading(false);
         } catch { /* corrupt cache */ }
       }
@@ -503,4 +552,32 @@ export function useRecentActivity(enabled = true) {
   }, [fetchActivity]);
 
   return { activity, loading, refetch: fetchActivity };
+}
+
+/**
+ * Prefetch recent activity in the background (call from home tab).
+ * Populates _memActivity so Activity tab renders instantly.
+ */
+export function usePrefetchActivity() {
+  const apiFetch = useApiFetch();
+  useEffect(() => {
+    if (_memActivity) return;
+    (async () => {
+      try {
+        const persisted = await getPersistedResponse(ACTIVITY_PATH);
+        if (persisted) {
+          try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
+        }
+        const res = await apiFetch(ACTIVITY_PATH);
+        if (res.ok) {
+          const data = await res.json();
+          const items: RecentActivityItem[] = data.activity ?? [];
+          _memActivity = items;
+          if (items[0] && items[0].id !== _lastSeenActivityId) {
+            _setHasUnseen(true);
+          }
+        }
+      } catch { /* best-effort */ }
+    })();
+  }, [apiFetch]);
 }

@@ -24,7 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useUser, useClerk, useAuth } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
-import { clearMemSummaryCache } from "../../hooks/useGroups";
+import { clearMemSummaryCache, clearMemActivityCache } from "../../hooks/useGroups";
 import { usePlaidLinked } from "../../hooks/usePlaidLinked";
 import { useLocalSearchParams, useRouter, router as globalRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -758,6 +758,7 @@ export default function SettingsScreen() {
       invalidateApiCache("/api/groups/summary");
       invalidateApiCache("/api/groups/recent-activity");
       clearMemSummaryCache();
+      clearMemActivityCache();
       DeviceEventEmitter.emit("groups-updated");
       await fetchSplitwiseStatus();
     } catch {

@@ -9,10 +9,11 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../../lib/theme-context";
 import { getExpensePrefillTarget } from "../../lib/add-expense-prefill";
 import { sfx } from "../../lib/sounds";
+import { useHasUnseenActivity, markActivitySeen } from "../../hooks/useGroups";
 
 export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
@@ -92,6 +93,11 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const accountActive = current === "settings";
   const activeColor = theme.text;
   const inactiveColor = theme.textTertiary;
+  const hasUnseen = useHasUnseenActivity();
+
+  useEffect(() => {
+    if (activityActive) markActivitySeen();
+  }, [activityActive]);
 
   if (current && hiddenRoutes.has(current)) {
     return null;
@@ -147,11 +153,16 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
           accessibilityState={{ selected: activityActive }}
           accessibilityLabel="Activity"
         >
-          <Ionicons
-            name={activityActive ? "time" : "time-outline"}
-            size={22}
-            color={activityActive ? activeColor : inactiveColor}
-          />
+          <View>
+            <Ionicons
+              name={activityActive ? "time" : "time-outline"}
+              size={22}
+              color={activityActive ? activeColor : inactiveColor}
+            />
+            {hasUnseen && !activityActive ? (
+              <View style={styles.badgeDot} />
+            ) : null}
+          </View>
           <Text style={[styles.label, { color: activityActive ? activeColor : inactiveColor }]}>Activity</Text>
         </Pressable>
 
@@ -361,5 +372,16 @@ const styles = StyleSheet.create({
     fontFamily: font.semibold,
     fontSize: 15,
     color: "#3F464F",
+  },
+  badgeDot: {
+    position: "absolute",
+    top: -1,
+    right: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
   },
 });
