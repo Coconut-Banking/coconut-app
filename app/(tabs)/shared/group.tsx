@@ -733,21 +733,6 @@ export default function GroupScreen() {
                 ? formatSplitCurrencyAmount(detail.mySpend, detail.mySpendByCurrency?.[0]?.currency ?? "USD")
                 : (detail.mySpendByCurrency ?? []).map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(" + ")}
             </Text>
-            {detail.categoryBreakdown && detail.categoryBreakdown.length > 0 ? (
-              <View style={{ marginTop: 8, gap: 4 }}>
-                {detail.categoryBreakdown.map((c) => (
-                  <View key={c.category} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.primary, opacity: 0.6 }} />
-                    <Text style={{ fontFamily: font.medium, fontSize: 14, color: theme.textTertiary, flex: 1 }}>
-                      {c.category}
-                    </Text>
-                    <Text style={{ fontFamily: font.semibold, fontSize: 14, color: theme.text }}>
-                      {c.percent}%
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
           </View>
         ) : null}
 
