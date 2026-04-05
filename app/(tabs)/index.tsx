@@ -493,11 +493,29 @@ export default function BalancesPrototypeScreen() {
                     {item.cardDetailLine}
                   </Text>
                   <Text style={[styles.bankAmt, { color: theme.text }]}>${item.amount.toFixed(2)}</Text>
-                  <View style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                    <Text style={[styles.bankCtaText, { color: theme.text }]}>
-                      {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
-                    </Text>
-                  </View>
+                  <TouchableOpacity
+                    style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      sfx.pop();
+                      router.push({
+                        pathname: "/(tabs)/add-expense",
+                        params: {
+                          prefillDesc: item.merchant,
+                          prefillAmount: item.amount.toFixed(2),
+                          prefillNonce: String(Date.now()),
+                          prefillBankDate: item.sheetDateLine,
+                          prefillBankCategory: item.category ?? "",
+                          prefillPersonKey: "",
+                          prefillPersonName: "",
+                          prefillPersonType: "",
+                        },
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.bankCtaText, { color: theme.text }]}>Split this</Text>
+                  </TouchableOpacity>
                 </Pressable>
               )}
             />
@@ -548,11 +566,29 @@ export default function BalancesPrototypeScreen() {
                     {item.cardDetailLine}
                   </Text>
                   <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
-                  <View style={styles.bankCta}>
-                    <Text style={styles.bankCtaText}>
-                      {item.cardDetailIsReceipt ? "View receipt" : "Split this"}
-                    </Text>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.bankCta}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      sfx.pop();
+                      router.push({
+                        pathname: "/(tabs)/add-expense",
+                        params: {
+                          prefillDesc: item.merchant,
+                          prefillAmount: item.amount.toFixed(2),
+                          prefillNonce: String(Date.now()),
+                          prefillBankDate: item.sheetDateLine,
+                          prefillBankCategory: item.category ?? "",
+                          prefillPersonKey: "",
+                          prefillPersonName: "",
+                          prefillPersonType: "",
+                        },
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.bankCtaText}>Split this</Text>
+                  </TouchableOpacity>
                 </Pressable>
               )}
             />

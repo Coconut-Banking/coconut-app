@@ -130,13 +130,15 @@ function dedupeMembers(members: GroupMember[]): GroupMember[] {
 
 export default function AddExpenseScreen() {
   const nav = useRouter();
-  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType } = useLocalSearchParams<{
+  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType, prefillBankDate, prefillBankCategory } = useLocalSearchParams<{
     prefillDesc?: string;
     prefillAmount?: string;
     prefillNonce?: string;
     prefillPersonKey?: string;
     prefillPersonName?: string;
     prefillPersonType?: string;
+    prefillBankDate?: string;
+    prefillBankCategory?: string;
   }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
@@ -954,6 +956,20 @@ export default function AddExpenseScreen() {
               </View>
             ) : (
               <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+                {/* Bank transaction context card */}
+                {prefillBankDate ? (
+                  <View style={s.bankContextCard}>
+                    <Ionicons name="card-outline" size={16} color={darkUI.labelSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.bankContextMerchant} numberOfLines={1}>{description || prefillDesc || "Purchase"}</Text>
+                      <Text style={s.bankContextMeta}>
+                        {prefillBankDate}{prefillBankCategory ? ` · ${prefillBankCategory.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}` : ""}
+                      </Text>
+                    </View>
+                    <Text style={s.bankContextAmt}>${amount || prefillAmount || "0.00"}</Text>
+                  </View>
+                ) : null}
+
                 {/* Description */}
                 <Text style={s.secLabel}>Description</Text>
                 <TextInput
@@ -1642,6 +1658,15 @@ const s = StyleSheet.create({
   dupText: { flex: 1, fontSize: 13, fontFamily: font.regular, color: darkUI.labelSecondary, lineHeight: 18 },
   dupSaveAnyway: { marginTop: 6, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8, backgroundColor: prototype.amber },
   dupSaveAnywayTxt: { fontSize: 13, fontFamily: font.bold, color: "#fff" },
+
+  bankContextCard: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: darkUI.bgElevated, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16,
+  },
+  bankContextMerchant: { fontSize: 14, fontFamily: font.bold, color: darkUI.label },
+  bankContextMeta: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
+  bankContextAmt: { fontSize: 16, fontFamily: font.black, color: darkUI.label },
 
   err: { fontFamily: font.medium, fontSize: 13, color: darkUI.moneyOut, marginTop: 8, textAlign: "center" },
 
