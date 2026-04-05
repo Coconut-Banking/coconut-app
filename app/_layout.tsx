@@ -120,7 +120,7 @@ function AuthSwitch() {
         if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
-          if (data.connected || data.items?.length > 0) {
+          if (data.linked) {
             markSetupComplete();
           }
         }
