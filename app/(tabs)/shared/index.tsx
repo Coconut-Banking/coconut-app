@@ -528,8 +528,8 @@ export default function SharedIndex() {
         ? summaryFriends
         : mergedFallbackFriends;
   const friends = [...unsortedFriends].sort((a, b) => {
-    const aHasBalance = a.balances.length > 0 ? 1 : 0;
-    const bHasBalance = b.balances.length > 0 ? 1 : 0;
+    const aHasBalance = (a.balances ?? []).length > 0 ? 1 : 0;
+    const bHasBalance = (b.balances ?? []).length > 0 ? 1 : 0;
     if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
     const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? "";
     const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? "";

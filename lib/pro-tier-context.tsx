@@ -21,7 +21,7 @@ export function ProTierProvider({
   apiFetch,
 }: {
   children: React.ReactNode;
-  apiFetch: (path: string, opts?: RequestInit) => Promise<Response>;
+  apiFetch: (path: string, opts?: Omit<RequestInit, "body"> & { body?: object | FormData }) => Promise<Response>;
 }) {
   const [tier, setTier] = useState<UserTier>("free");
   const [loading, setLoading] = useState(true);

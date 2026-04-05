@@ -231,7 +231,7 @@ export default function BalancesPrototypeScreen() {
     if (!useDemoBankUi) return [];
     return PROTOTYPE_DEMO_BANK_CHARGES.filter(
       (tx) => tx.unsplit && !dismissedBank.includes(tx.id)
-    ).map(demoChargeToStripRow);
+    ).map((tx) => demoChargeToStripRow(tx));
   }, [useDemoBankUi, dismissedBank]);
 
   const liveStripRows = useMemo(() => {
