@@ -422,7 +422,12 @@ export default function SharedScreen() {
                                       receiverMemberId: s.toMemberId,
                                     },
                                   });
-                                  const data = await res.json();
+                                  let data: { url?: string; error?: string } = {};
+                                  try {
+                                    data = await res.json();
+                                  } catch {
+                                    // non-JSON body (e.g. HTML 500)
+                                  }
                                   if (res.ok && data.url) {
                                     await Share.share({
                                       message: `You owe me $${s.amount.toFixed(2)} for ${groupDetail.name}. Pay here: ${data.url}`,
@@ -430,7 +435,7 @@ export default function SharedScreen() {
                                       title: "Payment request",
                                     });
                                   } else {
-                                    Alert.alert("Error", (data as { error?: string })?.error ?? "Could not create link");
+                                    Alert.alert("Error", data?.error ?? "Could not create link");
                                   }
                                 } finally {
                                   setRequestingPayment(false);
@@ -487,8 +492,13 @@ export default function SharedScreen() {
                                           refetchGroup();
                                           refetch();
                                         } else {
-                                          const data = await res.json();
-                                          Alert.alert("Error", (data as { error?: string })?.error ?? "Could not record");
+                                          let data: { error?: string } = {};
+                                          try {
+                                            data = await res.json();
+                                          } catch {
+                                            // non-JSON body (e.g. HTML 500)
+                                          }
+                                          Alert.alert("Error", data?.error ?? "Could not record");
                                         }
                                       } finally {
                                         setRecordingSettlement(false);
