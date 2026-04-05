@@ -15,6 +15,7 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -32,7 +33,7 @@ import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
 import { useCurrency } from "../../hooks/useCurrency";
 
-type Target = { type: "group" | "friend"; key: string; name: string };
+type Target = { type: "group" | "friend"; key: string; name: string; imageUrl?: string | null };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
 
 type GroupMember = {
@@ -160,8 +161,8 @@ export default function AddExpenseScreen() {
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
-  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>>([]);
+  const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>>([]);
+  const [optimisticGroups, setOptimisticGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>>([]);
   const [optimisticFriends, setOptimisticFriends] = useState<Array<{ key: string; displayName: string; balance: number }>>([]);
   const [resolving, setResolving] = useState(false);
   const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(null);
@@ -282,6 +283,7 @@ export default function AddExpenseScreen() {
               name: String(g.name ?? "Group"),
               memberCount: Number(g.memberCount ?? 0),
               groupType: typeof g.groupType === "string" ? g.groupType : null,
+              imageUrl: typeof g.imageUrl === "string" ? g.imageUrl : null,
             }))
           );
         }
@@ -298,7 +300,7 @@ export default function AddExpenseScreen() {
         const raw = await AsyncStorage.getItem(`coconut.optimistic.friends.${userId}`);
         if (!raw || cancelled) return;
         const parsed = JSON.parse(raw) as {
-          groups?: Array<{ id: string; name: string; memberCount: number; groupType?: string | null }>;
+          groups?: Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>;
           friends?: Array<{ key: string; displayName: string; balance: number }>;
         };
         if (Array.isArray(parsed.groups)) setOptimisticGroups(parsed.groups);
@@ -316,7 +318,7 @@ export default function AddExpenseScreen() {
     .filter((g) => (g.groupType ?? "other") !== "home")
     .map((g) => ({ key: `grp:${g.id}`, displayName: g.name, balance: 0, balances: [] as { currency: string; amount: number }[] }));
   const fallbackGroupRows = mergedFallbackGroups.map((g) => ({
-    id: g.id, name: g.name, memberCount: g.memberCount, myBalance: 0, myBalances: [], lastActivityAt: new Date().toISOString(),
+    id: g.id, name: g.name, memberCount: g.memberCount, imageUrl: g.imageUrl ?? null, myBalance: 0, myBalances: [], lastActivityAt: new Date().toISOString(),
   }));
   const mergedFallbackFriends = [
     ...optimisticFriends,
@@ -724,7 +726,6 @@ export default function AddExpenseScreen() {
     );
   }
 
-  const GROUP_EMOJI_MAP: Record<string, string> = { home: "🏠", trip: "✈️", couple: "💑", other: "👥" };
   const canReview = total > 0 && description.trim().length > 0 && resolvedGroupId && splitValid;
 
   const oweList = (() => {
@@ -790,15 +791,21 @@ export default function AddExpenseScreen() {
                   <Text style={s.secLabel}>Groups</Text>
                   <View style={s.listCard}>
                     {filteredGroups.map((g, i) => {
-                      const emoji = GROUP_EMOJI_MAP[(g as { groupType?: string }).groupType ?? "other"] ?? "👥";
+                      const imageUrl = (g as { imageUrl?: string | null }).imageUrl ?? null;
                       return (
                         <TouchableOpacity
                           key={g.id}
                           style={[s.listRow, i < filteredGroups.length - 1 && s.listRowBorder]}
-                          onPress={() => selectTarget({ type: "group", key: g.id, name: g.name })}
+                          onPress={() => selectTarget({ type: "group", key: g.id, name: g.name, imageUrl })}
                           activeOpacity={0.7}
                         >
-                          <View style={s.groupEmoji}><Text style={{ fontSize: 20 }}>{emoji}</Text></View>
+                          {imageUrl ? (
+                            <Image source={{ uri: imageUrl }} style={s.groupIconImg} />
+                          ) : (
+                            <View style={s.groupEmoji}>
+                              <Ionicons name="people" size={22} color={darkUI.label} />
+                            </View>
+                          )}
                           <View style={{ flex: 1 }}>
                             <Text style={s.listRowTitle}>{g.name}</Text>
                             <Text style={s.listRowSub}>{g.memberCount} people</Text>
@@ -913,9 +920,17 @@ export default function AddExpenseScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 6 }}>
                 <Text style={{ fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary }}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, gap: 6, borderWidth: 1, borderColor: darkUI.stroke }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4A6CF722", alignItems: "center", justifyContent: "center" }}>
-                    <Text style={{ fontSize: 9, fontFamily: font.bold, color: "#4A6CF7" }}>{targets[0].name.slice(0, 2).toUpperCase()}</Text>
-                  </View>
+                  {targets[0].type === "group" && targets[0].imageUrl ? (
+                    <Image source={{ uri: targets[0].imageUrl }} style={{ width: 22, height: 22, borderRadius: 6 }} />
+                  ) : targets[0].type === "group" ? (
+                    <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
+                      <Ionicons name="people" size={13} color={darkUI.label} />
+                    </View>
+                  ) : (
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4A6CF722", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 9, fontFamily: font.bold, color: "#4A6CF7" }}>{targets[0].name.slice(0, 2).toUpperCase()}</Text>
+                    </View>
+                  )}
                   <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{targets[0].name}</Text>
                 </View>
               </View>
@@ -1499,11 +1514,14 @@ const s = StyleSheet.create({
   listRowTitle: { fontSize: 15, fontFamily: font.semibold, color: darkUI.label },
   listRowSub: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
 
-  // Group emoji (step 1)
+  // Group icon (step 1)
   groupEmoji: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: prototype.greenBg, borderWidth: 2, borderColor: prototype.greenMid,
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
     alignItems: "center", justifyContent: "center",
+  },
+  groupIconImg: {
+    width: 40, height: 40, borderRadius: 12,
   },
 
   // Friend avatar
