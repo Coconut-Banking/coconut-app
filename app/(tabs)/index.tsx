@@ -344,6 +344,8 @@ export default function BalancesPrototypeScreen() {
 
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
+  const focusedRef = useRef(isFocused);
+  focusedRef.current = isFocused;
 
   useEffect(() => {
     if (isFocused && !prevFocused.current && !isDemoOn) void refetch();
@@ -353,8 +355,8 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => void refetch()),
-      DeviceEventEmitter.addListener("expense-added", () => void refetch()),
+      DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) void refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) void refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);

@@ -185,7 +185,7 @@ export default function SharedIndex() {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      await refetch(true);
+      await refetch();
       const res = await apiFetch("/api/groups");
       if (res.ok) {
         const data = await res.json().catch(() => []);
@@ -211,21 +211,24 @@ export default function SharedIndex() {
   }, [isDemoOn, setIsDemoOn]);
 
   useEffect(() => {
-    if (isFocused && !prevFocused.current && !isDemoOn) refetch(true);
+    if (isFocused && !prevFocused.current && !isDemoOn) refetch();
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
 
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") refetch(true);
+      if (state === "active") refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
 
+  const focusedRef = useRef(isFocused);
+  focusedRef.current = isFocused;
+
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("expense-added", () => {
-      if (!isDemoOn) refetch(true);
+      if (!isDemoOn && focusedRef.current) refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
@@ -235,24 +238,20 @@ export default function SharedIndex() {
       if (!isDemoOn) {
         invalidateApiCache("/api/groups/summary");
         clearMemSummaryCache();
-        setOptimisticGroups([]);
-        setOptimisticFriends([]);
-        setFallbackGroups([]);
-        AsyncStorage.removeItem(optimisticStoreKey).catch(() => {});
-        refetch(true);
+        if (focusedRef.current) refetch();
       }
     });
     return () => sub.remove();
-  }, [isDemoOn, refetch, optimisticStoreKey]);
+  }, [isDemoOn, refetch]);
 
   useEffect(() => {
-    if (prevDemoOn.current && !isDemoOn) refetch(true);
+    if (prevDemoOn.current && !isDemoOn) refetch();
     prevDemoOn.current = isDemoOn;
   }, [isDemoOn, refetch]);
 
   useEffect(() => {
-    if (!isDemoOn) void onRefresh();
-  }, [isDemoOn, onRefresh]);
+    if (!isDemoOn) void refetch();
+  }, [isDemoOn, refetch]);
 
   // Once the API returns, prune optimistic entries that now exist in the real summary
   useEffect(() => {
@@ -408,7 +407,7 @@ export default function SharedIndex() {
         }
         invalidateApiCache("/api/groups/summary");
         clearMemSummaryCache();
-        await refetch(true);
+        await refetch();
         DeviceEventEmitter.emit("groups-updated");
       })();
     } finally {
@@ -485,8 +484,6 @@ export default function SharedIndex() {
       }
 
       closeAddFriend();
-      await refetch(true);
-      await onRefresh();
       const nextGroups = [{ id: group.id, name, memberCount: 2, groupType: "other" }, ...optimisticGroups.filter((g) => g.id !== group.id)];
       const nextFriends = [
         { key: `opt-${group.id}`, displayName: name, balance: 0, balances: [] as { currency: string; amount: number }[] },
@@ -494,8 +491,12 @@ export default function SharedIndex() {
       ];
       setOptimisticGroups(nextGroups);
       setOptimisticFriends(nextFriends);
-      await persistOptimistic(nextGroups, nextFriends);
+      void persistOptimistic(nextGroups, nextFriends);
       router.push({ pathname: "/(tabs)/shared/group", params: { id: group.id } });
+      // Background refresh
+      invalidateApiCache("/api/groups/summary");
+      clearMemSummaryCache();
+      void refetch();
     } catch {
       Alert.alert("Error", "Network error. Try again.");
     } finally {

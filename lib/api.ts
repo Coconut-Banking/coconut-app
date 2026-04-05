@@ -14,6 +14,7 @@ function unauthResponse() {
 
 let _tokenPromise: Promise<string | null> | null = null;
 let _lastGoodToken: string | null = null;
+let _refreshPromise: Promise<string | null> | null = null;
 
 let _rateLimitedUntil = 0;
 const _endpointBackoff = new Map<string, number>();
@@ -303,16 +304,33 @@ export function useApiFetch() {
           _endpointBackoff.delete(path);
 
           if (response.status === 401) {
-            _lastGoodToken = null;
             _tokenPromise = null;
-            let freshToken: string | null = null;
-            try { freshToken = await gt({ skipCache: true }); } catch { /* ignore */ }
-            if (freshToken) _lastGoodToken = freshToken;
-            if (freshToken && freshToken !== token) {
-              if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
-              const retry = await doFetch(freshToken);
-              if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
-              return retry;
+            const pending = _refreshPromise;
+            if (pending) {
+              const freshToken = await pending;
+              if (freshToken && freshToken !== token) {
+                if (__DEV__) console.log(`[api] 401 retry (shared refresh) → ${path}`);
+                const retry = await doFetch(freshToken);
+                if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+                return retry;
+              }
+            } else {
+              const p = (async () => {
+                try {
+                  const t = await gt({ skipCache: true });
+                  if (t) _lastGoodToken = t;
+                  return t;
+                } catch { return null; }
+              })();
+              _refreshPromise = p;
+              const freshToken = await p;
+              if (_refreshPromise === p) _refreshPromise = null;
+              if (freshToken && freshToken !== token) {
+                if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
+                const retry = await doFetch(freshToken);
+                if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+                return retry;
+              }
             }
           }
 

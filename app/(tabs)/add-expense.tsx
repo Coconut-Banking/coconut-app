@@ -639,7 +639,6 @@ export default function AddExpenseScreen() {
       sfx.coin();
         toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${t.name}`);
       DeviceEventEmitter.emit("expense-added");
-      DeviceEventEmitter.emit("groups-updated");
       return;
     }
 
@@ -668,7 +667,6 @@ export default function AddExpenseScreen() {
         sfx.coin();
         toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
         DeviceEventEmitter.emit("expense-added");
-        DeviceEventEmitter.emit("groups-updated");
       } else {
         savedRef.current = false;
         setError(data?.error || "Failed to save");

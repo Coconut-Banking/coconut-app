@@ -85,11 +85,13 @@ export default function ActivityTabScreen() {
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
 
+  const focusedRef = useRef(isFocused);
+  focusedRef.current = isFocused;
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => refetch()),
-      DeviceEventEmitter.addListener("expense-added", () => refetch()),
+      DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);

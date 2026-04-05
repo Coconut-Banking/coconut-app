@@ -164,8 +164,12 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   const retryCount = useRef(0);
 
   const fetchSummary = useCallback(
-    async (showLoading = false) => {
-      if (showLoading) setLoading(true);
+    async (_showLoading = false) => {
+      // Never set loading=true once we already have data — the caller
+      // should treat refetch as a silent background refresh so the user
+      // never sees a spinner or skeleton when switching tabs.
+      const hasData = _memSummary.has(summaryPath) || summary != null;
+      if (!hasData) setLoading(true);
       try {
         const res = await apiFetch(summaryPath);
         if (res.ok) {
@@ -193,13 +197,13 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
             if (retryTimer.current) clearTimeout(retryTimer.current);
             retryTimer.current = setTimeout(() => fetchSummary(false), delay);
           }
-        } else if (showLoading) {
-          setSummary(null);
         }
+        // Never setSummary(null) on error — keep stale data visible
       } finally {
         setLoading(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [apiFetch, summaryPath, contacts]
   );
 
@@ -468,9 +472,8 @@ export function useRecentActivity(enabled = true) {
           if (retryTimer.current) clearTimeout(retryTimer.current);
           retryTimer.current = setTimeout(() => fetchActivity(), delay);
         }
-      } else {
-        setActivity([]);
       }
+      // Never clear activity on error — keep stale data visible
     } finally {
       setLoading(false);
     }

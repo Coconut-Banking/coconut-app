@@ -56,6 +56,10 @@ export function BiometricLockProvider({
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<BiometricType>(null);
 
+  // Hydrate stored preference + hardware state once on mount.
+  // Intentionally has NO dependency on isSignedIn — the previous version
+  // used [isSignedIn] which caused cancellation races when Clerk loaded
+  // (isSignedIn flipped false→true mid-await, aborting the first run).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -97,13 +101,14 @@ export function BiometricLockProvider({
         }
       }
 
-      if (isEnabled && localAuth) {
-        setIsLocked(true);
+      if (!cancelled) {
+        if (isEnabled && localAuth) setIsLocked(true);
+        setHydrated(true);
       }
-      if (!cancelled) setHydrated(true);
     })();
     return () => { cancelled = true; };
-  }, [isSignedIn]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const backgroundedAt = useRef<number | null>(null);
 
