@@ -355,7 +355,7 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) void refetch(); }),
+      DeviceEventEmitter.addListener("groups-updated", () => { void refetch(); }),
       DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) void refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());

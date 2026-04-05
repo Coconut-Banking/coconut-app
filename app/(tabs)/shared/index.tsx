@@ -238,7 +238,7 @@ export default function SharedIndex() {
       if (!isDemoOn) {
         invalidateApiCache("/api/groups/summary");
         clearMemSummaryCache();
-        if (focusedRef.current) refetch();
+        void refetch();
       }
     });
     return () => sub.remove();
