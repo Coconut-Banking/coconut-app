@@ -270,6 +270,7 @@ export default function AddExpenseScreen() {
   }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
 
   // ── Fallback groups fetch (skip if summary already has groups) ──
+  const summaryGroups = summary?.groups ?? [];
   useEffect(() => {
     if (isDemoOn) return;
     if (summaryGroups.length > 0) return;
@@ -315,7 +316,6 @@ export default function AddExpenseScreen() {
 
   // ── Derived data ──
   const summaryFriends = summary?.friends ?? [];
-  const summaryGroups = summary?.groups ?? [];
   const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
   const fallbackFriendRows = mergedFallbackGroups
     .filter((g) => (g.groupType ?? "other") !== "home")
