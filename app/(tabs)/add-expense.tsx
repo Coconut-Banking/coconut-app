@@ -267,9 +267,10 @@ export default function AddExpenseScreen() {
     }
   }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
 
-  // ── Fallback groups fetch ──
+  // ── Fallback groups fetch (skip if summary already has groups) ──
   useEffect(() => {
     if (isDemoOn) return;
+    if (summaryGroups.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
@@ -290,7 +291,7 @@ export default function AddExpenseScreen() {
       } catch { /* best effort */ }
     })();
     return () => { cancelled = true; };
-  }, [apiFetch, isDemoOn]);
+  }, [apiFetch, isDemoOn, summaryGroups.length]);
 
   useEffect(() => {
     if (!userId) return;
@@ -386,7 +387,7 @@ export default function AddExpenseScreen() {
 
   const shareSum = shares.reduce((acc, p) => acc + p.share, 0);
   const splitValid = splitMethod === "equal" || Math.abs(shareSum - total) < 0.02;
-  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving;
+  const canSave = total > 0 && targets.length > 0 && resolvedGroupId && !saving && !resolving;
 
   // ── Payer display for the compact "Paid by" row ──
   const resolvedMeId = myMemberId ?? groupMembers[0]?.id ?? null;
@@ -936,9 +937,7 @@ export default function AddExpenseScreen() {
               </View>
             )}
 
-            {resolving ? (
-              <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>
-            ) : error ? (
+            {error ? (
               <View style={s.center}>
                 <Ionicons name="cloud-offline-outline" size={40} color={darkUI.labelMuted} />
                 <Text style={[s.err, { marginTop: 12, marginBottom: 16 }]}>{error}</Text>
@@ -1032,16 +1031,23 @@ export default function AddExpenseScreen() {
                 </View>
 
                 {/* Paid by + split method */}
-                <View style={s.paidSplitRow}>
-                  <Text style={s.paidSplitTxt}>Paid by </Text>
-                  <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowPaidByPicker(true)}>
-                    <Text style={s.paidSplitChipTxt}>{payerDisplay}</Text>
-                  </TouchableOpacity>
-                  <Text style={s.paidSplitTxt}> and split </Text>
-                  <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowSplitMethodPicker(true)}>
-                    <Text style={s.paidSplitChipTxt}>{splitDisplay.replace("split ", "")}</Text>
-                  </TouchableOpacity>
-                </View>
+                {resolving ? (
+                  <View style={[s.paidSplitRow, { justifyContent: "center" }]}>
+                    <ActivityIndicator size="small" color={darkUI.labelMuted} />
+                    <Text style={[s.paidSplitTxt, { marginLeft: 8 }]}>Loading split details…</Text>
+                  </View>
+                ) : (
+                  <View style={s.paidSplitRow}>
+                    <Text style={s.paidSplitTxt}>Paid by </Text>
+                    <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowPaidByPicker(true)}>
+                      <Text style={s.paidSplitChipTxt}>{payerDisplay}</Text>
+                    </TouchableOpacity>
+                    <Text style={s.paidSplitTxt}> and split </Text>
+                    <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowSplitMethodPicker(true)}>
+                      <Text style={s.paidSplitChipTxt}>{splitDisplay.replace("split ", "")}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
                   <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
