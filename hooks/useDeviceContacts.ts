@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { NativeModules } from "react-native";
+import { Platform } from "react-native";
 
 export type DeviceContact = {
   id: string;
@@ -13,23 +13,22 @@ export type DeviceContact = {
 type PermissionStatus = "undetermined" | "granted" | "denied";
 
 let _Contacts: typeof import("expo-contacts") | null = null;
-let _contactsChecked = false;
+let _unavailable = false;
 
 async function getContacts() {
   if (_Contacts) return _Contacts;
-  if (_contactsChecked) return null;
-  _contactsChecked = true;
-  // Guard: native module not registered (e.g. Expo Go) — skip to avoid crash
-  if (!NativeModules.ExpoContacts) return null;
+  if (_unavailable) return null;
+  if (Platform.OS === "web") { _unavailable = true; return null; }
   try {
     const mod = await import("expo-contacts");
     const available = typeof mod.isAvailableAsync === "function"
       ? await mod.isAvailableAsync().catch(() => false)
-      : false;
-    if (!available) return null;
+      : true;
+    if (!available) { _unavailable = true; return null; }
     _Contacts = mod;
     return _Contacts;
   } catch {
+    _unavailable = true;
     return null;
   }
 }

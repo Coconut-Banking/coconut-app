@@ -73,7 +73,7 @@ export default function GroupScreen() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const swipeableRefs = useRef(new Map<string, Swipeable>()).current;
   const [uploadingIcon, setUploadingIcon] = useState(false);
-  const [localIconUrl, setLocalIconUrl] = useState<string | null>(null);
+  const [localIconUrl, setLocalIconUrl] = useState<string | null>(localImage ?? null);
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<FriendBalance[]>([]);

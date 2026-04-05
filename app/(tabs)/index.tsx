@@ -157,7 +157,7 @@ export default function BalancesPrototypeScreen() {
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
   const dismissAllBankRef = useRef(() => {});
-  dismissAllBankRef.current = () => { setShowAllBank(false); setSearchMode("keyword"); askClear(); };
+  dismissAllBankRef.current = () => { setShowAllBank(false); setSearchMode("keyword"); setBankSearch(""); setCommittedSearch(""); askClear(); };
   const allBankPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -166,6 +166,7 @@ export default function BalancesPrototypeScreen() {
     })
   ).current;
   const [bankSearch, setBankSearch] = useState("");
+  const [committedSearch, setCommittedSearch] = useState("");
   const [bankFilter, setBankFilter] = useState<"all" | "unsplit">("all");
   const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
   const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom" | "receipts">("all");
@@ -312,12 +313,11 @@ export default function BalancesPrototypeScreen() {
   }, [datePreset, customDateStart, customDateEnd]);
 
   const filteredAllBankRows = useMemo(() => {
-    const q = bankSearch.trim().toLowerCase();
+    const q = committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
       if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
       if (dateFilterRange) {
-        // Use tx.date (ISO "2026-03-31") — tx.dateStr is a human label ("Mar 31") that new Date() can't parse
         const txDate = new Date(tx.date || "");
         if (!Number.isNaN(txDate.getTime())) {
           const txDay = new Date(txDate.getFullYear(), txDate.getMonth(), txDate.getDate());
@@ -330,7 +330,7 @@ export default function BalancesPrototypeScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, bankFilter, bankSearch, dateFilterRange, datePreset]);
+  }, [allLinkedBankRows, bankFilter, committedSearch, dateFilterRange, datePreset]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -951,12 +951,12 @@ export default function BalancesPrototypeScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }}>
+      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); setBankSearch(""); setCommittedSearch(""); askClear(); }}>
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); askClear(); }} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowAllBank(false); setSearchMode("keyword"); setBankSearch(""); setCommittedSearch(""); askClear(); }} />
           <Pressable style={[styles.sheet, { maxHeight: "92%", flex: 1 }]} onPress={(e) => e.stopPropagation()}>
             <View {...allBankPan.panHandlers} style={{ paddingVertical: 10, alignItems: "center" }}>
               <View style={[styles.sheetHandle, { marginTop: 0, marginBottom: 0 }]} />
@@ -1063,6 +1063,7 @@ export default function BalancesPrototypeScreen() {
                   onPress={() => {
                     setSearchMode(mode);
                     setBankSearch("");
+                    setCommittedSearch("");
                     askClear();
                     setDatePreset("all");
                     setCustomDateStart(null);
@@ -1088,8 +1089,9 @@ export default function BalancesPrototypeScreen() {
                 value={bankSearch}
                 onChangeText={(text) => {
                   setBankSearch(text);
-                  if (searchMode === "natural" && !text.trim()) {
-                    askClear();
+                  if (!text.trim()) {
+                    setCommittedSearch("");
+                    if (searchMode === "natural") askClear();
                   }
                 }}
                 onSubmitEditing={() => {
@@ -1098,15 +1100,17 @@ export default function BalancesPrototypeScreen() {
                       ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
                       : undefined;
                     askSearch(bankSearch, dateOpts);
+                  } else if (searchMode === "keyword") {
+                    setCommittedSearch(bankSearch);
                   }
                 }}
                 placeholder={searchMode === "natural" ? "Ask in plain English..." : "Search by name, amount, etc."}
                 placeholderTextColor="#B0B5BC"
                 style={styles.sheetSearchInput}
-                returnKeyType={searchMode === "natural" ? "search" : "done"}
+                returnKeyType="search"
               />
               {bankSearch.length > 0 && (
-                <TouchableOpacity onPress={() => { setBankSearch(""); askClear(); }} hitSlop={8}>
+                <TouchableOpacity onPress={() => { setBankSearch(""); setCommittedSearch(""); askClear(); }} hitSlop={8}>
                   <Ionicons name="close-circle" size={16} color="#B0B5BC" />
                 </TouchableOpacity>
               )}
@@ -1219,8 +1223,8 @@ export default function BalancesPrototypeScreen() {
                                     {tx.date}{category ? ` · ${category}` : ""}{location ? ` · ${location}` : ""}
                                   </Text>
                                 </View>
-                                <Text style={[styles.friendAmt, tx.amount < 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
-                                  {tx.amount < 0 ? "+" : "-"}${Math.abs(tx.amount).toFixed(2)}
+                                <Text style={[styles.friendAmt, tx.amount > 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
+                                  {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
                                 </Text>
                               </View>
                               {i < askResults.transactions.length - 1 ? <View style={styles.rowSep} /> : null}
