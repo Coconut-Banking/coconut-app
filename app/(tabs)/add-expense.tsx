@@ -786,10 +786,42 @@ export default function AddExpenseScreen() {
                 </View>
               )}
 
+              {/* Friends */}
+              {filteredFriends.length > 0 && (
+                <>
+                  <Text style={s.secLabel}>Friends</Text>
+                  <View style={s.listCard}>
+                    {filteredFriends.map((f, i) => {
+                      const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
+                      const isGroupBackedFriend = !!groupBackedId;
+                      const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
+                      const on = selectedKeys.has(targetKey);
+                      const hue = ACCENT[i % ACCENT.length];
+                      return (
+                        <TouchableOpacity
+                          key={f.key}
+                          style={[s.listRow, i < filteredFriends.length - 1 && s.listRowBorder]}
+                          onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                            <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
+                          </View>
+                          <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
+                          <View style={[s.radio, on && s.radioOn]}>
+                            {on && <View style={s.radioDot} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
               {/* Groups */}
               {filteredGroups.length > 0 && (
                 <>
-                  <Text style={s.secLabel}>Groups</Text>
+                  <Text style={[s.secLabel, { marginTop: 16 }]}>Groups</Text>
                   <View style={s.listCard}>
                     {filteredGroups.map((g, i) => {
                       const imageUrl = (g as { imageUrl?: string | null }).imageUrl ?? null;
@@ -812,38 +844,6 @@ export default function AddExpenseScreen() {
                             <Text style={s.listRowSub}>{g.memberCount} people</Text>
                           </View>
                           <Ionicons name="chevron-forward" size={16} color={darkUI.labelMuted} />
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
-
-              {/* Friends */}
-              {filteredFriends.length > 0 && (
-                <>
-                  <Text style={[s.secLabel, { marginTop: 16 }]}>Friends</Text>
-                  <View style={s.listCard}>
-                    {filteredFriends.map((f, i) => {
-                      const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
-                      const isGroupBackedFriend = !!groupBackedId;
-                      const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
-                      const on = selectedKeys.has(targetKey);
-                      const hue = ACCENT[i % ACCENT.length];
-                      return (
-                        <TouchableOpacity
-                          key={f.key}
-                          style={[s.listRow, i < filteredFriends.length - 1 && s.listRowBorder]}
-                          onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
-                            <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
-                          </View>
-                          <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
-                          <View style={[s.radio, on && s.radioOn]}>
-                            {on && <View style={s.radioDot} />}
-                          </View>
                         </TouchableOpacity>
                       );
                     })}
