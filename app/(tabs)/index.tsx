@@ -1101,12 +1101,7 @@ export default function BalancesPrototypeScreen() {
                 value={bankSearch}
                 onChangeText={(text) => {
                   setBankSearch(text);
-                  if (searchMode === "natural" && text.trim()) {
-                    const dateOpts = dateFilterRange
-                      ? { dateStart: dateFilterRange.start.toISOString().slice(0, 10), dateEnd: dateFilterRange.end.toISOString().slice(0, 10) }
-                      : undefined;
-                    askSearch(text, dateOpts);
-                  } else if (searchMode === "natural" && !text.trim()) {
+                  if (searchMode === "natural" && !text.trim()) {
                     askClear();
                   }
                 }}
