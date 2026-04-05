@@ -28,12 +28,17 @@ export async function registerForPushNotifications(): Promise<string | null> {
     return null;
   }
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+  let finalStatus: string;
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+  } catch (e) {
+    console.warn("[push] permission check failed:", e instanceof Error ? e.message : e);
+    return null;
   }
 
   if (finalStatus !== "granted") {
@@ -49,9 +54,14 @@ export async function registerForPushNotifications(): Promise<string | null> {
     });
   }
 
-  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-  const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  return token;
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    return token;
+  } catch (e) {
+    console.warn("[push] failed to get push token:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 type NotificationResponse = import("expo-notifications").NotificationResponse;

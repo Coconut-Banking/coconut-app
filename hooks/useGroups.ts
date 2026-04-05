@@ -20,6 +20,7 @@ export interface FriendBalance {
   balance: number | null;
   balances: Array<{ currency: string; amount: number }>;
   lastActivityAt?: string | null;
+  image_url?: string | null;
 }
 
 export interface CurrencyTotalsRow {

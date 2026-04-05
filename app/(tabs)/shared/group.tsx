@@ -44,7 +44,7 @@ import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
-const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"];
+const MEMBER_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#10B981", "#F97316", "#06B6D4", "#EC4899", "#6366F1", "#14B8A6"];
 
 function formatTimeAgo(iso: string): string {
   const d = new Date(iso);
@@ -1167,18 +1167,13 @@ export default function GroupScreen() {
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
               const isSelected = selectedFriends.some((f) => f.key === item.key);
-              const avatarColor = MEMBER_COLORS[item.displayName.charCodeAt(0) % MEMBER_COLORS.length];
               return (
                 <TouchableOpacity
                   style={s.pickerFriendRow}
                   onPress={() => toggleFriend(item)}
                   activeOpacity={0.7}
                 >
-                  <View style={[s.pickerFriendAvatar, { backgroundColor: `${avatarColor}20`, borderColor: `${avatarColor}40` }]}>
-                    <Text style={[s.pickerFriendAvatarText, { color: avatarColor }]}>
-                      {item.displayName.slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
+                  <MemberAvatar name={item.displayName} size={36} imageUrl={item.image_url ?? null} variant="soft" />
                   <Text style={[s.pickerFriendName, { color: theme.text }]}>{item.displayName}</Text>
                   <View style={[
                     s.pickerCheckbox,

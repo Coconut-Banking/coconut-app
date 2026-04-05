@@ -40,6 +40,8 @@ import { useBiometricLock } from "../../lib/biometric-lock-context";
 import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 import { useCurrency, SUPPORTED_CURRENCIES, type CurrencyCode } from "../../hooks/useCurrency";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -83,6 +85,7 @@ export default function SettingsScreen() {
   const [showAllAccounts, setShowAllAccounts] = useState(false);
   const ACCOUNTS_PREVIEW = 5;
   const [devToolsOpen, setDevToolsOpen] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const renameAccount = (a: PlaidAccount) => {
     Alert.prompt(
@@ -229,6 +232,58 @@ export default function SettingsScreen() {
       setConnectLoading(false);
     }
   }, [user, apiFetch]);
+
+  const handleProfilePhoto = useCallback(async () => {
+    if (!user) return;
+
+    Alert.alert("Profile Photo", undefined, [
+      {
+        text: "Choose from Library",
+        onPress: async () => {
+          try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+              base64: true,
+            });
+            if (result.canceled || !result.assets?.[0]?.base64) return;
+            setUploadingPhoto(true);
+            const asset = result.assets[0];
+            const mimeType = asset.mimeType || "image/jpeg";
+            const dataUri = `data:${mimeType};base64,${asset.base64}`;
+            await user.setProfileImage({ file: dataUri });
+            await user.reload();
+          } catch (e) {
+            Alert.alert("Upload failed", e instanceof Error ? e.message : "Please try again");
+          } finally {
+            setUploadingPhoto(false);
+          }
+        },
+      },
+      ...(user.imageUrl && !user.imageUrl.includes("default")
+        ? [
+            {
+              text: "Remove Photo",
+              style: "destructive" as const,
+              onPress: async () => {
+                try {
+                  setUploadingPhoto(true);
+                  await user.setProfileImage({ file: null });
+                  await user.reload();
+                } catch (e) {
+                  Alert.alert("Failed", e instanceof Error ? e.message : "Please try again");
+                } finally {
+                  setUploadingPhoto(false);
+                }
+              },
+            },
+          ]
+        : []),
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [user]);
 
   const startConnectOnboarding = async () => {
     setConnectActionLoading(true);
@@ -987,12 +1042,38 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Preferences</Text>
           {user ? (
             <View style={styles.accountBlock}>
-              <Text style={[styles.profileName, { color: theme.text }]}>
-                {user.fullName || user.username || "Account"}
-              </Text>
-              <Text style={[styles.accountEmail, { color: theme.textTertiary }]} numberOfLines={1}>
-                {user.primaryEmailAddress?.emailAddress ?? ""}
-              </Text>
+              <TouchableOpacity onPress={handleProfilePhoto} activeOpacity={0.7} style={styles.profilePhotoRow}>
+                <View style={styles.profilePhotoWrap}>
+                  {uploadingPhoto ? (
+                    <View style={[styles.profilePhoto, { backgroundColor: theme.surfaceSecondary, justifyContent: "center", alignItems: "center" }]}>
+                      <ActivityIndicator size="small" color={theme.primary} />
+                    </View>
+                  ) : user.imageUrl && !user.imageUrl.includes("default") ? (
+                    <Image
+                      source={{ uri: user.imageUrl }}
+                      style={styles.profilePhoto}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={[styles.profilePhoto, { backgroundColor: theme.primary }]}>
+                      <Text style={styles.profilePhotoInitials}>
+                        {(user.fullName || user.username || "U").slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.profilePhotoBadge, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Ionicons name="camera" size={12} color={theme.textSecondary} />
+                  </View>
+                </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={[styles.profileName, { color: theme.text }]}>
+                    {user.fullName || user.username || "Account"}
+                  </Text>
+                  <Text style={[styles.accountEmail, { color: theme.textTertiary }]} numberOfLines={1}>
+                    {user.primaryEmailAddress?.emailAddress ?? ""}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
           ) : null}
           <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Appearance</Text>
@@ -1745,6 +1826,11 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 17, fontFamily: font.semibold, marginBottom: 12 },
   sectionBlurb: { fontSize: 14, fontFamily: font.regular, lineHeight: 20, marginBottom: 12 },
   accountBlock: { marginBottom: 16 },
+  profilePhotoRow: { flexDirection: "row", alignItems: "center" },
+  profilePhotoWrap: { position: "relative" },
+  profilePhoto: { width: 56, height: 56, borderRadius: 28, overflow: "hidden" },
+  profilePhotoInitials: { color: "#fff", fontSize: 20, fontWeight: "700", fontFamily: font.bold, textAlign: "center", lineHeight: 56 },
+  profilePhotoBadge: { position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   profileName: { fontSize: 16, fontFamily: font.semibold },
   accountEmail: { fontSize: 14, fontFamily: font.regular, marginTop: 4 },
   fieldLabel: { fontSize: 13, fontFamily: font.medium, marginBottom: 8 },

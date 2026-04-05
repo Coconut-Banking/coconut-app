@@ -153,7 +153,6 @@ export default function BalancesPrototypeScreen() {
   usePrefetchActivity();
 
   const summary = isDemoOn ? demo.summary : apiSummary;
-  const [dismissedBank, setDismissedBank] = useState<string[]>([]);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
@@ -231,15 +230,15 @@ export default function BalancesPrototypeScreen() {
   const demoStripRows = useMemo(() => {
     if (!useDemoBankUi) return [];
     return PROTOTYPE_DEMO_BANK_CHARGES.filter(
-      (tx) => tx.unsplit && !dismissedBank.includes(tx.id)
+      (tx) => tx.unsplit
     ).map(demoChargeToStripRow);
-  }, [useDemoBankUi, dismissedBank]);
+  }, [useDemoBankUi]);
 
   const liveStripRows = useMemo(() => {
     if (useDemoBankUi || !linked) return [];
     const built = buildLiveMatchedStrip(bankVisibleTransactions);
-    return built.filter((r) => !dismissedBank.includes(r.stripId));
-  }, [useDemoBankUi, linked, bankVisibleTransactions, dismissedBank]);
+    return built;
+  }, [useDemoBankUi, linked, bankVisibleTransactions]);
 
   const stripRows = useDemoBankUi ? demoStripRows : liveStripRows;
 
@@ -373,7 +372,6 @@ export default function BalancesPrototypeScreen() {
   /** After disconnect, strip rows must stay empty; close sheet and reset dismiss state. */
   useEffect(() => {
     if (isDemoOn || linked) return;
-    setDismissedBank([]);
     setShowAllBank(false);
     setSelectedStrip(null);
   }, [isDemoOn, linked]);
@@ -484,13 +482,6 @@ export default function BalancesPrototypeScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <TouchableOpacity
-                      onPress={() => setDismissedBank((d) => [...d, item.stripId])}
-                      hitSlop={8}
-                      style={{ padding: 2 }}
-                    >
-                      <Ionicons name="close" size={13} color={darkUI.labelMuted} />
-                    </TouchableOpacity>
                   </View>
                   <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
                     {item.merchant}
@@ -546,13 +537,6 @@ export default function BalancesPrototypeScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <TouchableOpacity
-                      onPress={() => setDismissedBank((d) => [...d, item.stripId])}
-                      hitSlop={8}
-                      style={{ padding: 2 }}
-                    >
-                      <Ionicons name="close" size={13} color={darkUI.labelMuted} />
-                    </TouchableOpacity>
                   </View>
                   <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
                     {item.merchant}
@@ -619,7 +603,7 @@ export default function BalancesPrototypeScreen() {
                       onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
                       activeOpacity={0.75}
                     >
-                      <MemberAvatar name={f.displayName} size={42} imageUrl={null} variant="soft" />
+                      <MemberAvatar name={f.displayName} size={42} imageUrl={f.image_url ?? null} variant="soft" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={[styles.friendName, { color: theme.text }]}>{f.displayName}</Text>
                         <Text style={[styles.friendMeta, { color: theme.textTertiary }]}>{meta}</Text>
