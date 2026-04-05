@@ -297,6 +297,7 @@ export default function GroupScreen() {
         setLocalIconUrl(imageDataUri);
         toast.show("Group icon updated");
         refetch(true);
+        refetchSummary();
         DeviceEventEmitter.emit("groups-updated");
       } else {
         const err = await res.json().catch(() => ({}));
@@ -327,7 +328,7 @@ export default function GroupScreen() {
             setUploadingIcon(true);
             try {
               const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); DeviceEventEmitter.emit("groups-updated"); }
+              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
             } finally { setUploadingIcon(false); }
           }
         }
@@ -340,7 +341,7 @@ export default function GroupScreen() {
           setUploadingIcon(true);
           try {
             const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); DeviceEventEmitter.emit("groups-updated"); }
+            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
           } finally { setUploadingIcon(false); }
         }}] : []),
         { text: "Cancel", style: "cancel" as const },
