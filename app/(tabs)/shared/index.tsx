@@ -14,6 +14,7 @@ import {
   Animated,
   useWindowDimensions,
   Modal,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -90,7 +91,7 @@ export default function SharedIndex() {
   const [groupName, setGroupName] = useState("");
   const [groupType, setGroupType] = useState("trip");
   const [groupImage, setGroupImage] = useState<string | null>(null);
-  const [groupImageBase64, setGroupImageBase64] = useState<string | null>(null);
+  const [groupImageMime, setGroupImageMime] = useState<string>("image/jpeg");
   const [creating, setCreating] = useState(false);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [friendName, setFriendName] = useState("");
@@ -137,7 +138,7 @@ export default function SharedIndex() {
       setGroupName("");
       setGroupType("trip");
       setGroupImage(null);
-      setGroupImageBase64(null);
+      setGroupImageMime("image/jpeg");
       setShowCreate(true);
     } else {
       setShowCreate(false);
@@ -156,11 +157,10 @@ export default function SharedIndex() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.3,
-      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setGroupImage(result.assets[0].uri);
-      setGroupImageBase64(result.assets[0].base64 ?? null);
+      setGroupImageMime(result.assets[0].mimeType ?? "image/jpeg");
     }
   }, []);
 
@@ -367,37 +367,45 @@ export default function SharedIndex() {
         return;
       }
 
-      const capturedBase64 = groupImageBase64;
-      let imageDataUri: string | null = null;
-      if (capturedBase64) {
-        imageDataUri = `data:image/jpeg;base64,${capturedBase64}`;
-        setLocalGroupImages((prev) => ({ ...prev, [data.id]: imageDataUri! }));
+      const capturedImageUri = groupImage;
+      const capturedMime = groupImageMime;
+      if (capturedImageUri) {
+        setLocalGroupImages((prev) => ({ ...prev, [data.id]: capturedImageUri }));
       }
 
       setShowCreate(false);
       setGroupName("");
       setGroupType("trip");
       setGroupImage(null);
-      setGroupImageBase64(null);
+      setGroupImageMime("image/jpeg");
 
-      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType, imageUrl: imageDataUri }, ...optimisticGroups.filter((g) => g.id !== data.id)];
+      const nextGroups = [{ id: data.id, name, memberCount: 1, groupType, imageUrl: capturedImageUri }, ...optimisticGroups.filter((g) => g.id !== data.id)];
       setOptimisticGroups(nextGroups);
       void persistOptimistic(nextGroups, optimisticFriends);
 
       router.push({
         pathname: "/(tabs)/shared/group",
-        params: { id: data.id, ...(imageDataUri ? { localImage: imageDataUri } : {}) },
+        params: { id: data.id, ...(capturedImageUri ? { localImage: capturedImageUri } : {}) },
       });
 
-      // Background: upload image then refresh
+      // Background: upload image to Supabase Storage then refresh
       (async () => {
-        if (imageDataUri) {
+        if (capturedImageUri) {
           try {
-            const uploadRes = await apiFetch(`/api/groups/${data.id}/image`, {
+            const ext = capturedMime === "image/png" ? "png" : "jpg";
+            const formData = new FormData();
+            formData.append("image", { uri: capturedImageUri, type: capturedMime, name: `group-icon.${ext}` } as unknown as Blob);
+            const uploadRes = await apiFetch(`/api/groups/${data.id}/icon`, {
               method: "POST",
-              body: { image: imageDataUri } as object,
+              body: formData,
             });
-            if (!uploadRes.ok) {
+            if (uploadRes.ok) {
+              const uploadData = await uploadRes.json().catch(() => ({}));
+              const publicUrl = (uploadData as { imageUrl?: string }).imageUrl;
+              if (publicUrl) {
+                setLocalGroupImages((prev) => ({ ...prev, [data.id]: publicUrl }));
+              }
+            } else {
               const err = await uploadRes.json().catch(() => ({}));
               console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
             }
@@ -749,17 +757,27 @@ export default function SharedIndex() {
                       key={c.id}
                       style={[st.afContactRow, { borderBottomColor: theme.borderLight }]}
                       onPress={() => {
+                        Keyboard.dismiss();
                         addFriendFromContact(c);
                         setShowManualEntry(false);
+                        setContactSearch("");
                       }}
-                      activeOpacity={0.7}
+                      activeOpacity={0.65}
                     >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[st.afContactName, { color: theme.text }]}>{c.name}</Text>
-                        <Text style={[st.afContactPhone, { color: theme.textTertiary }]}>
-                          {c.phone ?? c.email ?? ""}
+                      <View style={[st.afContactAvatar, { backgroundColor: theme.surfaceSecondary }]}>
+                        <Text style={[st.afContactInitial, { color: theme.text }]}>
+                          {c.name.charAt(0).toUpperCase()}
                         </Text>
                       </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[st.afContactName, { color: theme.text }]}>{c.name}</Text>
+                        {(c.phone || c.email) ? (
+                          <Text style={[st.afContactPhone, { color: theme.textTertiary }]}>
+                            {c.phone ?? c.email ?? ""}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
                     </TouchableOpacity>
                   ))
                 )}
@@ -798,15 +816,15 @@ export default function SharedIndex() {
         visible={showCreate}
         transparent
         animationType="slide"
-        onRequestClose={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }}
+        onRequestClose={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageMime("image/jpeg"); }}
       >
-        <Pressable style={st.sheetOverlay} onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }}>
+        <Pressable style={st.sheetOverlay} onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageMime("image/jpeg"); }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <Pressable style={[st.sheet, { backgroundColor: theme.surface }]} onPress={() => {}}>
               <View style={st.sheetHandle} />
               <View style={st.sheetHeader}>
                 <Text style={[st.sheetTitle, { color: theme.text }]}>New Group</Text>
-                <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageBase64(null); }} hitSlop={8}>
+                <TouchableOpacity onPress={() => { setShowCreate(false); setGroupName(""); setGroupType("trip"); setGroupImage(null); setGroupImageMime("image/jpeg"); }} hitSlop={8}>
                   <Ionicons name="close" size={22} color={theme.textTertiary} />
                 </TouchableOpacity>
               </View>
@@ -1317,11 +1335,20 @@ const st = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    gap: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  afContactAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  afContactInitial: { fontSize: 17, fontFamily: font.semibold },
   afContactName: { fontSize: 16, fontFamily: font.medium },
-  afContactPhone: { fontSize: 13, fontFamily: font.regular, marginTop: 1 },
+  afContactPhone: { fontSize: 13, fontFamily: font.regular, marginTop: 2 },
   afPermission: {
     alignItems: "center",
     paddingVertical: 40,

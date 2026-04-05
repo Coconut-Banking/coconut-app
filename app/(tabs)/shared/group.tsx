@@ -287,19 +287,24 @@ export default function GroupScreen() {
     }
 
     setUploadingIcon(true);
+    setLocalIconUrl(asset.uri);
     try {
-      const imageDataUri = `data:${mimeType};base64,${asset.base64}`;
-      if (__DEV__) console.log(`[group-icon] uploading base64 to /api/groups/${id}/image, mimeType:`, mimeType, "length:", imageDataUri.length);
-      const res = await apiFetch(`/api/groups/${id}/image`, { method: "POST", body: { image: imageDataUri } as object });
+      const ext = mimeType === "image/png" ? "png" : "jpg";
+      const formData = new FormData();
+      formData.append("image", { uri: asset.uri, type: mimeType, name: `group-icon.${ext}` } as unknown as Blob);
+      if (__DEV__) console.log(`[group-icon] uploading to /api/groups/${id}/icon, mimeType:`, mimeType);
+      const res = await apiFetch(`/api/groups/${id}/icon`, { method: "POST", body: formData });
       if (__DEV__) console.log("[group-icon] response status:", res.status);
       if (res.ok) {
         if (__DEV__) console.log("[group-icon] success");
-        setLocalIconUrl(imageDataUri);
+        const data = await res.json().catch(() => ({}));
+        if ((data as { imageUrl?: string }).imageUrl) setLocalIconUrl((data as { imageUrl: string }).imageUrl);
         toast.show("Group icon updated");
         refetch(true);
         refetchSummary();
         DeviceEventEmitter.emit("groups-updated");
       } else {
+        setLocalIconUrl(null);
         const err = await res.json().catch(() => ({}));
         if (__DEV__) console.warn("[group-icon] upload failed:", res.status, JSON.stringify(err));
         Alert.alert("Upload failed", (err as { error?: string }).error ?? "Try again.");

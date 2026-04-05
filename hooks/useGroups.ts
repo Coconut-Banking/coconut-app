@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useApiFetch, getPersistedResponse } from "../lib/api";
 
 export interface GroupSummary {
@@ -455,7 +456,9 @@ export function clearMemActivityCache() {
   _memActivity = null;
 }
 
+const LAST_SEEN_KEY = "coconut.activity.lastSeenId";
 let _lastSeenActivityId: string | null = null;
+let _lastSeenLoaded = false;
 let _hasUnseen = false;
 const _unseenListeners = new Set<(v: boolean) => void>();
 
@@ -465,9 +468,25 @@ function _setHasUnseen(v: boolean) {
   _unseenListeners.forEach((fn) => fn(v));
 }
 
+async function _loadLastSeen(): Promise<string | null> {
+  if (_lastSeenLoaded) return _lastSeenActivityId;
+  _lastSeenLoaded = true;
+  try {
+    const v = await AsyncStorage.getItem(LAST_SEEN_KEY);
+    if (v) _lastSeenActivityId = v;
+  } catch { /* non-fatal */ }
+  return _lastSeenActivityId;
+}
+
+// Eagerly start loading the persisted value at module init
+_loadLastSeen();
+
 /** Mark all current activity as "seen" — call when the Activity tab is focused. */
 export function markActivitySeen() {
-  if (_memActivity?.[0]) _lastSeenActivityId = _memActivity[0].id;
+  if (_memActivity?.[0]) {
+    _lastSeenActivityId = _memActivity[0].id;
+    AsyncStorage.setItem(LAST_SEEN_KEY, _memActivity[0].id).catch(() => {});
+  }
   _setHasUnseen(false);
 }
 
@@ -496,6 +515,7 @@ export function useRecentActivity(enabled = true) {
       return;
     }
     try {
+      await _loadLastSeen();
       const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
         retryCount.current = 0;
@@ -532,7 +552,11 @@ export function useRecentActivity(enabled = true) {
     }
 
     (async () => {
-      const cached = await getPersistedResponse(ACTIVITY_PATH);
+      // Show persisted data immediately while the network request runs in parallel
+      const [cached] = await Promise.all([
+        getPersistedResponse(ACTIVITY_PATH),
+        _loadLastSeen(),
+      ]);
       if (cached && !cancelled && activity.length === 0) {
         try {
           const data = JSON.parse(cached.body);
@@ -565,6 +589,7 @@ export function usePrefetchActivity() {
     if (_memActivity) return;
     (async () => {
       try {
+        await _loadLastSeen();
         const persisted = await getPersistedResponse(ACTIVITY_PATH);
         if (persisted) {
           try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
