@@ -114,26 +114,16 @@ function AuthSwitch() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !setupHydrated || setupComplete || isDemoOn) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch("/api/plaid/status");
-        if (cancelled) return;
-        if (res.ok) {
-          const data = await res.json();
-          if (data.linked) {
-            markSetupComplete();
-          }
-        }
-        const groupsRes = await apiFetch("/api/groups/summary");
-        if (cancelled) return;
-        if (groupsRes.ok) {
-          const gData = await groupsRes.json();
-          if ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0) {
-            markSetupComplete();
-          }
-        }
-      } catch {}
-    })();
+    void apiFetch("/api/plaid/status").then(async (res) => {
+      if (cancelled || !res.ok) return;
+      const data = await res.json();
+      if (!cancelled && data.linked) markSetupComplete();
+    }).catch(() => {});
+    void apiFetch("/api/groups/summary").then(async (res) => {
+      if (cancelled || !res.ok) return;
+      const gData = await res.json();
+      if (!cancelled && ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0)) markSetupComplete();
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn, setupHydrated, setupComplete, isDemoOn, apiFetch, markSetupComplete]);
 

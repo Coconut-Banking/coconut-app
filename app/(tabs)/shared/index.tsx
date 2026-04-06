@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import {
   View,
   Text,
@@ -46,7 +46,7 @@ function SLabel({ children }: { children: ReactNode }) {
   return <Text style={[st.sLabel, { color: theme.textTertiary }]}>{children}</Text>;
 }
 
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+const Avatar = React.memo(function Avatar({ name, size = 40 }: { name: string; size?: number }) {
   const hue = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
   return (
     <View
@@ -66,7 +66,7 @@ function Avatar({ name, size = 40 }: { name: string; size?: number }) {
       </Text>
     </View>
   );
-}
+});
 
 function timeAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);

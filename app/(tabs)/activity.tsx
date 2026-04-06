@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef, useMemo } from "react";
+import React, { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -197,7 +197,7 @@ function currencySymbol(code?: string): string {
   }
 }
 
-function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean }) {
+const ActivityRow = React.memo(function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean }) {
   const { theme } = useTheme();
   const sym = currencySymbol(it.currency);
   const isSettlement = it.direction === "settled";
@@ -268,7 +268,7 @@ function ActivityRow({ it, showSep }: { it: RecentActivityItem; showSep: boolean
       {showSep ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F3F2" },

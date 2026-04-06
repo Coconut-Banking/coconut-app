@@ -68,7 +68,7 @@ export const MerchantLogo = React.memo(function MerchantLogo({
   }, [merchantName, externalLogoUrl]);
 
   const logoUrl = useMemo(() => {
-    const quikrturnUrl = getMerchantLogoUrl(merchantName, Math.round(size * 2.2));
+    const quikrturnUrl = getMerchantLogoUrl(merchantName, Math.round(size * 1.5));
     if (errorCount === 0 && externalLogoUrl) return externalLogoUrl;
     if (errorCount <= 1 && quikrturnUrl) return quikrturnUrl;
     return null;

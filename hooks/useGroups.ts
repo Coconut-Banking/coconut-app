@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { InteractionManager } from "react-native";
 import { useApiFetch, getPersistedResponse } from "../lib/api";
 
 export interface GroupSummary {
@@ -320,7 +321,9 @@ export function useGroupDetail(id: string | null) {
   return { detail, loading, refetch: fetchDetail };
 }
 
-const PERSON_POLL_MS = 30000;
+const PERSON_POLL_BASE_MS = 30_000;
+const PERSON_POLL_MID_MS = 60_000;
+const PERSON_POLL_SLOW_MS = 120_000;
 
 export function usePersonDetail(key: string | null) {
   const apiFetch = useApiFetch();
@@ -328,6 +331,7 @@ export function usePersonDetail(key: string | null) {
   const [loading, setLoading] = useState(true);
   const prevKey = useRef(key);
   const hasDetail = useRef(false);
+  const pollCount = useRef(0);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -356,22 +360,42 @@ export function usePersonDetail(key: string | null) {
     [key, apiFetch]
   );
 
+  const refetch = useCallback(
+    (silent = false) => {
+      pollCount.current = 0; // reset adaptive interval on user interaction
+      return fetchDetail(silent);
+    },
+    [fetchDetail]
+  );
+
   useEffect(() => {
     if (prevKey.current !== key) {
       setDetail(null);
       hasDetail.current = false;
       prevKey.current = key;
+      pollCount.current = 0;
     }
     fetchDetail();
   }, [fetchDetail, key]);
 
   useEffect(() => {
     if (!key) return;
-    const interval = setInterval(() => fetchDetail(true), PERSON_POLL_MS);
-    return () => clearInterval(interval);
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const interval =
+        pollCount.current >= 10 ? PERSON_POLL_SLOW_MS :
+        pollCount.current >= 5  ? PERSON_POLL_MID_MS :
+        PERSON_POLL_BASE_MS;
+      timer = setTimeout(() => {
+        pollCount.current += 1;
+        fetchDetail(true).then(schedule, schedule);
+      }, interval);
+    };
+    schedule();
+    return () => clearTimeout(timer);
   }, [key, fetchDetail]);
 
-  return { detail, loading, refetch: fetchDetail };
+  return { detail, loading, refetch };
 }
 
 export interface TransactionDetail {
@@ -482,6 +506,8 @@ export function useHasUnseenActivity(): boolean {
   return unseen;
 }
 
+const ACTIVITY_DEBOUNCE_MS = 5_000;
+
 export function useRecentActivity(enabled = true) {
   const apiFetch = useApiFetch();
   const mem = _memActivity;
@@ -489,12 +515,16 @@ export function useRecentActivity(enabled = true) {
   const [loading, setLoading] = useState(!mem);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
+  const lastFetchTs = useRef(0);
 
   const fetchActivity = useCallback(async () => {
     if (!enabled) {
       setLoading(false);
       return;
     }
+    const now = Date.now();
+    if (now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
+    lastFetchTs.current = now;
     try {
       const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
@@ -563,22 +593,25 @@ export function usePrefetchActivity() {
   const apiFetch = useApiFetch();
   useEffect(() => {
     if (_memActivity) return;
-    (async () => {
-      try {
-        const persisted = await getPersistedResponse(ACTIVITY_PATH);
-        if (persisted) {
-          try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
-        }
-        const res = await apiFetch(ACTIVITY_PATH);
-        if (res.ok) {
-          const data = await res.json();
-          const items: RecentActivityItem[] = data.activity ?? [];
-          _memActivity = items;
-          if (items[0] && items[0].id !== _lastSeenActivityId) {
-            _setHasUnseen(true);
+    const handle = InteractionManager.runAfterInteractions(() => {
+      (async () => {
+        try {
+          const persisted = await getPersistedResponse(ACTIVITY_PATH);
+          if (persisted) {
+            try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
           }
-        }
-      } catch { /* best-effort */ }
-    })();
+          const res = await apiFetch(ACTIVITY_PATH);
+          if (res.ok) {
+            const data = await res.json();
+            const items: RecentActivityItem[] = data.activity ?? [];
+            _memActivity = items;
+            if (items[0] && items[0].id !== _lastSeenActivityId) {
+              _setHasUnseen(true);
+            }
+          }
+        } catch { /* best-effort */ }
+      })();
+    });
+    return () => handle.cancel();
   }, [apiFetch]);
 }

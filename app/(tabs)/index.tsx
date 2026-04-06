@@ -22,7 +22,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   PanResponder,
+  InteractionManager,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -34,7 +36,7 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -143,13 +145,183 @@ function filterOffsettingBankPairs(transactions: Transaction[]): Transaction[] {
   return sorted.filter((_, idx) => !omitted.has(idx));
 }
 
+/** Extracted FlatList renderItem for the demo bank card strip */
+const BankCardItem = React.memo(function BankCardItem({
+  item,
+  onPress,
+  onSplit,
+  theme,
+}: {
+  item: HomeBankStripRow;
+  onPress: (item: HomeBankStripRow) => void;
+  onSplit: (item: HomeBankStripRow) => void;
+  theme: any;
+}) {
+  return (
+    <Pressable
+      style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
+      onPress={() => onPress(item)}
+    >
+      <View style={styles.bankTop}>
+        <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+          <MerchantLogo
+            merchantName={item.merchant}
+            size={22}
+            logoUrl={item.logoUrl}
+            category={item.category}
+            backgroundColor="transparent"
+            borderColor="transparent"
+          />
+          {item.hasMailBadge ? (
+            <View style={styles.mailDot}>
+              <Ionicons name="mail" size={7} color="#fff" />
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+        {item.merchant}
+      </Text>
+      <Text
+        style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+        numberOfLines={1}
+      >
+        {item.cardDetailLine}
+      </Text>
+      <Text style={[styles.bankAmt, { color: theme.text }]}>${item.amount.toFixed(2)}</Text>
+      <TouchableOpacity
+        style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+        onPress={(e) => {
+          e.stopPropagation();
+          onSplit(item);
+        }}
+        activeOpacity={0.75}
+      >
+        <Text style={[styles.bankCtaText, { color: theme.text }]}>Split this</Text>
+      </TouchableOpacity>
+    </Pressable>
+  );
+});
+
+/** Extracted FlatList renderItem for the live bank card strip */
+const LiveBankCardItem = React.memo(function LiveBankCardItem({
+  item,
+  onPress,
+  onSplit,
+  theme,
+}: {
+  item: HomeBankStripRow;
+  onPress: (item: HomeBankStripRow) => void;
+  onSplit: (item: HomeBankStripRow) => void;
+  theme: any;
+}) {
+  return (
+    <Pressable
+      style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
+      onPress={() => { sfx.pop(); onPress(item); }}
+    >
+      <View style={styles.bankTop}>
+        <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+          <MerchantLogo
+            merchantName={item.merchant}
+            size={22}
+            logoUrl={item.logoUrl}
+            category={item.category}
+            backgroundColor="transparent"
+            borderColor="transparent"
+          />
+          {item.hasMailBadge ? (
+            <View style={styles.mailDot}>
+              <Ionicons name="mail" size={7} color="#fff" />
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
+        {item.merchant}
+      </Text>
+      <Text
+        style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+        numberOfLines={1}
+      >
+        {item.cardDetailLine}
+      </Text>
+      <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
+      <TouchableOpacity
+        style={styles.bankCta}
+        onPress={(e) => {
+          e.stopPropagation();
+          onSplit(item);
+        }}
+        activeOpacity={0.75}
+      >
+        <Text style={styles.bankCtaText}>Split this</Text>
+      </TouchableOpacity>
+    </Pressable>
+  );
+});
+
+/** Extracted FlatList renderItem for the all-bank list */
+const AllBankListItem = React.memo(function AllBankListItem({
+  tx,
+  onPress,
+  onSplit,
+  theme,
+}: {
+  tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; logoUrl?: string | null; category?: string };
+  onPress: (tx: any) => void;
+  onSplit: (tx: any) => void;
+  theme: any;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.friendRow}
+      activeOpacity={0.75}
+      onPress={() => onPress(tx)}
+    >
+      <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+        <MerchantLogo
+          merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+          size={22}
+          logoUrl={tx.logoUrl}
+          category={tx.category}
+          backgroundColor="transparent"
+          borderColor="transparent"
+        />
+      </View>
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={styles.friendName} numberOfLines={1}>
+          {tx.merchant || tx.rawDescription || "Purchase"}
+        </Text>
+        <Text style={styles.friendMeta} numberOfLines={1}>
+          {tx.dateStr || tx.date || "\u2014"}{tx.alreadySplit ? " \u00b7 split" : ""}
+        </Text>
+      </View>
+      <Text style={[styles.friendAmt, styles.balAmtOut]}>
+        ${Math.abs(Number(tx.amount)).toFixed(2)}
+      </Text>
+      {!tx.alreadySplit ? (
+        <TouchableOpacity
+          style={styles.bankSplitPill}
+          hitSlop={8}
+          onPress={(e) => {
+            e.stopPropagation();
+            onSplit(tx);
+          }}
+        >
+          <Text style={styles.bankSplitPillText}>Split</Text>
+        </TouchableOpacity>
+      ) : null}
+    </TouchableOpacity>
+  );
+});
+
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
-  usePrefetchContactsSummary();
   usePrefetchActivity();
 
   const summary = isDemoOn ? demo.summary : apiSummary;
@@ -246,6 +418,60 @@ export default function BalancesPrototypeScreen() {
   const closeDetail = useCallback(() => {
     setSelectedStrip(null);
   }, []);
+
+  const handleBankCardPress = useCallback((item: HomeBankStripRow) => {
+    setSelectedStrip(item);
+  }, []);
+
+  const handleBankCardSplit = useCallback((item: HomeBankStripRow) => {
+    sfx.pop();
+    router.push({
+      pathname: "/(tabs)/add-expense",
+      params: {
+        prefillDesc: item.merchant,
+        prefillAmount: item.amount.toFixed(2),
+        prefillNonce: String(Date.now()),
+        prefillBankDate: item.sheetDateLine,
+        prefillBankCategory: item.category ?? "",
+        prefillPersonKey: "",
+        prefillPersonName: "",
+        prefillPersonType: "",
+      },
+    });
+  }, []);
+
+  const handleAllBankItemPress = useCallback((tx: any) => {
+    sfx.pop();
+    setSelectedStrip(txToSheetRow(tx));
+  }, []);
+
+  const handleAllBankItemSplit = useCallback((tx: any) => {
+    sfx.toggle();
+    setShowAllBank(false);
+    router.push({
+      pathname: "/(tabs)/add-expense",
+      params: {
+        prefillDesc: tx.merchant || tx.rawDescription || "",
+        prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
+        prefillNonce: String(Date.now()),
+        prefillPersonKey: "",
+        prefillPersonName: "",
+        prefillPersonType: "",
+      },
+    });
+  }, []);
+
+  const renderBankCardItem = useCallback(({ item }: { item: HomeBankStripRow }) => (
+    <BankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} theme={theme} />
+  ), [theme, handleBankCardPress, handleBankCardSplit]);
+
+  const renderLiveBankCardItem = useCallback(({ item }: { item: HomeBankStripRow }) => (
+    <LiveBankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} theme={theme} />
+  ), [theme, handleBankCardPress, handleBankCardSplit]);
+
+  const renderAllBankItem = useCallback(({ item: tx }: { item: any }) => (
+    <AllBankListItem tx={tx} onPress={handleAllBankItemPress} onSplit={handleAllBankItemSplit} theme={theme} />
+  ), [theme, handleAllBankItemPress, handleAllBankItemSplit]);
 
   useEffect(() => {
     if (!selectedStrip) {
@@ -461,63 +687,7 @@ export default function BalancesPrototypeScreen() {
               keyExtractor={(t) => t.stripId}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                  onPress={() => setSelectedStrip(item)}
-                >
-                  <View style={styles.bankTop}>
-                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                      <MerchantLogo
-                        merchantName={item.merchant}
-                        size={22}
-                        logoUrl={item.logoUrl}
-                        category={item.category}
-                        backgroundColor="transparent"
-                        borderColor="transparent"
-                      />
-                      {item.hasMailBadge ? (
-                        <View style={styles.mailDot}>
-                          <Ionicons name="mail" size={7} color="#fff" />
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                  <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
-                    {item.merchant}
-                  </Text>
-                  <Text
-                    style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
-                    numberOfLines={1}
-                  >
-                    {item.cardDetailLine}
-                  </Text>
-                  <Text style={[styles.bankAmt, { color: theme.text }]}>${item.amount.toFixed(2)}</Text>
-                  <TouchableOpacity
-                    style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      sfx.pop();
-                      router.push({
-                        pathname: "/(tabs)/add-expense",
-                        params: {
-                          prefillDesc: item.merchant,
-                          prefillAmount: item.amount.toFixed(2),
-                          prefillNonce: String(Date.now()),
-                          prefillBankDate: item.sheetDateLine,
-                          prefillBankCategory: item.category ?? "",
-                          prefillPersonKey: "",
-                          prefillPersonName: "",
-                          prefillPersonType: "",
-                        },
-                      });
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.bankCtaText, { color: theme.text }]}>Split this</Text>
-                  </TouchableOpacity>
-                </Pressable>
-              )}
+              renderItem={renderBankCardItem}
             />
           </View>
         ) : !useDemoBankUi && !txLoading && linked && stripRows.length > 0 ? (
@@ -534,63 +704,7 @@ export default function BalancesPrototypeScreen() {
               keyExtractor={(t) => t.stripId}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
-                  onPress={() => { sfx.pop(); setSelectedStrip(item); }}
-                >
-                  <View style={styles.bankTop}>
-                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                      <MerchantLogo
-                        merchantName={item.merchant}
-                        size={22}
-                        logoUrl={item.logoUrl}
-                        category={item.category}
-                        backgroundColor="transparent"
-                        borderColor="transparent"
-                      />
-                      {item.hasMailBadge ? (
-                        <View style={styles.mailDot}>
-                          <Ionicons name="mail" size={7} color="#fff" />
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                  <Text style={[styles.bankMerchant, { color: theme.text }]} numberOfLines={1}>
-                    {item.merchant}
-                  </Text>
-                  <Text
-                    style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
-                    numberOfLines={1}
-                  >
-                    {item.cardDetailLine}
-                  </Text>
-                  <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
-                  <TouchableOpacity
-                    style={styles.bankCta}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      sfx.pop();
-                      router.push({
-                        pathname: "/(tabs)/add-expense",
-                        params: {
-                          prefillDesc: item.merchant,
-                          prefillAmount: item.amount.toFixed(2),
-                          prefillNonce: String(Date.now()),
-                          prefillBankDate: item.sheetDateLine,
-                          prefillBankCategory: item.category ?? "",
-                          prefillPersonKey: "",
-                          prefillPersonName: "",
-                          prefillPersonType: "",
-                        },
-                      });
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.bankCtaText}>Split this</Text>
-                  </TouchableOpacity>
-                </Pressable>
-              )}
+              renderItem={renderLiveBankCardItem}
             />
           </View>
         ) : null}
@@ -693,7 +807,7 @@ export default function BalancesPrototypeScreen() {
                         activeOpacity={0.75}
                       >
                         {g.imageUrl ? (
-                          <Image source={{ uri: g.imageUrl }} style={styles.groupIconImg} />
+                          <ExpoImage source={{ uri: g.imageUrl }} cachePolicy="disk" style={styles.groupIconImg} />
                         ) : (
                           <View style={styles.groupIcon}>
                             <Ionicons name="people" size={18} color="#1F2937" />
@@ -734,7 +848,7 @@ export default function BalancesPrototypeScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={!!selectedStrip && !showAllBank} transparent animationType="slide" onRequestClose={closeDetail}>
+      {selectedStrip && !showAllBank ? <Modal visible={true} transparent animationType="slide" onRequestClose={closeDetail}>
         <Pressable style={styles.sheetOverlay} onPress={closeDetail}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHandle} />
@@ -986,8 +1100,8 @@ export default function BalancesPrototypeScreen() {
             ) : null}
           </Pressable>
         </Pressable>
-      </Modal>
-      <Modal visible={showAllBank} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); setBankSearch(""); setCommittedSearch(""); askClear(); }}>
+      </Modal> : null}
+      {showAllBank ? <Modal visible={true} transparent animationType="slide" onRequestClose={() => { setShowAllBank(false); setSearchMode("keyword"); setBankSearch(""); setCommittedSearch(""); askClear(); }}>
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1288,62 +1402,7 @@ export default function BalancesPrototypeScreen() {
                   maxToRenderPerBatch={20}
                   windowSize={7}
                   ItemSeparatorComponent={() => <View style={styles.rowSep} />}
-                  renderItem={({ item: tx }) => (
-                    <TouchableOpacity
-                      style={styles.friendRow}
-                      activeOpacity={0.75}
-                      onPress={() => {
-                        sfx.pop();
-                        setSelectedStrip(txToSheetRow(tx));
-                      }}
-                    >
-                      <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                        <MerchantLogo
-                          merchantName={tx.merchant || tx.rawDescription || "Purchase"}
-                          size={22}
-                          logoUrl={tx.logoUrl}
-                          category={tx.category}
-                          backgroundColor="transparent"
-                          borderColor="transparent"
-                        />
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={styles.friendName} numberOfLines={1}>
-                          {tx.merchant || tx.rawDescription || "Purchase"}
-                        </Text>
-                        <Text style={styles.friendMeta} numberOfLines={1}>
-                          {tx.dateStr || tx.date || "—"}{tx.alreadySplit ? " · split" : ""}
-                        </Text>
-                      </View>
-                      <Text style={[styles.friendAmt, styles.balAmtOut]}>
-                        ${Math.abs(Number(tx.amount)).toFixed(2)}
-                      </Text>
-                      {!tx.alreadySplit ? (
-                        <TouchableOpacity
-                          style={styles.bankSplitPill}
-                          hitSlop={8}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            sfx.toggle();
-                            setShowAllBank(false);
-                            router.push({
-                              pathname: "/(tabs)/add-expense",
-                              params: {
-                                prefillDesc: tx.merchant || tx.rawDescription || "",
-                                prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
-                                prefillNonce: String(Date.now()),
-                                prefillPersonKey: "",
-                                prefillPersonName: "",
-                                prefillPersonType: "",
-                              },
-                            });
-                          }}
-                        >
-                          <Text style={styles.bankSplitPillText}>Split</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                    </TouchableOpacity>
-                  )}
+                  renderItem={renderAllBankItem}
                 />
               )
             )}
@@ -1351,7 +1410,7 @@ export default function BalancesPrototypeScreen() {
             )}
           </Pressable>
         </KeyboardAvoidingView>
-      </Modal>
+      </Modal> : null}
     </SafeAreaView>
   );
 }

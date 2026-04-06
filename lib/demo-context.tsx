@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import type {
   GroupsSummary,
   GroupDetail,
@@ -7,16 +7,19 @@ import type {
   FriendBalance,
   GroupSummary,
 } from "../hooks/useGroups";
-import {
-  DEMO_SUMMARY,
-  DEMO_GROUP_DETAILS,
-  DEMO_PERSON_DETAILS,
-  DEMO_ACTIVITY,
-} from "./demo-data";
 import { useDemoMode } from "./demo-mode-context";
 
+const EMPTY_SUMMARY: GroupsSummary = {
+  groups: [],
+  friends: [],
+  totalOwedToMe: 0,
+  totalIOwe: 0,
+  netBalance: 0,
+  totalsByCurrency: [],
+};
+
 interface DemoState {
-  summary: GroupsSummary | null;
+  summary: GroupsSummary;
   groupDetails: Record<string, GroupDetail>;
   personDetails: Record<string, PersonDetail>;
   activity: RecentActivityItem[];
@@ -31,10 +34,20 @@ const noop = () => {};
 
 export function DemoProvider({ children }: { children: React.ReactNode }) {
   const { isDemoOn } = useDemoMode();
-  const [summary, setSummary] = useState<GroupsSummary>({ ...DEMO_SUMMARY });
-  const [groupDetails, setGroupDetails] = useState<Record<string, GroupDetail>>({ ...DEMO_GROUP_DETAILS });
-  const [personDetails, setPersonDetails] = useState<Record<string, PersonDetail>>({ ...DEMO_PERSON_DETAILS });
-  const [activity, setActivity] = useState<RecentActivityItem[]>([...DEMO_ACTIVITY]);
+  const [summary, setSummary] = useState<GroupsSummary>(EMPTY_SUMMARY);
+  const [groupDetails, setGroupDetails] = useState<Record<string, GroupDetail>>({});
+  const [personDetails, setPersonDetails] = useState<Record<string, PersonDetail>>({});
+  const [activity, setActivity] = useState<RecentActivityItem[]>([]);
+
+  useEffect(() => {
+    if (!isDemoOn) return;
+    import("./demo-data").then(({ DEMO_SUMMARY, DEMO_GROUP_DETAILS, DEMO_PERSON_DETAILS, DEMO_ACTIVITY }) => {
+      setSummary({ ...DEMO_SUMMARY });
+      setGroupDetails({ ...DEMO_GROUP_DETAILS });
+      setPersonDetails({ ...DEMO_PERSON_DETAILS });
+      setActivity([...DEMO_ACTIVITY]);
+    });
+  }, [isDemoOn]);
 
   const recalcSummary = useCallback((friends: FriendBalance[]) => {
     const totalsMap = new Map<string, { owedToMe: number; iOwe: number }>();
@@ -115,6 +128,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       });
 
       setSummary(prev => {
+        if (!prev) return prev;
         const friends = prev.friends.map((f) =>
           f.key === targetKey
             ? { ...f, balance: (f.balance ?? 0) + splitAmount, balances: [{ currency: "USD", amount: (f.balance ?? 0) + splitAmount }] }
@@ -150,6 +164,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       });
 
       setSummary(prev => {
+        if (!prev) return prev;
         const groups = prev.groups.map(g =>
           g.id === targetKey ? { ...g, lastActivityAt: new Date().toISOString() } : g
         );
@@ -177,6 +192,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     });
 
     setSummary(prev => {
+      if (!prev) return prev;
       const friends = prev.friends.map((f) => (f.key === key ? { ...f, balance: 0, balances: [] } : f));
       const totals = recalcSummary(friends);
       return { ...prev, friends, ...totals };
@@ -208,7 +224,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const value: DemoState = isDemoOn
     ? { summary, groupDetails, personDetails, activity, addExpense, settlePerson, settleGroupSuggestion }
     : {
-        summary: null,
+        summary: EMPTY_SUMMARY,
         groupDetails: {},
         personDetails: {},
         activity: [],
