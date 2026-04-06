@@ -87,21 +87,33 @@ export default function SetupScreen() {
       if (val !== "true") return;
       setResetting(true);
       try {
+        // Phase 1: clear groups/splits/settlements first (removes FK references)
+        await apiFetch("/api/groups/clear-all", { method: "POST" }).catch(() => {});
+
+        // Phase 2: clear service connections + data (FK-safe now)
         await Promise.allSettled([
-          apiFetch("/api/plaid/disconnect", { method: "POST" }),
+          apiFetch("/api/plaid/wipe", { method: "POST" }),
           apiFetch("/api/splitwise/clear", { method: "POST", body: { disconnectToken: true } }),
           apiFetch("/api/gmail/disconnect", { method: "POST" }),
-          apiFetch("/api/groups/clear-all", { method: "POST" }),
+          apiFetch("/api/paypal/disconnect", { method: "POST" }),
         ]);
+
+        // Phase 3: invalidate all API caches
         invalidateApiCache("/api/plaid/status");
+        invalidateApiCache("/api/plaid/transactions");
+        invalidateApiCache("/api/plaid/accounts");
         invalidateApiCache("/api/splitwise/status");
         invalidateApiCache("/api/gmail/status");
         invalidateApiCache("/api/groups/summary");
+        invalidateApiCache("/api/groups/recent-activity");
+        invalidateApiCache("/api/groups/person");
         clearMemSummaryCache();
+
+        // Phase 4: clear all local caches
         try {
           const allKeys = await AsyncStorage.getAllKeys();
-          const staleKeys = allKeys.filter((k) => k.startsWith("coconut.optimistic.friends."));
-          if (staleKeys.length) await AsyncStorage.multiRemove(staleKeys);
+          const coconutKeys = allKeys.filter((k) => k.startsWith("coconut."));
+          if (coconutKeys.length) await AsyncStorage.multiRemove(coconutKeys);
         } catch { /* best effort */ }
       } catch (e) {
         if (__DEV__) console.warn("[setup] full reset failed:", e);
