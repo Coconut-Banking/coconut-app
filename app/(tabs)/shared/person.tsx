@@ -341,17 +341,29 @@ export default function PersonScreen() {
 
         {!settled && (
           <View style={s.actions}>
+            {singleOwedYou && canStripeUsd && (
+              <TouchableOpacity
+                style={s.tapToPayBtn}
+                onPress={handleTapToPay}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="phone-portrait-outline" size={18} color="#fff" />
+                <Text style={s.settleUpBtnText}>Tap to Pay</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={s.settleUpBtn}
+              style={singleOwedYou && canStripeUsd ? s.settleUpBtnSecondary : s.settleUpBtn}
               onPress={() => { sfx.sheetOpen(); setSettleSheetOpen(true); }}
               activeOpacity={0.8}
             >
               {recordingSettlement ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={singleOwedYou && canStripeUsd ? "#1F2328" : "#fff"} />
               ) : (
                 <>
-                  <Ionicons name="checkmark-done" size={18} color="#fff" />
-                  <Text style={s.settleUpBtnText}>Settle up</Text>
+                  <Ionicons name="checkmark-done" size={18} color={singleOwedYou && canStripeUsd ? "#1F2328" : "#fff"} />
+                  <Text style={singleOwedYou && canStripeUsd ? s.settleUpBtnSecondaryText : s.settleUpBtnText}>{/* gitleaks:allow */}
+                    {singleOwedYou && canStripeUsd ? "Other options" : "Settle up"}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -570,7 +582,16 @@ const s = StyleSheet.create({
   },
   balanceAmt: { fontSize: 30, fontFamily: font.black, letterSpacing: -1 },
   balanceLbl: { fontSize: 12, marginTop: 4, opacity: 0.85, fontFamily: font.medium },
-  actions: { marginBottom: 24 },
+  actions: { marginBottom: 24, gap: 10 },
+  tapToPayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    backgroundColor: colors.primary,
+  },
   settleUpBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -580,7 +601,17 @@ const s = StyleSheet.create({
     borderRadius: radii.md,
     backgroundColor: prototype.green,
   },
+  settleUpBtnSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radii.md,
+    backgroundColor: "#F0EDEB",
+  },
   settleUpBtnText: { color: "#fff", fontFamily: font.bold, fontSize: 16 },
+  settleUpBtnSecondaryText: { color: "#1F2328", fontFamily: font.semibold, fontSize: 15 },
   settledBadge: {
     flexDirection: "row",
     alignItems: "center",

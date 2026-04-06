@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "NODE_OPTIONS='--disable-warning=DEP0169' expo start",
-    "start:dev": "NODE_OPTIONS='--disable-warning=DEP0169' expo start --dev-client",
-    "start:device": "REACT_NATIVE_PACKAGER_HOSTNAME=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo localhost) CI=false NODE_OPTIONS='--disable-warning=DEP0169' expo start",
+    "start": "NODE_OPTIONS='--disable-warning=DEP0169' expo start --clear",
+    "start:dev": "NODE_OPTIONS='--disable-warning=DEP0169' expo start --dev-client --clear",
+    "start:device": "REACT_NATIVE_PACKAGER_HOSTNAME=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo localhost) CI=false NODE_OPTIONS='--disable-warning=DEP0169' expo start --clear",
     "android": "NODE_OPTIONS='--disable-warning=DEP0169' expo run:android",
     "ios": "NODE_OPTIONS='--disable-warning=DEP0169' expo run:ios",
     "ios:device": "REACT_NATIVE_PACKAGER_HOSTNAME=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo localhost) CI=false NODE_OPTIONS='--disable-warning=DEP0169' npx expo run:ios --device",
