@@ -291,7 +291,14 @@ export default function SettingsScreen() {
       const endpoint = connectStatus?.hasAccount
         ? "/api/stripe/connect/onboarding-link"
         : "/api/stripe/connect/create-account";
-      const res = await apiFetch(endpoint, { method: "POST" });
+      const rawScheme = Constants.expoConfig?.scheme;
+      const scheme =
+        typeof rawScheme === "string"
+          ? rawScheme
+          : Array.isArray(rawScheme)
+            ? rawScheme[0] ?? "coconut"
+            : "coconut";
+      const res = await apiFetch(endpoint, { method: "POST", body: { scheme } });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         Alert.alert("Error", (data as { error?: string }).error ?? "Could not start setup");
@@ -303,7 +310,10 @@ export default function SettingsScreen() {
         Alert.alert("Error", "Could not get onboarding URL");
         return;
       }
-      await Linking.openURL(url);
+      // Open in-app browser so we detect when the user returns
+      await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
+      // Refetch status regardless of outcome — user may have completed or abandoned
+      void fetchConnectStatus();
     } catch {
       Alert.alert("Error", "Could not start payment setup. Check your connection.");
     } finally {

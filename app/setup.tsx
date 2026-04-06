@@ -65,8 +65,8 @@ async function pollPlaidStatus(
   return false;
 }
 
-type Step = "bank" | "splitwise" | "tap-to-pay" | "email";
-const STEPS: Step[] = ["bank", "splitwise", "tap-to-pay", "email"];
+type Step = "bank" | "splitwise" | "stripe-connect" | "email";
+const STEPS: Step[] = ["bank", "splitwise", "stripe-connect", "email"];
 
 // Survives unmount/remount so hot reload preserves the current step.
 let _savedSetupStep = 0;
@@ -158,7 +158,7 @@ export default function SetupScreen() {
 
       {step === "bank" && <BankStep onDone={goNext} onSkip={goNext} />}
       {step === "splitwise" && <SplitwiseStep onDone={goNext} onSkip={goNext} />}
-      {step === "tap-to-pay" && <TapToPayStep onContinue={goNext} />}
+      {step === "stripe-connect" && <StripeConnectStep onContinue={goNext} />}
       {step === "email" && <EmailStep onComplete={handleComplete} />}
     </SafeAreaView>
   );
@@ -730,48 +730,169 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// STEP 3: TAP TO PAY
+// STEP 3: STRIPE CONNECT — receive tap-to-pay directly to your bank
 // ────────────────────────────────────────────────────────────────────────────
 
-function TapToPayStep({ onContinue }: { onContinue: () => void }) {
+const POLL_CONNECT_ATTEMPTS = 6;
+const POLL_CONNECT_INTERVAL = 1500;
+
+async function pollConnectStatus(
+  apiFetch: (path: string) => Promise<Response>,
+): Promise<boolean> {
+  for (let i = 0; i < POLL_CONNECT_ATTEMPTS; i++) {
+    try {
+      const res = await apiFetch("/api/stripe/connect/status");
+      if (res.ok) {
+        const data = await res.json();
+        if ((data as { onboardingComplete?: boolean }).onboardingComplete) return true;
+      }
+    } catch { /* keep polling */ }
+    if (i < POLL_CONNECT_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, POLL_CONNECT_INTERVAL));
+  }
+  return false;
+}
+
+function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
   const { theme } = useTheme();
+  const apiFetch = useApiFetch();
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startOnboarding = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const rawScheme = Constants.expoConfig?.scheme;
+      const scheme =
+        typeof rawScheme === "string"
+          ? rawScheme
+          : Array.isArray(rawScheme)
+            ? rawScheme[0] ?? "coconut"
+            : "coconut";
+
+      const res = await apiFetch("/api/stripe/connect/create-account", {
+        method: "POST",
+        body: { scheme },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const msg = (data as { error?: string }).error ?? "Could not start setup";
+        if (msg.toLowerCase().includes("not configured")) {
+          // Stripe not set up in this environment — skip silently
+          onContinue();
+          return;
+        }
+        setError(msg);
+        setLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      const url = (data as { url?: string }).url;
+      if (!url) {
+        setError("Could not get onboarding link. Try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Open Stripe's hosted onboarding in-app
+      await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
+
+      // Poll for completion whether the user finished or closed early
+      const complete = await pollConnectStatus(apiFetch);
+      if (complete) {
+        setSuccess(true);
+        setTimeout(onContinue, 1400);
+      } else {
+        // Not complete yet — they can finish later in Settings
+        setLoading(false);
+      }
+    } catch (e) {
+      if (__DEV__) console.warn("[setup:stripe-connect]", e);
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <View style={styles.centerFull}>
+        <Animated.View entering={FadeIn.duration(400)}>
+          <View style={[styles.successCircle, { borderColor: theme.primary }]}>
+            <Ionicons name="checkmark-circle" size={56} color={theme.primary} />
+          </View>
+        </Animated.View>
+        <Text style={[styles.successTitle, { color: theme.text }]}>Payouts set up!</Text>
+        <Text style={[styles.successSub, { color: theme.textTertiary }]}>
+          Tap-to-pay payments will be deposited directly to your bank.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
+      <TouchableOpacity onPress={onContinue} style={styles.skipBtn} hitSlop={12}>
+        <Text style={[styles.skipText, { color: theme.textTertiary }]}>Skip for now</Text>
+      </TouchableOpacity>
+
       <View style={styles.illustrationWrap}>
         <View style={[styles.phoneFrame, { backgroundColor: theme.primary, borderColor: theme.primary }]}>
           <View style={[styles.phoneScreen, { backgroundColor: theme.background }]}>
-            <Text style={[styles.phoneLabel, { color: theme.textTertiary }]}>Amount</Text>
+            <Text style={[styles.phoneLabel, { color: theme.textTertiary }]}>Received</Text>
             <Text style={[styles.phoneAmount, { color: theme.text }]}>$24.50</Text>
             <View style={[styles.phoneNfc, { backgroundColor: theme.primary }]}>
-              <Ionicons name="phone-portrait-outline" size={24} color="#fff" />
+              <Ionicons name="arrow-down" size={22} color="#fff" />
             </View>
           </View>
         </View>
       </View>
 
       <View style={styles.stepContent}>
-        <Text style={[styles.stepTitle, { color: theme.text }]}>Accept payments anywhere</Text>
+        <Text style={[styles.stepTitle, { color: theme.text }]}>Get paid directly</Text>
         <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
-          Turn your iPhone into a contactless payment terminal. No card reader, no extra hardware.
+          When friends tap to pay you, the money goes straight to your bank account.
         </Text>
 
         <View style={styles.benefits}>
-          <BenefitRow icon="phone-portrait-outline" text="No extra hardware needed" theme={theme} />
-          <BenefitRow icon="flash-outline" text="Accept payments in seconds" theme={theme} />
-          <BenefitRow icon="card-outline" text="All major cards & Apple Pay" theme={theme} />
-          <BenefitRow icon="locate-outline" text="Perfect for splitting bills" theme={theme} />
+          <BenefitRow icon="card-outline" text="Accept any card or Apple Pay" theme={theme} />
+          <BenefitRow icon="phone-portrait-outline" text="No card reader needed" theme={theme} />
+          <BenefitRow icon="flash-outline" text="Deposits in 1–2 business days" theme={theme} />
+          <BenefitRow icon="shield-checkmark-outline" text="Powered by Stripe — bank-grade security" theme={theme} />
         </View>
+
+        {error && (
+          <Text style={{ color: theme.error ?? "#D32F2F", fontSize: 14, fontFamily: font.medium, marginTop: 8, textAlign: "center" }}>
+            {error}
+          </Text>
+        )}
       </View>
 
-      <TouchableOpacity
-        style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
-        onPress={onContinue}
-        activeOpacity={0.9}
-      >
-        <Text style={styles.primaryBtnText}>Continue</Text>
-        <Ionicons name="arrow-forward" size={20} color="#fff" />
-      </TouchableOpacity>
+      <View style={{ gap: 8 }}>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: theme.primary }, loading && styles.disabled]}
+          onPress={startOnboarding}
+          disabled={loading}
+          activeOpacity={0.9}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="wallet-outline" size={20} color="#fff" />
+              <Text style={styles.primaryBtnText}>Set up payouts</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onContinue} style={styles.secondaryBtn} hitSlop={8}>
+          <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
+            I&apos;ll do this later
+          </Text>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }
