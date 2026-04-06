@@ -2,13 +2,19 @@ import { useEffect, useRef } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useTheme } from "../lib/theme-context";
+import { useSetup } from "../lib/setup-context";
 
 /**
  * OAuth return target — URL must stay iOS-Safari-safe (no parentheses in path).
  * Server HTML page links to e.g. coconut-dev://splitwise-callback?splitwise=connected&import=1
+ *
+ * During setup the openAuthSessionAsync promise resolves directly (the setup
+ * screen resumes via the returned result), so this screen just goes back.
+ * After setup it forwards query params to Settings for the import flow.
  */
 export default function SplitwiseCallbackScreen() {
   const { theme } = useTheme();
+  const { setupComplete } = useSetup();
   const params = useLocalSearchParams<{
     splitwise?: string;
     import?: string;
@@ -20,6 +26,12 @@ export default function SplitwiseCallbackScreen() {
     if (navigated.current) return;
     navigated.current = true;
 
+    if (!setupComplete) {
+      if (router.canGoBack()) router.back();
+      else router.replace("/setup");
+      return;
+    }
+
     const qs = new URLSearchParams();
     if (params.splitwise != null && params.splitwise !== "") qs.set("splitwise", String(params.splitwise));
     if (params.import != null && params.import !== "") qs.set("import", String(params.import));
@@ -28,7 +40,7 @@ export default function SplitwiseCallbackScreen() {
     }
     const suffix = qs.toString();
     router.replace(suffix ? `/(tabs)/settings?${suffix}` : "/(tabs)/settings");
-  }, [params.splitwise, params.import, params.splitwise_error]);
+  }, [params.splitwise, params.import, params.splitwise_error, setupComplete]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

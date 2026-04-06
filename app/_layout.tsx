@@ -62,6 +62,7 @@ function AuthSwitch() {
   const [forceSignOutDone, setForceSignOutDone] = useState(false);
   const apiFetch = useApiFetch();
   const checkedStore = useRef(false);
+  const autoSkipChecked = useRef(false);
 
   useEffect(() => {
     if (!FORCE_SIGN_OUT_ON_LAUNCH || checkedStore.current) return;
@@ -111,8 +112,13 @@ function AuthSwitch() {
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn, setupHydrated]);
 
+  // Auto-skip setup for RETURNING users who already linked a bank or have groups
+  // but lost the setupComplete flag (e.g. app reinstall). Runs only once per session
+  // so it doesn't yank users out of an active setup wizard mid-flow.
   useEffect(() => {
+    if (autoSkipChecked.current) return;
     if (!isLoaded || !isSignedIn || !setupHydrated || setupComplete || isDemoOn) return;
+    autoSkipChecked.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -122,6 +128,7 @@ function AuthSwitch() {
           const data = await res.json();
           if (data.linked) {
             markSetupComplete();
+            return;
           }
         }
         const groupsRes = await apiFetch("/api/groups/summary");

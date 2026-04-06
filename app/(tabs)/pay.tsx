@@ -658,6 +658,12 @@ function PayScreenInner() {
             : `Paid $${amt.toFixed(2)} successfully`
         );
         setAmount("");
+        // Auto-navigate back after a brief delay so the user sees the success state
+        if (hasPrefilledCheckout) {
+          setTimeout(() => {
+            if (router.canGoBack()) router.back();
+          }, 2000);
+        }
       }
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Payment failed");
@@ -1138,9 +1144,8 @@ const styles = StyleSheet.create({
 export default function PayScreen() {
   const [deferReady, setDeferReady] = useState(false);
 
-  // Defer Pay screen mount slightly so Clerk + Stripe Terminal native bridge are stable (StripeTerminalProvider lives at tab root).
   useEffect(() => {
-    const t = setTimeout(() => setDeferReady(true), 600);
+    const t = setTimeout(() => setDeferReady(true), 150);
     return () => clearTimeout(t);
   }, []);
 
