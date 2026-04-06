@@ -25,7 +25,7 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener,
 } from "../lib/push-notifications";
-import { useApiFetch } from "../lib/api";
+import { useApiFetch, invalidateApiCache } from "../lib/api";
 import {
   useFonts,
   Inter_400Regular,
@@ -113,15 +113,18 @@ function AuthSwitch() {
   }, [isLoaded, isSignedIn, setupHydrated]);
 
   // Auto-skip setup for RETURNING users who already linked a bank or have groups
-  // but lost the setupComplete flag (e.g. app reinstall). Runs only once per session
-  // so it doesn't yank users out of an active setup wizard mid-flow.
+  // but lost the setupComplete flag (e.g. app reinstall). Runs exactly once: the
+  // first time auth + setup hydration is ready. After that, the ref prevents it
+  // from ever firing again (even if user resets setup from Settings).
   useEffect(() => {
     if (autoSkipChecked.current) return;
-    if (!isLoaded || !isSignedIn || !setupHydrated || setupComplete || isDemoOn) return;
+    if (!isLoaded || !isSignedIn || !setupHydrated) return;
     autoSkipChecked.current = true;
+    if (setupComplete || isDemoOn) return;
     let cancelled = false;
     (async () => {
       try {
+        invalidateApiCache("/api/plaid/status");
         const res = await apiFetch("/api/plaid/status");
         if (cancelled) return;
         if (res.ok) {
@@ -131,6 +134,7 @@ function AuthSwitch() {
             return;
           }
         }
+        invalidateApiCache("/api/groups/summary");
         const groupsRes = await apiFetch("/api/groups/summary");
         if (cancelled) return;
         if (groupsRes.ok) {
