@@ -19,11 +19,16 @@ import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import type { LinkSuccess, LinkExit } from "react-native-plaid-link-sdk";
 
-// Lazy-load the Plaid SDK so Metro can bundle without it in Expo Go
 let _plaid: typeof import("react-native-plaid-link-sdk") | null = null;
 async function getPlaid() {
   if (_plaid) return _plaid;
-  try { _plaid = await import("react-native-plaid-link-sdk"); } catch { _plaid = null; }
+  try {
+    _plaid = await import("react-native-plaid-link-sdk");
+    if (__DEV__) console.log("[setup:bank] Plaid native SDK loaded ✓");
+  } catch (e) {
+    _plaid = null;
+    console.warn("[setup:bank] Plaid native SDK unavailable, using web fallback:", e);
+  }
   return _plaid;
 }
 const plaidCreate = (...args: Parameters<typeof import("react-native-plaid-link-sdk")["create"]>) =>
@@ -226,6 +231,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
       const plaid = prefetchedSdk.current ?? (await getPlaid());
 
       if (!plaid) {
+        if (__DEV__) console.log("[setup:bank] Native SDK not available → opening web browser");
         const base = API_URL.replace(/\/$/, "");
         const rawScheme = Constants.expoConfig?.scheme;
         const scheme =
@@ -273,6 +279,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
         return;
       }
 
+      if (__DEV__) console.log("[setup:bank] Opening native Plaid Link with token:", linkToken.slice(0, 20) + "...");
       await plaidCreate({ token: linkToken });
 
       const onSuccess = async (success: LinkSuccess) => {
