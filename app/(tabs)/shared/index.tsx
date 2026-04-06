@@ -210,21 +210,26 @@ export default function SharedIndex() {
     if (isDemoOn) setIsDemoOn(false);
   }, [isDemoOn, setIsDemoOn]);
 
+  const focusedRef = useRef(isFocused);
+  focusedRef.current = isFocused;
+
   useEffect(() => {
-    if (isFocused && !prevFocused.current && !isDemoOn) refetch();
+    const wasFocused = prevFocused.current;
+    const wasDemoOn = prevDemoOn.current;
     prevFocused.current = isFocused;
+    prevDemoOn.current = isDemoOn;
+
+    if (isDemoOn) return;
+    if ((isFocused && !wasFocused) || (wasDemoOn && !isDemoOn)) refetch();
   }, [isFocused, isDemoOn, refetch]);
 
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") refetch();
+      if (state === "active" && focusedRef.current) refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
-
-  const focusedRef = useRef(isFocused);
-  focusedRef.current = isFocused;
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("expense-added", () => {
@@ -235,22 +240,13 @@ export default function SharedIndex() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
-      if (!isDemoOn) {
+      if (!isDemoOn && focusedRef.current) {
         invalidateApiCache("/api/groups/summary");
         clearMemSummaryCache();
         void refetch();
       }
     });
     return () => sub.remove();
-  }, [isDemoOn, refetch]);
-
-  useEffect(() => {
-    if (prevDemoOn.current && !isDemoOn) refetch();
-    prevDemoOn.current = isDemoOn;
-  }, [isDemoOn, refetch]);
-
-  useEffect(() => {
-    if (!isDemoOn) void refetch();
   }, [isDemoOn, refetch]);
 
   // Once the API returns, prune optimistic entries that now exist in the real summary

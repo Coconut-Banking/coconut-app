@@ -186,6 +186,20 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
               "groups:",
               data.groups?.length ?? 0
             );
+            // Debug: show top friend balances to diagnose inflated numbers
+            type FriendRow = { displayName: string; balances: { currency: string; amount: number }[] };
+            const topFriends = (data.friends ?? [])
+              .slice(0, 5)
+              .map((f: FriendRow) => `${f.displayName}: ${f.balances?.map((b: { currency: string; amount: number }) => `${b.currency} ${b.amount}`).join(", ") || "0"}`);
+            if (topFriends.length > 0) console.log("[summary] top balances:", topFriends.join(" | "));
+            if (data._debug) {
+              console.log("[summary] debug:", JSON.stringify(data._debug, null, 0));
+              if (data._debug.topFriendBreakdown) {
+                for (const f of data._debug.topFriendBreakdown) {
+                  console.log(`[summary] ${f.name}:`, JSON.stringify(f.contributions));
+                }
+              }
+            }
             const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
             if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
           }
@@ -254,12 +268,15 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
  * cache in the background. When the user later navigates to Shared, the hook
  * picks up _memSummary instantly — no spinner.
  */
-export function usePrefetchContactsSummary() {
+export function usePrefetchContactsSummary(delayMs = 0) {
   const apiFetch = useApiFetch();
   useEffect(() => {
     const path = "/api/groups/summary?contacts=1";
     if (_memSummary.has(path)) return;
-    (async () => {
+    let cancelled = false;
+    const run = async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      if (cancelled) return;
       try {
         const persisted = await getPersistedResponse(path);
         if (persisted) {
@@ -267,14 +284,17 @@ export function usePrefetchContactsSummary() {
             _memSummary.set(path, JSON.parse(persisted.body));
           } catch { /* corrupt */ }
         }
+        if (cancelled) return;
         const res = await apiFetch(path);
         if (res.ok) {
           const data = await res.json();
           _memSummary.set(path, data);
         }
       } catch { /* best-effort */ }
-    })();
-  }, [apiFetch]);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [apiFetch, delayMs]);
 }
 
 export function useGroupDetail(id: string | null) {
@@ -588,17 +608,21 @@ export function useRecentActivity(enabled = true) {
  * Prefetch recent activity in the background (call from home tab).
  * Populates _memActivity so Activity tab renders instantly.
  */
-export function usePrefetchActivity() {
+export function usePrefetchActivity(delayMs = 0) {
   const apiFetch = useApiFetch();
   useEffect(() => {
     if (_memActivity) return;
-    (async () => {
+    let cancelled = false;
+    const run = async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      if (cancelled) return;
       try {
         await _loadLastSeen();
         const persisted = await getPersistedResponse(ACTIVITY_PATH);
         if (persisted) {
           try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
         }
+        if (cancelled) return;
         const res = await apiFetch(ACTIVITY_PATH);
         if (res.ok) {
           const data = await res.json();
@@ -609,6 +633,8 @@ export function usePrefetchActivity() {
           }
         }
       } catch { /* best-effort */ }
-    })();
-  }, [apiFetch]);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [apiFetch, delayMs]);
 }

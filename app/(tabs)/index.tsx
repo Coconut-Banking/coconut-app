@@ -144,8 +144,8 @@ export default function BalancesPrototypeScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
-  usePrefetchContactsSummary();
-  usePrefetchActivity();
+  usePrefetchContactsSummary(500);
+  usePrefetchActivity(500);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
@@ -285,7 +285,7 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => { void refetch(); }),
+      DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) void refetch(); }),
       DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) void refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());

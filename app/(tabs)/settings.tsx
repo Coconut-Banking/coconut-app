@@ -321,10 +321,20 @@ export default function SettingsScreen() {
     }
   };
 
+  const prevLinked = useRef(linked);
   useEffect(() => {
+    const wasFocused = prevFocused.current;
+    const wasLinked = prevLinked.current;
+    prevFocused.current = isFocused;
+    prevLinked.current = linked;
+
     if (!isFocused) return;
-    fetchAccounts(linked);
-  }, [linked, isFocused]);
+    if (!wasFocused) {
+      fetchAccounts(linked);
+    } else if (linked && !wasLinked) {
+      fetchAccounts(true);
+    }
+  }, [isFocused, linked]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("bank-disconnected", async () => {
@@ -349,13 +359,6 @@ export default function SettingsScreen() {
     });
     return () => sub.remove();
   }, [apiFetch]);
-
-  useEffect(() => {
-    if (isFocused && !prevFocused.current && linked) {
-      fetchAccounts(true);
-    }
-    prevFocused.current = isFocused;
-  }, [isFocused, linked]);
 
   const fetchSplitwiseStatus = useCallback(
     async (opts?: { showLoading?: boolean }) => {
