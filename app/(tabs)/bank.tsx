@@ -14,7 +14,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useIsFocused } from "@react-navigation/native";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -172,8 +171,6 @@ export default function BankTabScreen() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const isFocused = useIsFocused();
-  const prevFocused = useRef(false);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
     if (datePreset === "all" || datePreset === "receipts") return null;
@@ -247,11 +244,6 @@ export default function BankTabScreen() {
       setRefreshing(false);
     }
   }, [isDemoOn, runFullSync]);
-
-  useEffect(() => {
-    if (isFocused && !prevFocused.current && !isDemoOn) void refetch(true);
-    prevFocused.current = isFocused;
-  }, [isFocused, isDemoOn, refetch]);
 
   useEffect(() => {
     if (!askResults?.applied_filters) return;

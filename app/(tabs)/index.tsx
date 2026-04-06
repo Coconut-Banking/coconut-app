@@ -294,7 +294,7 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refetch();
+      if (state === "active" && focusedRef.current) void refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);

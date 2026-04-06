@@ -100,7 +100,7 @@ export default function ActivityTabScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") refetch();
+      if (state === "active" && focusedRef.current) refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);

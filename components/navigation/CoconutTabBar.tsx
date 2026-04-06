@@ -2,19 +2,20 @@
  * Bottom tabs: five equal tabs (Home, Bank, Shared, Activity, Account).
  * Active tab has a black indicator line that slides smoothly between tabs.
  */
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { CommonActions, StackActions } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { useTheme } from "../../lib/theme-context";
 import { sfx } from "../../lib/sounds";
 import { useHasUnseenActivity, markActivitySeen } from "../../hooks/useGroups";
 
 const TAB_COUNT = 5;
 const INDICATOR_WIDTH = 24;
+const H_PAD = 8;
 
 const TAB_INDEX: Record<string, number> = {
   index: 0,
@@ -27,6 +28,7 @@ const TAB_INDEX: Record<string, number> = {
 export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 22 : 10);
   const current = state.routes[state.index]?.name;
   const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "tap-to-pay-education"]);
@@ -42,6 +44,15 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
       tension: 300,
     }).start();
   }, [activeIdx, indicatorAnim]);
+
+  const tabWidth = (screenWidth - H_PAD * 2) / TAB_COUNT;
+  const translateX = indicatorAnim.interpolate({
+    inputRange: [0, TAB_COUNT - 1],
+    outputRange: [
+      H_PAD + (tabWidth - INDICATOR_WIDTH) / 2,
+      H_PAD + (TAB_COUNT - 1) * tabWidth + (tabWidth - INDICATOR_WIDTH) / 2,
+    ],
+  });
 
   const goIndex = () => { sfx.tabTap(); navigation.navigate("index" as never); };
   const goBank = () => { sfx.tabTap(); navigation.navigate("bank" as never); };
@@ -72,29 +83,13 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
     if (activityActive) markActivitySeen();
   }, [activityActive]);
 
-  const barWidth = useRef(0);
-  const [indicatorStyle] = useMemo(() => {
-    const translateX = indicatorAnim.interpolate({
-      inputRange: Array.from({ length: TAB_COUNT }, (_, i) => i),
-      outputRange: Array.from({ length: TAB_COUNT }, (_, i) => {
-        const w = barWidth.current || 375;
-        const tabW = (w - 16) / TAB_COUNT;
-        return 8 + tabW * i + (tabW - INDICATOR_WIDTH) / 2;
-      }),
-    });
-    return [{ transform: [{ translateX }] }];
-  }, [indicatorAnim]);
-
   if (current && hiddenRoutes.has(current)) return null;
 
   return (
-    <View
-      style={[styles.bar, { paddingBottom: bottomPad, backgroundColor: theme.surface }]}
-      onLayout={(e) => {
-        barWidth.current = e.nativeEvent.layout.width;
-      }}
-    >
-      <Animated.View style={[styles.indicator, { backgroundColor: activeColor }, indicatorStyle]} />
+    <View style={[styles.bar, { paddingBottom: bottomPad, backgroundColor: theme.surface }]}>
+      <Animated.View
+        style={[styles.indicator, { backgroundColor: activeColor, transform: [{ translateX }] }]}
+      />
 
       <View style={styles.row}>
         <Pressable onPress={goIndex} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: homeActive }} accessibilityLabel="Home">
@@ -155,7 +150,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
     minHeight: 48,
-    paddingHorizontal: 8,
+    paddingHorizontal: H_PAD,
     paddingTop: 8,
   },
   side: {
