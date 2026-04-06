@@ -273,7 +273,7 @@ export default function AddExpenseScreen() {
   const summaryGroups = summary?.groups ?? [];
   useEffect(() => {
     if (isDemoOn) return;
-    if (summaryGroups.length > 0) return;
+    if ((summary?.groups ?? []).length > 0) return;
     let cancelled = false;
     (async () => {
       try {
@@ -294,7 +294,7 @@ export default function AddExpenseScreen() {
       } catch { /* best effort */ }
     })();
     return () => { cancelled = true; };
-  }, [apiFetch, isDemoOn, summaryGroups.length]);
+  }, [apiFetch, isDemoOn, summary?.groups?.length]);
 
   useEffect(() => {
     if (!userId) return;
