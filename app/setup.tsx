@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
@@ -116,6 +117,7 @@ export default function SetupScreen() {
   const handleComplete = () => {
     _savedSetupStep = 0;
     markSetupComplete();
+    router.replace("/(tabs)");
   };
 
   const goNext = () => {
