@@ -312,8 +312,9 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
+    if (!isFocused) return;
     fetchAccounts(linked);
-  }, [linked]);
+  }, [linked, isFocused]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("bank-disconnected", async () => {

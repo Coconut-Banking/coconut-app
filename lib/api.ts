@@ -116,9 +116,21 @@ function isOfflineError(e: unknown): boolean {
   return msg.includes("offline") || msg.includes("network request failed") || msg.includes("clerk_offline");
 }
 
+/** Track when we last got a 401 so we can skip redundant calls with a known-bad token. */
+let _tokenKnownBadUntil = 0;
+
+/** Call this when a 401 is received — suppresses redundant calls for a short window. */
+export function markTokenBad() {
+  _tokenKnownBadUntil = Date.now() + 3000;
+}
+
+/** Call this when a fresh token is confirmed working. */
+export function markTokenGood() {
+  _tokenKnownBadUntil = 0;
+}
+
 async function getTokenWithRetry(
   getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
-  maxAttempts = 4
 ): Promise<string | null> {
   if (_tokenPromise) return _tokenPromise;
 
@@ -130,33 +142,26 @@ async function getTokenWithRetry(
         return cached;
       }
     } catch (e) {
-      if (isOfflineError(e)) {
-        if (_lastGoodToken) {
-          if (__DEV__) console.warn("[api] offline — using cached token");
-          return _lastGoodToken;
-        }
+      if (isOfflineError(e) && _lastGoodToken) {
+        if (__DEV__) console.warn("[api] offline — using cached token");
+        return _lastGoodToken;
       }
     }
 
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const token = await getToken({ skipCache: true });
-        if (token) {
-          _lastGoodToken = token;
-          return token;
-        }
-      } catch (e) {
-        const msg = (e instanceof Error ? e.message : String(e));
-        if (__DEV__ && !isOfflineError(e)) console.warn("[api] getToken attempt", i, msg);
-        if (isOfflineError(e) && _lastGoodToken) {
-          if (__DEV__) console.warn("[api] offline — using cached token after retry");
-          return _lastGoodToken;
-        }
+    // One fast retry with skipCache, then give up.
+    try {
+      const token = await getToken({ skipCache: true });
+      if (token) {
+        _lastGoodToken = token;
+        return token;
       }
-      if (i < maxAttempts - 1) {
-        await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    } catch (e) {
+      if (isOfflineError(e) && _lastGoodToken) {
+        if (__DEV__) console.warn("[api] offline — using cached token after retry");
+        return _lastGoodToken;
       }
     }
+
     return _lastGoodToken ?? null;
   })();
 
@@ -219,6 +224,15 @@ export function useApiFetch() {
         return new Response(
           JSON.stringify({ error: "Backing off after server error" }),
           { status: 503, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Short-circuit if we recently got a 401 — don't waste roundtrips with a known-bad token.
+      if (Date.now() < _tokenKnownBadUntil) {
+        if (__DEV__) console.log(`[api] ⏭ skipping ${path} (token known bad)`);
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
         );
       }
 
@@ -303,7 +317,12 @@ export function useApiFetch() {
 
           _endpointBackoff.delete(path);
 
+          if (response.ok) {
+            markTokenGood();
+          }
+
           if (response.status === 401) {
+            markTokenBad();
             _tokenPromise = null;
             const pending = _refreshPromise;
             if (pending) {
@@ -312,6 +331,7 @@ export function useApiFetch() {
                 if (__DEV__) console.log(`[api] 401 retry (shared refresh) → ${path}`);
                 const retry = await doFetch(freshToken);
                 if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+                if (retry.ok) markTokenGood();
                 return retry;
               }
             } else {
@@ -329,6 +349,7 @@ export function useApiFetch() {
                 if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
                 const retry = await doFetch(freshToken);
                 if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+                if (retry.ok) markTokenGood();
                 return retry;
               }
             }
