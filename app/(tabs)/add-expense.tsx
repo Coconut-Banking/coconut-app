@@ -470,6 +470,8 @@ export default function AddExpenseScreen() {
             // No dedicated 1:1 group — create one
             const friendName = data.displayName ?? t.name;
             const friendEmail = data.email ?? null;
+            // If the key is a Clerk user_id (starts with "user_"), pass it for direct linking
+            const friendUserId = t.key?.startsWith("user_") ? t.key : null;
             try {
               const groupRes = await apiFetch("/api/groups", {
                 method: "POST",
@@ -478,9 +480,12 @@ export default function AddExpenseScreen() {
               const group = await groupRes.json();
               if (cancelled) return;
               if (groupRes.ok && group.id) {
+                const memberBody: Record<string, string> = { displayName: friendName };
+                if (friendEmail) memberBody.email = friendEmail;
+                if (friendUserId) memberBody.userId = friendUserId;
                 await apiFetch(`/api/groups/${group.id}/members`, {
                   method: "POST",
-                  body: { displayName: friendName, ...(friendEmail ? { email: friendEmail } : {}) } as object,
+                  body: memberBody as object,
                 });
                 gid = group.id;
               }
