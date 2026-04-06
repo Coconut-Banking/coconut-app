@@ -252,6 +252,39 @@ function PayScreenInner() {
   const lockedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
   const hasPrefilledCheckout = Boolean(params.amount) && lockedAmount > 0;
 
+  const prefetchedPi = useRef<{ clientSecret: string; directPayout: boolean; paymentIntentId: string } | null>(null);
+  const prefetchingPi = useRef(false);
+
+  useEffect(() => {
+    if (!hasPrefilledCheckout || prefetchingPi.current || lockedAmount <= 0) return;
+    prefetchingPi.current = true;
+    (async () => {
+      try {
+        const body: Record<string, unknown> = { amount: lockedAmount };
+        if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+          body.groupId = params.groupId;
+          body.payerMemberId = params.payerMemberId;
+          body.receiverMemberId = params.receiverMemberId;
+        }
+        const res = await apiFetch("/api/stripe/terminal/create-payment-intent", {
+          method: "POST",
+          body,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          prefetchedPi.current = {
+            clientSecret: data.clientSecret,
+            directPayout: data.directPayout === true,
+            paymentIntentId: data.paymentIntentId,
+          };
+          if (__DEV__) console.log("[Pay] PaymentIntent pre-created:", data.paymentIntentId);
+        }
+      } catch {
+        // Will be created on-demand when user taps Charge
+      }
+    })();
+  }, [hasPrefilledCheckout, lockedAmount, params.groupId, params.payerMemberId, params.receiverMemberId, apiFetch]);
+
   const handleClose = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -475,34 +508,46 @@ function PayScreenInner() {
     setPaymentOutcome(null);
     setPaymentPhase("initializing");
     try {
-      // 5.7 Initializing
-      const body: Record<string, unknown> = { amount: amt };
-      if (params.groupId && params.payerMemberId && params.receiverMemberId) {
-        body.groupId = params.groupId;
-        body.payerMemberId = params.payerMemberId;
-        body.receiverMemberId = params.receiverMemberId;
+      let clientSecret: string | undefined;
+      let directPayout = false;
+
+      const cached = prefetchedPi.current;
+      prefetchedPi.current = null;
+
+      if (cached) {
+        clientSecret = cached.clientSecret;
+        directPayout = cached.directPayout;
+        if (__DEV__) console.log("[Pay] Using pre-fetched PaymentIntent:", cached.paymentIntentId);
+      } else {
+        const body: Record<string, unknown> = { amount: amt };
+        if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+          body.groupId = params.groupId;
+          body.payerMemberId = params.payerMemberId;
+          body.receiverMemberId = params.receiverMemberId;
+        }
+        const piRes = await apiFetch("/api/stripe/terminal/create-payment-intent", {
+          method: "POST",
+          body,
+        });
+        if (!piRes.ok) {
+          const errData = await piRes.json().catch(() => ({}));
+          Alert.alert("Error", errData.error ?? "Failed to create payment intent");
+          setCollecting(false);
+          return;
+        }
+        const piData = await piRes.json();
+        clientSecret = piData.clientSecret;
+        directPayout = piData.directPayout === true;
+        if (__DEV__ && piData.paymentIntentId) {
+          console.log("[Pay] PaymentIntent created on-demand:", piData.paymentIntentId);
+        }
       }
-      const piRes = await apiFetch("/api/stripe/terminal/create-payment-intent", {
-        method: "POST",
-        body,
-      });
-      if (!piRes.ok) {
-        const errData = await piRes.json().catch(() => ({}));
-        Alert.alert("Error", errData.error ?? "Failed to create payment intent");
-        setCollecting(false);
-        return;
-      }
-      const piData = await piRes.json();
-      const clientSecret = piData.clientSecret;
-      const directPayout = piData.directPayout === true;
+
       setLastDirectPayout(directPayout);
-      if (__DEV__ && piData.paymentIntentId) {
-        console.log("[Pay] PaymentIntent created (search in Stripe Dashboard → Payments):", piData.paymentIntentId);
-      }
       if (__DEV__) console.log("[Pay] directPayout:", directPayout);
 
       if (!clientSecret) {
-        Alert.alert("Error", piData.error ?? "Failed to create payment intent");
+        Alert.alert("Error", "Failed to create payment intent");
         setCollecting(false);
         return;
       }

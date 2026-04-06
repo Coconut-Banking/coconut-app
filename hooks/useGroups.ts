@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useApiFetch, getPersistedResponse } from "../lib/api";
+import { useApiFetch, getPersistedResponse, invalidateApiCache } from "../lib/api";
 
 export interface GroupSummary {
   id: string;
@@ -294,7 +294,12 @@ export function useGroupDetail(id: string | null) {
       }
       if (!silent && !hasDetail.current) setLoading(true);
       try {
-        const res = await apiFetch(`/api/groups/${id}`);
+        let res = await apiFetch(`/api/groups/${id}`);
+        if (!res.ok && !hasDetail.current) {
+          await new Promise((r) => setTimeout(r, 500));
+          invalidateApiCache(`/api/groups/${id}`);
+          res = await apiFetch(`/api/groups/${id}`);
+        }
         if (res.ok) {
           const data = await res.json();
           setDetail(data);

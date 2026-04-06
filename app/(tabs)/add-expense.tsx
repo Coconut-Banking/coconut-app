@@ -22,8 +22,8 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
-import { useApiFetch } from "../../lib/api";
-import { useGroupsSummary } from "../../hooks/useGroups";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
+import { useGroupsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -671,6 +671,10 @@ export default function AddExpenseScreen() {
       if (res.ok) {
         sfx.coin();
         toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
+        invalidateApiCache("/api/groups/summary");
+        invalidateApiCache(`/api/groups/${resolvedGroupId}`);
+        if (t.type === "friend") invalidateApiCache("/api/groups/person");
+        clearMemSummaryCache();
         DeviceEventEmitter.emit("expense-added");
       } else {
         savedRef.current = false;
