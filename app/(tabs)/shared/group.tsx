@@ -26,7 +26,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import * as ImagePicker from "expo-image-picker";
-import { useApiFetch } from "../../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../../lib/api";
+import { clearMemSummaryCache } from "../../../hooks/useGroups";
 import { useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
@@ -300,6 +301,8 @@ export default function GroupScreen() {
         const data = await res.json().catch(() => ({}));
         if ((data as { imageUrl?: string }).imageUrl) setLocalIconUrl((data as { imageUrl: string }).imageUrl);
         toast.show("Group icon updated");
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
         refetch(true);
         refetchSummary();
         DeviceEventEmitter.emit("groups-updated");
@@ -333,8 +336,7 @@ export default function GroupScreen() {
             setUploadingIcon(true);
             try {
               const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
-            } finally { setUploadingIcon(false); }
+              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }            } finally { setUploadingIcon(false); }
           }
         }
       );
@@ -346,7 +348,7 @@ export default function GroupScreen() {
           setUploadingIcon(true);
           try {
             const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
+            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
           } finally { setUploadingIcon(false); }
         }}] : []),
         { text: "Cancel", style: "cancel" as const },
