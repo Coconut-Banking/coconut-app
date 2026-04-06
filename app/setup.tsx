@@ -176,14 +176,42 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const prefetchedToken = useRef<string | null>(null);
+  const prefetchedSdk = useRef<typeof import("react-native-plaid-link-sdk") | null>(null);
+  const prefetching = useRef(false);
+
+  useEffect(() => {
+    if (prefetching.current) return;
+    prefetching.current = true;
+    (async () => {
+      const [sdk] = await Promise.all([
+        getPlaid(),
+        apiFetch("/api/plaid/create-link-token", {
+          method: "POST",
+          body: { redirect_path: "/plaid-oauth" },
+        })
+          .then(async (res) => {
+            if (!res.ok) return;
+            const data = await res.json().catch(() => ({}));
+            const token = (data as { link_token?: string }).link_token;
+            if (token) {
+              prefetchedToken.current = token;
+              if (__DEV__) console.log("[setup:bank] link token pre-fetched");
+            }
+          })
+          .catch(() => {}),
+      ]);
+      prefetchedSdk.current = sdk;
+    })();
+  }, [apiFetch]);
+
   const connectBank = async () => {
     setConnecting(true);
     setError(null);
     try {
-      const plaid = await getPlaid();
+      const plaid = prefetchedSdk.current ?? (await getPlaid());
 
       if (!plaid) {
-        // Native SDK unavailable (Expo Go) — fall back to web-browser flow
         const base = API_URL.replace(/\/$/, "");
         const rawScheme = Constants.expoConfig?.scheme;
         const scheme =
@@ -207,32 +235,35 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
         return;
       }
 
-      // 1. Get link token from server
-      const tokenRes = await apiFetch("/api/plaid/create-link-token", {
-        method: "POST",
-        body: { redirect_path: "/plaid-oauth" },
-      });
-      if (!tokenRes.ok) {
-        const data = await tokenRes.json().catch(() => ({}));
-        setError((data as { error?: string }).error ?? "Failed to start bank connection");
-        setConnecting(false);
-        return;
+      let linkToken = prefetchedToken.current;
+      prefetchedToken.current = null;
+
+      if (!linkToken) {
+        const tokenRes = await apiFetch("/api/plaid/create-link-token", {
+          method: "POST",
+          body: { redirect_path: "/plaid-oauth" },
+        });
+        if (!tokenRes.ok) {
+          const data = await tokenRes.json().catch(() => ({}));
+          setError((data as { error?: string }).error ?? "Failed to start bank connection");
+          setConnecting(false);
+          return;
+        }
+        const tokenData = await tokenRes.json();
+        linkToken = (tokenData as { link_token?: string }).link_token ?? null;
       }
-      const tokenData = await tokenRes.json();
-      const linkToken = (tokenData as { link_token?: string }).link_token;
+
       if (!linkToken) {
         setError("Server did not return a link token");
         setConnecting(false);
         return;
       }
 
-      // 2. Create + open native Plaid Link
       await plaidCreate({ token: linkToken });
 
       const onSuccess = async (success: LinkSuccess) => {
         if (__DEV__) console.log("[setup:bank] plaid link success:", success.publicToken);
         try {
-          // 3. Exchange the public token
           const exchangeRes = await apiFetch("/api/plaid/exchange-token", {
             method: "POST",
             body: { public_token: success.publicToken },
@@ -244,7 +275,6 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             return;
           }
 
-          // 4. Success!
           setSuccess(true);
           setConnecting(false);
           toast.show("Bank connected!", "success");
