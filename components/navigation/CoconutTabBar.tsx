@@ -1,16 +1,28 @@
 /**
  * Bottom tabs: five equal tabs (Home, Bank, Shared, Activity, Account).
+ * Active tab has a black indicator line that slides smoothly between tabs.
  */
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { CommonActions, StackActions } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
-import { useEffect } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useTheme } from "../../lib/theme-context";
 import { sfx } from "../../lib/sounds";
 import { useHasUnseenActivity, markActivitySeen } from "../../hooks/useGroups";
+
+const TAB_COUNT = 5;
+const INDICATOR_WIDTH = 24;
+
+const TAB_INDEX: Record<string, number> = {
+  index: 0,
+  bank: 1,
+  shared: 2,
+  activity: 3,
+  settings: 4,
+};
 
 export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -19,43 +31,33 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const current = state.routes[state.index]?.name;
   const hiddenRoutes = new Set(["add-expense", "receipt", "pay", "tap-to-pay-education"]);
 
-  const goIndex = () => {
-    sfx.tabTap();
-    navigation.navigate("index" as never);
-  };
-  const goBank = () => {
-    sfx.tabTap();
-    navigation.navigate("bank" as never);
-  };
-  const goActivity = () => {
-    sfx.tabTap();
-    navigation.navigate("activity" as never);
-  };
+  const activeIdx = TAB_INDEX[current ?? ""] ?? 0;
+  const indicatorAnim = useRef(new Animated.Value(activeIdx)).current;
+
+  useEffect(() => {
+    Animated.spring(indicatorAnim, {
+      toValue: activeIdx,
+      useNativeDriver: true,
+      friction: 20,
+      tension: 300,
+    }).start();
+  }, [activeIdx, indicatorAnim]);
+
+  const goIndex = () => { sfx.tabTap(); navigation.navigate("index" as never); };
+  const goBank = () => { sfx.tabTap(); navigation.navigate("bank" as never); };
+  const goActivity = () => { sfx.tabTap(); navigation.navigate("activity" as never); };
   const goFriends = () => {
     sfx.tabTap();
     if (current === "shared") {
-      // Already on shared tab — pop nested stack back to root
       const route = state.routes.find((r) => r.name === "shared");
       if (route?.state && route.state.index !== undefined && route.state.index > 0) {
-        navigation.dispatch({
-          ...StackActions.popToTop(),
-          target: route.state.key,
-        });
+        navigation.dispatch({ ...StackActions.popToTop(), target: route.state.key });
       }
     } else {
-      // Switch to shared tab and reset its stack to root
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: "shared",
-          params: {},
-        })
-      );
+      navigation.dispatch(CommonActions.navigate({ name: "shared", params: {} }));
     }
   };
-  const goAccount = () => {
-    sfx.tabTap();
-    navigation.navigate("settings" as never);
-  };
+  const goAccount = () => { sfx.tabTap(); navigation.navigate("settings" as never); };
 
   const homeActive = current === "index";
   const bankActive = current === "bank";
@@ -70,98 +72,56 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
     if (activityActive) markActivitySeen();
   }, [activityActive]);
 
-  if (current && hiddenRoutes.has(current)) {
-    return null;
-  }
+  const barWidth = useRef(0);
+  const [indicatorStyle] = useMemo(() => {
+    const translateX = indicatorAnim.interpolate({
+      inputRange: Array.from({ length: TAB_COUNT }, (_, i) => i),
+      outputRange: Array.from({ length: TAB_COUNT }, (_, i) => {
+        const w = barWidth.current || 375;
+        const tabW = (w - 16) / TAB_COUNT;
+        return 8 + tabW * i + (tabW - INDICATOR_WIDTH) / 2;
+      }),
+    });
+    return [{ transform: [{ translateX }] }];
+  }, [indicatorAnim]);
+
+  if (current && hiddenRoutes.has(current)) return null;
 
   return (
     <View
-      style={[
-        styles.bar,
-        {
-          paddingBottom: bottomPad,
-          backgroundColor: theme.surface,
-        },
-      ]}
+      style={[styles.bar, { paddingBottom: bottomPad, backgroundColor: theme.surface }]}
+      onLayout={(e) => {
+        barWidth.current = e.nativeEvent.layout.width;
+      }}
     >
+      <Animated.View style={[styles.indicator, { backgroundColor: activeColor }, indicatorStyle]} />
+
       <View style={styles.row}>
-        <Pressable
-          onPress={goIndex}
-          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: homeActive }}
-          accessibilityLabel="Home"
-        >
-          <Ionicons
-            name={homeActive ? "home" : "home-outline"}
-            size={22}
-            color={homeActive ? activeColor : inactiveColor}
-          />
+        <Pressable onPress={goIndex} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: homeActive }} accessibilityLabel="Home">
+          <Ionicons name={homeActive ? "home" : "home-outline"} size={22} color={homeActive ? activeColor : inactiveColor} />
           <Text style={[styles.label, { color: homeActive ? activeColor : inactiveColor }]}>Home</Text>
         </Pressable>
 
-        <Pressable
-          onPress={goBank}
-          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: bankActive }}
-          accessibilityLabel="Bank"
-        >
-          <Ionicons
-            name={bankActive ? "wallet" : "wallet-outline"}
-            size={22}
-            color={bankActive ? activeColor : inactiveColor}
-          />
+        <Pressable onPress={goBank} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: bankActive }} accessibilityLabel="Bank">
+          <Ionicons name={bankActive ? "wallet" : "wallet-outline"} size={22} color={bankActive ? activeColor : inactiveColor} />
           <Text style={[styles.label, { color: bankActive ? activeColor : inactiveColor }]}>Bank</Text>
         </Pressable>
 
-        <Pressable
-          onPress={goFriends}
-          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: friendsActive }}
-          accessibilityLabel="Shared"
-        >
-          <Ionicons
-            name={friendsActive ? "people" : "people-outline"}
-            size={22}
-            color={friendsActive ? activeColor : inactiveColor}
-          />
+        <Pressable onPress={goFriends} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: friendsActive }} accessibilityLabel="Shared">
+          <Ionicons name={friendsActive ? "people" : "people-outline"} size={22} color={friendsActive ? activeColor : inactiveColor} />
           <Text style={[styles.label, { color: friendsActive ? activeColor : inactiveColor }]}>Shared</Text>
         </Pressable>
 
-        <Pressable
-          onPress={goActivity}
-          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: activityActive }}
-          accessibilityLabel="Activity"
-        >
+        <Pressable onPress={goActivity} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: activityActive }} accessibilityLabel="Activity">
           <View>
-            <Ionicons
-              name={activityActive ? "time" : "time-outline"}
-              size={22}
-              color={activityActive ? activeColor : inactiveColor}
-            />
-            {hasUnseen && !activityActive ? (
-              <View style={styles.badgeDot} />
-            ) : null}
+            <Ionicons name={activityActive ? "time" : "time-outline"} size={22} color={activityActive ? activeColor : inactiveColor} />
+            {hasUnseen && !activityActive ? <View style={styles.badgeDot} /> : null}
           </View>
           <Text style={[styles.label, { color: activityActive ? activeColor : inactiveColor }]}>Activity</Text>
         </Pressable>
 
-        <Pressable
-          onPress={goAccount}
-          style={({ pressed }) => [styles.side, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityState={{ selected: accountActive }}
-          accessibilityLabel="Account"
-        >
-          <Ionicons
-            name={accountActive ? "person" : "person-outline"}
-            size={22}
-            color={accountActive ? activeColor : inactiveColor}
-          />
+        <Pressable onPress={goAccount} style={styles.side} accessibilityRole="button" accessibilityState={{ selected: accountActive }} accessibilityLabel="Account">
+          <Ionicons name={accountActive ? "person" : "person-outline"} size={22} color={accountActive ? activeColor : inactiveColor} />
           <Text style={[styles.label, { color: accountActive ? activeColor : inactiveColor }]}>Account</Text>
         </Pressable>
       </View>
@@ -174,7 +134,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(0,0,0,0.06)",
-    paddingTop: 8,
+    paddingTop: 0,
     position: "relative",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
@@ -182,12 +142,21 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  indicator: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: INDICATOR_WIDTH,
+    height: 2.5,
+    borderRadius: 2,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
     minHeight: 48,
     paddingHorizontal: 8,
+    paddingTop: 8,
   },
   side: {
     flex: 1,
