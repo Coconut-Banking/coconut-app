@@ -30,9 +30,14 @@ export const MemberAvatar = React.memo(function MemberAvatar({
   const hasPhoto = Boolean(imageUrl) && !imgError;
 
   if (hasPhoto) {
+    let uri = imageUrl!;
+    if (uri.includes("clerk") || uri.includes("img.clerk")) {
+      const sep = uri.includes("?") ? "&" : "?";
+      uri = `${uri}${sep}width=${size * 2}&quality=80`;
+    }
     return (
       <Image
-        source={{ uri: imageUrl! }}
+        source={{ uri }}
         style={[s.img, { width: size, height: size, borderRadius: radius }]}
         contentFit="cover"
         cachePolicy="disk"

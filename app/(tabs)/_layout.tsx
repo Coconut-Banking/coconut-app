@@ -1,18 +1,30 @@
+import React, { useState, useEffect, type ComponentType, type ReactNode } from "react";
 import { Tabs } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { font } from "../../lib/theme";
 import { CoconutTabBar } from "../../components/navigation/CoconutTabBar";
 import { FloatingActionButtons } from "../../components/FloatingActionButtons";
 import { TapToPayHeroModal } from "../../components/TapToPayHeroModal";
-import { StripeTerminalRoot } from "../../components/StripeTerminalRoot";
 
 export default function TabLayout() {
   const { theme } = useTheme();
+  const [StripeRoot, setStripeRoot] = useState<ComponentType<{ children: ReactNode }> | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      import("../../components/StripeTerminalRoot").then((mod) => {
+        setStripeRoot(() => mod.StripeTerminalRoot as ComponentType<{ children: ReactNode }>);
+      }).catch(() => {});
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const Wrapper = StripeRoot ?? React.Fragment;
 
   return (
     <>
       <TapToPayHeroModal />
-      <StripeTerminalRoot>
+      <Wrapper>
         <Tabs
           tabBar={(props) => <CoconutTabBar {...props} />}
           screenOptions={{
@@ -41,7 +53,7 @@ export default function TabLayout() {
           <Tabs.Screen name="email-receipts" options={{ href: null, headerShown: false }} />
         </Tabs>
         <FloatingActionButtons />
-      </StripeTerminalRoot>
+      </Wrapper>
     </>
   );
 }

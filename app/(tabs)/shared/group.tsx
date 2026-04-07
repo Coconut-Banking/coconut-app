@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -56,6 +56,39 @@ function formatTimeAgo(iso: string): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+/** Extracted FlatList renderItem for the friend picker */
+const FriendPickerItem = React.memo(function FriendPickerItem({
+  item,
+  isSelected,
+  onToggle,
+  theme,
+}: {
+  item: FriendBalance;
+  isSelected: boolean;
+  onToggle: (friend: FriendBalance) => void;
+  theme: any;
+}) {
+  return (
+    <TouchableOpacity
+      style={s.pickerFriendRow}
+      onPress={() => onToggle(item)}
+      activeOpacity={0.7}
+    >
+      <MemberAvatar name={item.displayName} size={36} imageUrl={item.image_url ?? null} variant="soft" />
+      <Text style={[s.pickerFriendName, { color: theme.text }]}>{item.displayName}</Text>
+      <View style={[
+        s.pickerCheckbox,
+        {
+          borderColor: isSelected ? theme.primary : theme.border,
+          backgroundColor: isSelected ? theme.primary : "transparent",
+        },
+      ]}>
+        {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 export default function GroupScreen() {
   const { theme } = useTheme();
@@ -132,13 +165,20 @@ export default function GroupScreen() {
     return availableFriends.filter((f) => f.displayName.toLowerCase().includes(q));
   }, [availableFriends, searchQuery]);
 
-  const toggleFriend = (friend: FriendBalance) => {
+  const toggleFriend = useCallback((friend: FriendBalance) => {
     sfx.pop();
     setSelectedFriends((prev) => {
       const exists = prev.some((f) => f.key === friend.key);
       return exists ? prev.filter((f) => f.key !== friend.key) : [...prev, friend];
     });
-  };
+  }, []);
+
+  const renderFriendPickerItem = useCallback(({ item }: { item: FriendBalance }) => {
+    const isSelected = selectedFriends.some((f) => f.key === item.key);
+    return (
+      <FriendPickerItem item={item} isSelected={isSelected} onToggle={toggleFriend} theme={theme} />
+    );
+  }, [selectedFriends, toggleFriend, theme]);
 
   const removeFriend = (key: string) => {
     sfx.pop();
@@ -1075,8 +1115,8 @@ export default function GroupScreen() {
       </ScrollView>
 
       {/* Add members — full-screen multi-select picker */}
-      <Modal
-        visible={showAddMember}
+      {showAddMember ? <Modal
+        visible={true}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => setShowAddMember(false)}
@@ -1181,28 +1221,7 @@ export default function GroupScreen() {
             keyExtractor={(item) => item.key}
             contentContainerStyle={{ paddingBottom: 100 }}
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => {
-              const isSelected = selectedFriends.some((f) => f.key === item.key);
-              return (
-                <TouchableOpacity
-                  style={s.pickerFriendRow}
-                  onPress={() => toggleFriend(item)}
-                  activeOpacity={0.7}
-                >
-                  <MemberAvatar name={item.displayName} size={36} imageUrl={item.image_url ?? null} variant="soft" />
-                  <Text style={[s.pickerFriendName, { color: theme.text }]}>{item.displayName}</Text>
-                  <View style={[
-                    s.pickerCheckbox,
-                    {
-                      borderColor: isSelected ? theme.primary : theme.border,
-                      backgroundColor: isSelected ? theme.primary : "transparent",
-                    },
-                  ]}>
-                    {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
+            renderItem={renderFriendPickerItem}
             ListEmptyComponent={
               <View style={{ padding: 32, alignItems: "center" }}>
                 <Text style={[s.emptySubtext, { color: theme.textQuaternary }]}>
@@ -1235,10 +1254,10 @@ export default function GroupScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
-      </Modal>
+      </Modal> : null}
 
-      <Modal
-        visible={showRenameGroupModal}
+      {showRenameGroupModal ? <Modal
+        visible={true}
         animationType="fade"
         transparent
         onRequestClose={() => !renamingGroup && setShowRenameGroupModal(false)}
@@ -1284,10 +1303,10 @@ export default function GroupScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Modal> : null}
 
-      <Modal
-        visible={handlesMember != null}
+      {handlesMember != null ? <Modal
+        visible={true}
         animationType="fade"
         transparent
         onRequestClose={() => !savingHandles && setHandlesMember(null)}
@@ -1360,9 +1379,9 @@ export default function GroupScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </Modal> : null}
 
-      <Modal visible={confirmPaymentOpen} transparent animationType="fade" onRequestClose={() => setConfirmPaymentOpen(false)}>
+      {confirmPaymentOpen ? <Modal visible={true} transparent animationType="fade" onRequestClose={() => setConfirmPaymentOpen(false)}>
         <Pressable style={s.confirmOverlay} onPress={() => setConfirmPaymentOpen(false)}>
           <Pressable style={[s.confirmCard, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
             <View style={{ marginBottom: 12 }}>
@@ -1385,7 +1404,7 @@ export default function GroupScreen() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
-      </Modal>
+      </Modal> : null}
     </SafeAreaView>
   );
 }

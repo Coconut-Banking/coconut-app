@@ -26,7 +26,8 @@ const BACKOFF_MAX_MS = 30000;
 
 const _inflightGets = new Map<string, Promise<Response>>();
 
-const _responseCache = new Map<string, { body: string; status: number; ts: number }>();
+const MAX_CACHE_ENTRIES = 50;
+const _responseCache = new Map<string, { body: unknown; status: number; ts: number }>();
 const CACHE_TTL_MS: Record<string, number> = {
   "/api/plaid/status": 10_000,
   "/api/plaid/transactions": 30_000,
@@ -109,7 +110,7 @@ function releaseSlot(): void {
   const next = _requestQueue.shift();
   if (next) {
     next.resolve();
-  } else {
+  } else if (_activeRequests > 0) {
     _activeRequests--;
   }
 }
@@ -256,7 +257,7 @@ export function useApiFetch() {
           const cached = _responseCache.get(path);
           if (cached && Date.now() - cached.ts < ttl) {
             if (__DEV__) console.log(`[api] 💾 cache hit ${path}`);
-            return new Response(cached.body, {
+            return new Response(JSON.stringify(cached.body), {
               status: cached.status,
               headers: { "Content-Type": "application/json" },
             });
@@ -277,7 +278,7 @@ export function useApiFetch() {
           : path.includes("receipt/parse")
             ? 60_000
             : path.includes("gmail/auth") || path.includes("gmail/scan")
-              ? 0
+              ? 30_000
               : 20_000;
 
       const doFetch = async (authToken: string) => {
@@ -394,10 +395,22 @@ export function useApiFetch() {
               const clone = res.clone();
               clone.text().then((body) => {
                 if (ttl > 0) {
-                  _responseCache.set(path, { body, status: res.status, ts: Date.now() });
+                  const parsed = JSON.parse(body);
+                  if (_responseCache.size >= MAX_CACHE_ENTRIES) {
+                    let oldestKey: string | undefined;
+                    let oldestTs = Infinity;
+                    for (const [k, v] of _responseCache) {
+                      if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; }
+                    }
+                    if (oldestKey) _responseCache.delete(oldestKey);
+                  }
+                  _responseCache.set(path, { body: parsed, status: res.status, ts: Date.now() });
                 }
                 if (shouldPersist(path)) {
-                  persistToStorage(path, body, res.status);
+                  // Skip persistence for responses > 2 MB to avoid AsyncStorage limits
+                  if (body.length <= 2 * 1024 * 1024) {
+                    persistToStorage(path, body, res.status);
+                  }
                 }
               }).catch(() => {});
             }

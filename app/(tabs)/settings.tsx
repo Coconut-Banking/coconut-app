@@ -418,9 +418,11 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!user) return;
     if (!isFocused) return;
-    void fetchSplitwiseStatus({ showLoading: true });
-    void fetchGmailStatus();
-    void fetchConnectStatus();
+    void Promise.all([
+      fetchSplitwiseStatus({ showLoading: true }),
+      fetchGmailStatus(),
+      fetchConnectStatus(),
+    ]);
   }, [isFocused, user, fetchSplitwiseStatus, fetchConnectStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
