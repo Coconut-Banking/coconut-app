@@ -192,6 +192,10 @@ export default function HomeScreen() {
         method: "POST",
         body: { q },
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? "Search failed");
+      }
       const data = await res.json();
       const raw = data.transactions ?? [];
       const txs = Array.isArray(raw) ? raw.map(mapApiTx) : [];
