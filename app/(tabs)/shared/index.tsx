@@ -233,7 +233,7 @@ export default function SharedIndex() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("expense-added", () => {
-      if (!isDemoOn && focusedRef.current) refetch();
+      if (!isDemoOn) refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);

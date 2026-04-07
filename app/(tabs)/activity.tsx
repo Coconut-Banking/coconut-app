@@ -92,7 +92,7 @@ export default function ActivityTabScreen() {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) refetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);

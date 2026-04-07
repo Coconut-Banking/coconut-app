@@ -59,7 +59,7 @@ function formatTimeAgo(iso: string): string {
 
 export default function GroupScreen() {
   const { theme } = useTheme();
-  const { id, localImage } = useLocalSearchParams<{ id: string; localImage?: string }>();
+  const { id, localImage, source } = useLocalSearchParams<{ id: string; localImage?: string; source?: string }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
@@ -96,6 +96,14 @@ export default function GroupScreen() {
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+
+  const goBack = useCallback(() => {
+    if (source === "home") {
+      router.replace("/(tabs)");
+    } else {
+      router.back();
+    }
+  }, [source]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
@@ -391,7 +399,7 @@ export default function GroupScreen() {
     DeviceEventEmitter.emit("groups-updated");
     await refetch(true);
     await refetchSummary();
-    if (archived) router.back();
+    if (archived) goBack();
   };
 
   const applyGroupRename = useCallback(
@@ -460,7 +468,7 @@ export default function GroupScreen() {
               if (res.ok) {
                 DeviceEventEmitter.emit("groups-updated");
                 await refetchSummary();
-                router.back();
+                goBack();
               } else {
                 const err = await res.json().catch(() => ({}));
                 Alert.alert("Couldn't leave", (err as { error?: string }).error ?? "Try again.");
@@ -620,7 +628,7 @@ export default function GroupScreen() {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
         <View style={[s.topBar, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+          <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
             <Ionicons name="chevron-back" size={20} color={theme.text} />
             <Text style={[s.backText, { color: theme.text }]}>Back</Text>
           </TouchableOpacity>
@@ -637,7 +645,7 @@ export default function GroupScreen() {
               <Text style={{ fontFamily: font.regular, fontSize: 14, color: theme.textTertiary, textAlign: "center", paddingHorizontal: 40 }}>
                 This group may have been deleted.
               </Text>
-              <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 10 }}>
+              <TouchableOpacity onPress={goBack} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 10 }}>
                 <Text style={{ fontFamily: font.semibold, fontSize: 15, color: "#fff" }}>Go back</Text>
               </TouchableOpacity>
             </>
@@ -657,9 +665,9 @@ export default function GroupScreen() {
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <View style={[s.topBar, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+        <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
           <Ionicons name="chevron-back" size={20} color={theme.text} />
-          <Text style={[s.backText, { color: theme.text }]}>Back</Text>
+          <Text style={[s.backText, { color: theme.text }]}>{source === "home" ? "Home" : "Back"}</Text>
         </TouchableOpacity>
       </View>
       <ScrollView

@@ -23,7 +23,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
-import { useGroupsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
+import { useGroupsSummary, clearMemSummaryCache, clearMemActivityCache } from "../../hooks/useGroups";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -105,6 +105,20 @@ function pickDemoGroupIdForFriend(
     }
   }
   return best?.id ?? null;
+}
+
+/**
+ * Module-level caches so resolved group members and friend→group mappings
+ * survive across mounts. Navigating back to add-expense for the same
+ * person/group skips all API calls.
+ */
+const _memberCache = new Map<string, GroupMember[]>();
+const _friendGroupCache = new Map<string, string>();
+
+/** Clear add-expense resolution caches (call when groups/members change). */
+export function clearMemberCache() {
+  _memberCache.clear();
+  _friendGroupCache.clear();
 }
 
 /** Deduplicate members by user_id — keeps the entry with a real name over "You". */
@@ -418,19 +432,13 @@ export default function AddExpenseScreen() {
   const demoRef = useRef(demo);
   useEffect(() => { demoRef.current = demo; });
 
-  // Auto-resolve group when a target is selected (stable deps only — no demo.* objects)
+  // Auto-resolve group when targets change (stable deps only — no demo.* objects)
   useEffect(() => {
     if (targets.length === 0) {
       setResolvedGroupId(null);
       setGroupMembers([]);
       return;
     }
-    if (targets.length > 1) {
-      Alert.alert("One at a time", "For now, split with one friend or one group per expense. Using the first one you selected.");
-    }
-
-    const t = targets[0];
-    if (!t) return;
 
     let cancelled = false;
     setError(null);
@@ -441,7 +449,9 @@ export default function AddExpenseScreen() {
         const d = demoRef.current;
         let gid: string | null = null;
 
+        // ── Demo mode (first target only) ──
         if (isDemoOn) {
+          const t = targets[0];
           gid = t.type === "group" ? t.key : pickDemoGroupIdForFriend(t.key, d.personDetails, d.groupDetails);
           if (cancelled) return;
           if (!gid || !d.groupDetails[gid]) { setError("No shared group with this person in demo data"); setResolving(false); return; }
@@ -454,52 +464,103 @@ export default function AddExpenseScreen() {
           return;
         }
 
-        if (t.type === "group") {
-          gid = t.key;
-        } else {
-          const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(t.key)}`);
-          const data = await res.json();
-          if (cancelled) return;
-          if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
-          const sg = data.sharedGroups as { id: string; name: string; memberCount: number }[] | undefined;
-          // Prefer a 1:1 (2-member) group so friend expenses don't land in trip/household groups
-          const twoPersonGroup = sg?.find((g) => g.memberCount === 2);
-          gid = twoPersonGroup?.id ?? null;
+        const friendTargets = targets.filter((t) => t.type === "friend");
+        const groupTarget = targets.find((t) => t.type === "group");
 
-          if (!gid && sg && sg.length > 0) {
-            // No dedicated 1:1 group — create one
-            const friendName = data.displayName ?? t.name;
-            const friendEmail = data.email ?? null;
-            // If the key is a Clerk user_id (starts with "user_"), pass it for direct linking
-            const friendUserId = t.key?.startsWith("user_") ? t.key : null;
-            try {
-              const groupRes = await apiFetch("/api/groups", {
-                method: "POST",
-                body: { name: friendName, ownerDisplayName: "You" } as object,
-              });
-              const group = await groupRes.json();
-              if (cancelled) return;
-              if (groupRes.ok && group.id) {
-                const memberBody: Record<string, string> = { displayName: friendName };
-                if (friendEmail) memberBody.email = friendEmail;
-                if (friendUserId) memberBody.userId = friendUserId;
-                await apiFetch(`/api/groups/${group.id}/members`, {
+        // ── Single group target ──
+        if (groupTarget) {
+          gid = groupTarget.key;
+        }
+        // ── Single friend ──
+        else if (friendTargets.length === 1) {
+          const t = friendTargets[0];
+          const cachedGid = _friendGroupCache.get(t.key);
+          if (cachedGid) {
+            gid = cachedGid;
+          } else {
+            const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(t.key)}`);
+            const data = await res.json();
+            if (cancelled) return;
+            if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
+            const sg = data.sharedGroups as { id: string; name: string; memberCount: number }[] | undefined;
+            const twoPersonGroup = sg?.find((g) => g.memberCount === 2);
+            gid = twoPersonGroup?.id ?? null;
+
+            if (!gid && sg && sg.length > 0) {
+              const friendName = data.displayName ?? t.name;
+              const friendEmail = data.email ?? null;
+              const friendUserId = t.key?.startsWith("user_") ? t.key : null;
+              try {
+                const groupRes = await apiFetch("/api/groups", {
                   method: "POST",
-                  body: memberBody as object,
+                  body: { name: friendName, ownerDisplayName: "You", group_type: "friend" } as object,
                 });
-                gid = group.id;
-              }
-            } catch { /* fall through to existing group */ }
-          }
+                const group = await groupRes.json();
+                if (cancelled) return;
+                if (groupRes.ok && group.id) {
+                  const memberBody: Record<string, string> = { displayName: friendName };
+                  if (friendEmail) memberBody.email = friendEmail;
+                  if (friendUserId) memberBody.userId = friendUserId;
+                  await apiFetch(`/api/groups/${group.id}/members`, {
+                    method: "POST",
+                    body: memberBody as object,
+                  });
+                  gid = group.id;
+                }
+              } catch { /* fall through to existing group */ }
+            }
 
-          gid = gid ?? sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
-          if (!gid) { if (!cancelled) { setError("No shared group with this person yet"); setResolving(false); } return; }
+            gid = gid ?? sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
+            if (!gid) { if (!cancelled) { setError("No shared group with this person yet"); setResolving(false); } return; }
+            _friendGroupCache.set(t.key, gid);
+          }
+        }
+        // ── Multiple friends → create/find group for all of them ──
+        else if (friendTargets.length > 1) {
+          const cacheKey = "multi:" + friendTargets.map((ft) => ft.key).sort().join("|");
+          const cachedGid = _friendGroupCache.get(cacheKey);
+          if (cachedGid) {
+            gid = cachedGid;
+          } else {
+            const groupName = friendTargets.map((ft) => ft.name).join(", ");
+            const groupRes = await apiFetch("/api/groups", {
+              method: "POST",
+              body: { name: groupName, ownerDisplayName: "You" } as object,
+            });
+            const group = await groupRes.json();
+            if (cancelled) return;
+            if (!groupRes.ok || !group.id) { setError("Could not create group"); setResolving(false); return; }
+            gid = group.id;
+
+            await Promise.all(friendTargets.map((ft) => {
+              const friendUserId = ft.key?.startsWith("user_") ? ft.key : null;
+              const body: Record<string, string> = { displayName: ft.name };
+              if (friendUserId) body.userId = friendUserId;
+              return apiFetch(`/api/groups/${gid}/members`, { method: "POST", body: body as object });
+            }));
+            if (cancelled) return;
+            _friendGroupCache.set(cacheKey, gid!);
+            _memberCache.delete(gid!);
+          }
         }
 
+        if (!gid) { if (!cancelled) { setError("Could not determine group"); setResolving(false); } return; }
         if (cancelled) return;
         setResolvedGroupId(gid);
-        const gr = await apiFetch(`/api/groups/${gid}`);
-        const gj = await gr.json();
+
+        // Use cached members if available
+        const cached = _memberCache.get(gid);
+        if (cached) {
+          setGroupMembers(cached);
+          setPayerMemberId(null);
+          setPaidByMe(true);
+          if (!cancelled) setResolving(false);
+          return;
+        }
+
+        // Fetch only the member list (lightweight)
+        const gr = await apiFetch(`/api/groups/${gid}/members`);
+        const raw = await gr.json();
         if (cancelled) return;
         if (!gr.ok) {
           if (attempt < 1) {
@@ -511,7 +572,8 @@ export default function AddExpenseScreen() {
           }
           return;
         }
-        const members = dedupeMembers((gj.members ?? []) as GroupMember[]);
+        const members = dedupeMembers((Array.isArray(raw) ? raw : raw.members ?? []) as GroupMember[]);
+        _memberCache.set(gid, members);
         setGroupMembers(members);
         setPayerMemberId(null);
         setPaidByMe(true);
@@ -562,20 +624,48 @@ export default function AddExpenseScreen() {
 
   const selectTarget = useCallback((t: Target) => {
     sfx.pop();
-    setTargets([t]);
     setQuery("");
     setSearchFocused(false);
     setError(null);
-    setStep(2);
+
+    if (t.type === "group") {
+      setTargets([t]);
+      setStep(2);
+      return;
+    }
+
+    // Friends: toggle (add/remove). Reading current targets to decide step.
+    const wasSelected = targets.some((p) => p.key === t.key);
+    setTargets((prev) => {
+      if (prev.some((p) => p.type === "group")) return [t];
+      if (wasSelected) return prev.filter((p) => p.key !== t.key);
+      return [...prev, t];
+    });
+    if (!wasSelected) setStep(2);
+  }, [targets]);
+
+  const removeOneTarget = useCallback((key: string) => {
+    setTargets((prev) => prev.filter((p) => p.key !== key));
   }, []);
 
-  const removeTarget = useCallback(() => {
+  const removeAllTargets = useCallback(() => {
     setTargets([]);
     setResolvedGroupId(null);
     setGroupMembers([]);
     setCustomSplits({});
     setSplitExpanded(false);
   }, []);
+
+  // If all targets are removed while on step 2, go back to step 1
+  useEffect(() => {
+    if (step === 2 && targets.length === 0) {
+      setResolvedGroupId(null);
+      setGroupMembers([]);
+      setCustomSplits({});
+      setSplitExpanded(false);
+      setStep(1);
+    }
+  }, [step, targets.length]);
 
   const pickSplit = useCallback(
     (m: SplitMethod) => {
@@ -594,9 +684,10 @@ export default function AddExpenseScreen() {
     [splitPeople, total]
   );
 
+  const targetLabel = targets.map((t) => t.name).join(", ") || "group";
+
   const save = async () => {
-    if (total <= 0 || !resolvedGroupId || !targets[0]) return;
-    const t = targets[0];
+    if (total <= 0 || !resolvedGroupId || targets.length === 0) return;
     const desc = description.trim() || "Expense";
     const effPayer = paidByMe ? (myMemberId ?? groupMembers[0]?.id ?? null) : payerMemberId;
     if (!effPayer) { setError("Missing payer"); return; }
@@ -637,17 +728,17 @@ export default function AddExpenseScreen() {
 
   const doSave = async () => {
     if (savedRef.current) return;
-    if (total <= 0 || !resolvedGroupId || !targets[0]) return;
-    const t = targets[0];
+    if (total <= 0 || !resolvedGroupId || targets.length === 0) return;
     const desc = description.trim() || "Expense";
     const effPayer = paidByMe ? (myMemberId ?? groupMembers[0]?.id ?? null) : payerMemberId;
     if (!effPayer) return;
 
     if (isDemoOn) {
       savedRef.current = true;
+      const t = targets[0];
       demo.addExpense(total, desc, t.key, t.type);
       sfx.coin();
-        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${t.name}`);
+      toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
       DeviceEventEmitter.emit("expense-added");
       return;
     }
@@ -666,8 +757,9 @@ export default function AddExpenseScreen() {
       if (category) body.category = category;
       const notesTrim = notes.trim();
       if (notesTrim) body.notes = notesTrim;
-      if (splitMethod === "equal" && t.type === "friend") {
-        body.personKey = t.key;
+      // personKey only for single-friend equal splits; multi-friend uses equal split across all group members
+      if (splitMethod === "equal" && targets.length === 1 && targets[0].type === "friend") {
+        body.personKey = targets[0].key;
       } else if (splitMethod !== "equal") {
         body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
       }
@@ -675,11 +767,13 @@ export default function AddExpenseScreen() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         sfx.coin();
-        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targets[0]?.name ?? "group"}`);
+        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
         invalidateApiCache("/api/groups/summary");
         invalidateApiCache(`/api/groups/${resolvedGroupId}`);
-        if (t.type === "friend") invalidateApiCache("/api/groups/person");
+        invalidateApiCache("/api/groups/recent-activity");
+        if (targets.some((t) => t.type === "friend")) invalidateApiCache("/api/groups/person");
         clearMemSummaryCache();
+        clearMemActivityCache();
         DeviceEventEmitter.emit("expense-added");
       } else {
         savedRef.current = false;
@@ -760,14 +854,37 @@ export default function AddExpenseScreen() {
         {step === 1 && (
           <>
             <View style={s.header}>
-              <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
+              <TouchableOpacity onPress={() => targets.length > 0 ? setStep(2) : nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
+                <Ionicons name={targets.length > 0 ? "arrow-back" : "close"} size={22} color={darkUI.labelSecondary} />
               </TouchableOpacity>
-              <Text style={s.headerTitle}>With whom?</Text>
-              <View style={s.headerSide} />
+              <Text style={s.headerTitle}>{targets.length > 0 ? "Add people" : "With whom?"}</Text>
+              {targets.length > 0 ? (
+                <TouchableOpacity onPress={() => setStep(2)} hitSlop={12} style={s.headerSide}>
+                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: colors.primary }}>Done</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={s.headerSide} />
+              )}
             </View>
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+              {/* Selected targets as removable chips */}
+              {targets.length > 0 && (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {targets.map((t, idx) => (
+                    <View key={t.key} style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingLeft: 10, paddingRight: 4, paddingVertical: 4, gap: 5, borderWidth: 1, borderColor: darkUI.stroke }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
+                      </View>
+                      <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{t.name}</Text>
+                      <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 2 }}>
+                        <Ionicons name="close-circle" size={15} color={darkUI.labelMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Search */}
               <View style={s.searchBar}>
                 <Ionicons name="search" size={16} color={darkUI.labelMuted} />
@@ -920,7 +1037,7 @@ export default function AddExpenseScreen() {
         {step === 2 && (
           <>
             <View style={s.header}>
-              <TouchableOpacity onPress={() => { setStep(1); removeTarget(); }} hitSlop={12} style={s.headerSide}>
+              <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
                 <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Add an expense</Text>
@@ -928,23 +1045,39 @@ export default function AddExpenseScreen() {
                 <Text style={{ fontFamily: font.bold, fontSize: 15, color: canReview ? colors.primary : darkUI.labelMuted }}>Save</Text>
               </TouchableOpacity>
             </View>
-            {targets[0] && (
-              <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 6 }}>
+            {targets.length > 0 && (
+              <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 6, flexWrap: "wrap" }}>
                 <Text style={{ fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary }}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, gap: 6, borderWidth: 1, borderColor: darkUI.stroke }}>
-                  {targets[0].type === "group" && targets[0].imageUrl ? (
-                    <Image source={{ uri: targets[0].imageUrl }} style={{ width: 22, height: 22, borderRadius: 6 }} />
-                  ) : targets[0].type === "group" ? (
-                    <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
-                      <Ionicons name="people" size={13} color={darkUI.label} />
-                    </View>
-                  ) : (
-                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#4A6CF722", alignItems: "center", justifyContent: "center" }}>
-                      <Text style={{ fontSize: 9, fontFamily: font.bold, color: "#4A6CF7" }}>{targets[0].name.slice(0, 2).toUpperCase()}</Text>
-                    </View>
-                  )}
-                  <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{targets[0].name}</Text>
-                </View>
+                {targets.map((t, idx) => (
+                  <View key={t.key} style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingLeft: 10, paddingRight: targets.length > 1 ? 4 : 10, paddingVertical: 4, gap: 5, borderWidth: 1, borderColor: darkUI.stroke }}>
+                    {t.type === "group" && t.imageUrl ? (
+                      <Image source={{ uri: t.imageUrl }} style={{ width: 22, height: 22, borderRadius: 6 }} />
+                    ) : t.type === "group" ? (
+                      <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="people" size={13} color={darkUI.label} />
+                      </View>
+                    ) : (
+                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontSize: 9, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{t.name}</Text>
+                    {targets.length > 1 && (
+                      <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 2 }}>
+                        <Ionicons name="close-circle" size={15} color={darkUI.labelMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                {targets.every((t) => t.type === "friend") && (
+                  <TouchableOpacity
+                    onPress={() => setStep(1)}
+                    style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
@@ -959,7 +1092,7 @@ export default function AddExpenseScreen() {
                 >
                   <Text style={s.primaryBtnText}>Try again</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setStep(1); removeTarget(); }} style={{ marginTop: 14 }}>
+                <TouchableOpacity onPress={() => { setStep(1); removeAllTargets(); }} style={{ marginTop: 14 }}>
                   <Text style={[s.listRowSub, { color: colors.primary }]}>← Back to list</Text>
                 </TouchableOpacity>
               </View>
@@ -1475,7 +1608,7 @@ export default function AddExpenseScreen() {
               <Ionicons name="checkmark-circle" size={36} color="#3A7D44" />
               <Text style={s.sheetTitle}>Expense saved</Text>
               <Text style={s.sheetSub}>
-                ${total.toFixed(2)} · {description.trim() || "Expense"} · {targets[0]?.name}
+                ${total.toFixed(2)} · {description.trim() || "Expense"} · {targetLabel}
               </Text>
             </View>
 

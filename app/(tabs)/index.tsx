@@ -286,7 +286,7 @@ export default function BalancesPrototypeScreen() {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) void refetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) void refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { void refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);
@@ -548,7 +548,7 @@ export default function BalancesPrototypeScreen() {
                   <View key={f.key}>
                     <TouchableOpacity
                       style={styles.friendRow}
-                      onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
+                      onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key, source: "home" } })}
                       activeOpacity={0.75}
                     >
                       <MemberAvatar name={f.displayName} size={42} imageUrl={f.image_url ?? null} variant="soft" />
@@ -601,7 +601,7 @@ export default function BalancesPrototypeScreen() {
                       {i > 0 ? <View style={styles.rowSep} /> : null}
                       <TouchableOpacity
                         style={styles.groupRow}
-                        onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
+                        onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id, source: "home" } })}
                         activeOpacity={0.75}
                       >
                         {g.imageUrl ? (

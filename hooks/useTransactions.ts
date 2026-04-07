@@ -49,6 +49,7 @@ let _sharedLinked = false;
 let _sharedStatus: PlaidStatus = "ok";
 let _sharedHasLoaded = false;
 let _inflightPipeline: Promise<void> | null = null;
+let _inflightPost: Promise<Response> | null = null;
 let _lastPlaidPushAt = Date.now();
 let _transientRetryCount = 0;
 const _subscribers = new Set<() => void>();
@@ -191,12 +192,23 @@ export function useTransactions() {
     async (silent = true) => {
       await fetchData(silent);
       void (async () => {
+        if (_inflightPost) {
+          if (__DEV__) console.log("[pipeline:tx] ♻️ reusing inflight POST");
+          return;
+        }
         try {
-          await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
-          _lastPlaidPushAt = Date.now();
-          fetchData(true);
+          const postPromise = apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+          _inflightPost = postPromise;
+          const res = await postPromise;
+          _inflightPost = null;
+          if (res.ok) {
+            _lastPlaidPushAt = Date.now();
+            fetchData(true);
+          } else if (__DEV__) {
+            console.warn("[pipeline:tx] POST sync failed:", res.status);
+          }
         } catch {
-          // Sync may fail; cached data is already displayed
+          _inflightPost = null;
         }
       })();
     },
@@ -265,14 +277,22 @@ export function useTransactions() {
       if (!_sharedLinked) return;
       const now = Date.now();
       if (now - _lastPlaidPushAt < FOREGROUND_PLAID_PUSH_MIN_MS) return;
-      _lastPlaidPushAt = now;
+      if (_inflightPost) return;
       void (async () => {
         try {
           if (__DEV__) console.log("[pipeline:tx] foreground Plaid POST (refresh+sync)");
-          await apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
-          await fetchData(true);
+          const postPromise = apiFetch("/api/plaid/transactions", { method: "POST", body: {} as object });
+          _inflightPost = postPromise;
+          const res = await postPromise;
+          _inflightPost = null;
+          if (res.ok) {
+            _lastPlaidPushAt = Date.now();
+            await fetchData(true);
+          } else if (__DEV__) {
+            console.warn("[pipeline:tx] foreground POST failed:", res.status);
+          }
         } catch {
-          // Non-fatal — user already has DB snapshot from fetchData above
+          _inflightPost = null;
         }
       })();
     });

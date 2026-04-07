@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { useAuth } from "@clerk/expo";
+import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
@@ -15,6 +16,8 @@ function unauthResponse() {
 let _tokenPromise: Promise<string | null> | null = null;
 let _lastGoodToken: string | null = null;
 let _refreshPromise: Promise<string | null> | null = null;
+let _consecutive401s = 0;
+const MAX_CONSECUTIVE_401S = 4;
 
 let _rateLimitedUntil = 0;
 const _endpointBackoff = new Map<string, number>();
@@ -122,11 +125,19 @@ let _tokenKnownBadUntil = 0;
 /** Call this when a 401 is received — suppresses redundant calls for a short window. */
 export function markTokenBad() {
   _tokenKnownBadUntil = Date.now() + 3000;
+  _consecutive401s++;
+  if (_consecutive401s >= MAX_CONSECUTIVE_401S) {
+    if (__DEV__) console.warn(`[api] ${_consecutive401s} consecutive 401s — session likely dead, clearing cached token`);
+    _lastGoodToken = null;
+    _tokenPromise = null;
+    DeviceEventEmitter.emit("session-expired");
+  }
 }
 
 /** Call this when a fresh token is confirmed working. */
 export function markTokenGood() {
   _tokenKnownBadUntil = 0;
+  _consecutive401s = 0;
 }
 
 async function getTokenWithRetry(
@@ -324,6 +335,7 @@ export function useApiFetch() {
           if (response.status === 401) {
             markTokenBad();
             _tokenPromise = null;
+            let refreshed = false;
             const pending = _refreshPromise;
             if (pending) {
               const freshToken = await pending;
@@ -332,6 +344,7 @@ export function useApiFetch() {
                 const retry = await doFetch(freshToken);
                 if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
                 if (retry.ok) markTokenGood();
+                refreshed = retry.ok;
                 return retry;
               }
             } else {
@@ -350,8 +363,12 @@ export function useApiFetch() {
                 const retry = await doFetch(freshToken);
                 if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
                 if (retry.ok) markTokenGood();
+                refreshed = retry.ok;
                 return retry;
               }
+            }
+            if (!refreshed) {
+              _lastGoodToken = null;
             }
           }
 

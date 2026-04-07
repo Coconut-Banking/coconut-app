@@ -32,12 +32,20 @@ import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 /** Friend detail — aligned to `MobileAppPage` `FriendDetail` + existing settlement APIs */
 export default function PersonScreen() {
-  const { key } = useLocalSearchParams<{ key: string }>();
+  const { key, source } = useLocalSearchParams<{ key: string; source?: string }>();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { detail: realDetail, loading, refetch } = usePersonDetail(isDemoOn ? null : (key ?? null));
   const detail = isDemoOn && key ? demo.personDetails[key] ?? null : realDetail;
+
+  const goBack = useCallback(() => {
+    if (source === "home") {
+      router.replace("/(tabs)");
+    } else {
+      router.back();
+    }
+  }, [source]);
 
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,7 +86,7 @@ export default function PersonScreen() {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: colors.primaryLight }]} edges={["top"]}>
         <View style={s.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+          <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
             <Ionicons name="chevron-back" size={20} color={colors.primary} />
             <Text style={s.backText}>Back</Text>
           </TouchableOpacity>
@@ -91,7 +99,7 @@ export default function PersonScreen() {
           <Text style={{ fontFamily: font.regular, fontSize: 14, color: "#999", textAlign: "center", paddingHorizontal: 40 }}>
             This person may have been removed.
           </Text>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 10 }}>
+          <TouchableOpacity onPress={goBack} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: 10 }}>
             <Text style={{ fontFamily: font.semibold, fontSize: 15, color: "#fff" }}>Go back</Text>
           </TouchableOpacity>
         </View>
@@ -120,7 +128,7 @@ export default function PersonScreen() {
     if (isDemoOn && key) {
       sfx.coin();
       demo.settlePerson(key);
-      router.back();
+      goBack();
       return;
     }
     const summary =
@@ -153,7 +161,7 @@ export default function PersonScreen() {
               Alert.alert("Error", "Some settlements could not be recorded");
             } else {
               DeviceEventEmitter.emit("groups-updated");
-              router.back();
+              goBack();
             }
           } catch {
             Alert.alert("Error", "Could not record settlement");
@@ -234,7 +242,7 @@ export default function PersonScreen() {
     if (isDemoOn && key) {
       sfx.coin();
       demo.settlePerson(key);
-      router.back();
+      goBack();
       return;
     }
     setRecordingSettlement(true);
@@ -258,7 +266,7 @@ export default function PersonScreen() {
         Alert.alert("Error", "Some settlements could not be recorded");
       } else {
         DeviceEventEmitter.emit("groups-updated");
-        router.back();
+        goBack();
       }
     } catch {
       Alert.alert("Error", "Could not record settlement");
@@ -270,9 +278,9 @@ export default function PersonScreen() {
   return (
     <SafeAreaView style={s.container} edges={["top"]}>
       <View style={s.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+        <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
           <Ionicons name="chevron-back" size={20} color={colors.primary} />
-          <Text style={s.backText}>Friends</Text>
+          <Text style={s.backText}>{source === "home" ? "Home" : "Friends"}</Text>
         </TouchableOpacity>
       </View>
       <ScrollView

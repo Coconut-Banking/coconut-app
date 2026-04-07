@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -83,6 +83,20 @@ function AuthSwitch() {
     const showAuth = !isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn);
     console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} setup=${setupComplete} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : setupComplete || isDemoOn ? "TABS" : "SETUP"}`);
   }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
+
+  const signingOutRef = useRef(false);
+  useEffect(() => {
+    if (SKIP_AUTH) return;
+    const sub = DeviceEventEmitter.addListener("session-expired", () => {
+      if (!isSignedIn || signingOutRef.current) return;
+      signingOutRef.current = true;
+      console.warn("[AuthSwitch] session-expired event — signing out");
+      signOut?.()
+        .catch((e: unknown) => console.warn("[AuthSwitch] session-expired signOut failed:", e))
+        .finally(() => { signingOutRef.current = false; });
+    });
+    return () => sub.remove();
+  }, [isSignedIn, signOut]);
 
   useEffect(() => {
     if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || forceSignOutDone) return;
