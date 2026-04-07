@@ -151,25 +151,16 @@ function UploadStep({
   apiFetch: (path: string, opts?: object) => Promise<Response>;
 }) {
   const pickAndUpload = async (useCamera: boolean) => {
-    const { status: libStatus } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    const { status: camStatus } =
-      await ImagePicker.requestCameraPermissionsAsync();
-
     if (useCamera) {
-      if (camStatus !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Allow camera access to scan receipts."
-        );
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Allow camera access to scan receipts.");
         return;
       }
     } else {
-      if (libStatus !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Allow access to photos to scan receipts."
-        );
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Allow access to photos to scan receipts.");
         return;
       }
     }
