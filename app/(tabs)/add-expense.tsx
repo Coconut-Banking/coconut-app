@@ -190,7 +190,7 @@ export default function AddExpenseScreen() {
   const [showSettlement, setShowSettlement] = useState(false);
 
   // Step management (3-step flow)
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 3>(1);
   const [showPaidByPicker, setShowPaidByPicker] = useState(false);
   const [showSplitMethodPicker, setShowSplitMethodPicker] = useState(false);
   const [showSplitDetail, setShowSplitDetail] = useState(false);
@@ -263,11 +263,10 @@ export default function AddExpenseScreen() {
         if (prefillPersonKey && prefillPersonName) {
           const type = (prefillPersonType === "group" ? "group" : "friend") as "group" | "friend";
           setTargets([{ type, key: prefillPersonKey, name: prefillPersonName }]);
-          setStep(2);
         } else {
           setTargets([]);
-          setStep(1);
         }
+        setStep(1);
       }
     }
     if (prefillDesc !== undefined) {
@@ -370,7 +369,7 @@ export default function AddExpenseScreen() {
   const selectedKeys = new Set(targets.map((t) => t.key));
   const noApiMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
   const noMatches = noApiMatches && filteredDeviceContacts.length === 0;
-  const showDropdown = searchFocused && (q.length > 0 || targets.length === 0);
+  const showPicker = targets.length === 0 || (searchFocused && q.length > 0);
 
   const myMemberId = useMemo(() => {
     const byAuth = groupMembers.find((m) => m.user_id && m.user_id === userId)?.id;
@@ -483,34 +482,11 @@ export default function AddExpenseScreen() {
             if (cancelled) return;
             if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
             const sg = data.sharedGroups as { id: string; name: string; memberCount: number }[] | undefined;
-            const twoPersonGroup = sg?.find((g) => g.memberCount === 2);
-            gid = twoPersonGroup?.id ?? null;
-
-            if (!gid && sg && sg.length > 0) {
-              const friendName = data.displayName ?? t.name;
-              const friendEmail = data.email ?? null;
-              const friendUserId = t.key?.startsWith("user_") ? t.key : null;
-              try {
-                const groupRes = await apiFetch("/api/groups", {
-                  method: "POST",
-                  body: { name: friendName, ownerDisplayName: "You", group_type: "friend" } as object,
-                });
-                const group = await groupRes.json();
-                if (cancelled) return;
-                if (groupRes.ok && group.id) {
-                  const memberBody: Record<string, string> = { displayName: friendName };
-                  if (friendEmail) memberBody.email = friendEmail;
-                  if (friendUserId) memberBody.userId = friendUserId;
-                  await apiFetch(`/api/groups/${group.id}/members`, {
-                    method: "POST",
-                    body: memberBody as object,
-                  });
-                  gid = group.id;
-                }
-              } catch { /* fall through to existing group */ }
-            }
-
-            gid = gid ?? sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
+            // sharedGroups is sorted by memberCount ascending, so sg[0] is the
+            // smallest (a 2-member 1:1 group if one exists, otherwise the next
+            // smallest). personKey on the backend ensures the split is only
+            // between the two people regardless of the group size.
+            gid = sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
             if (!gid) { if (!cancelled) { setError("No shared group with this person yet"); setResolving(false); } return; }
             _friendGroupCache.set(t.key, gid);
           }
@@ -630,19 +606,16 @@ export default function AddExpenseScreen() {
 
     if (t.type === "group") {
       setTargets([t]);
-      setStep(2);
       return;
     }
 
-    // Friends: toggle (add/remove). Reading current targets to decide step.
-    const wasSelected = targets.some((p) => p.key === t.key);
+    // Friends: toggle (add/remove).
     setTargets((prev) => {
       if (prev.some((p) => p.type === "group")) return [t];
-      if (wasSelected) return prev.filter((p) => p.key !== t.key);
+      if (prev.some((p) => p.key === t.key)) return prev.filter((p) => p.key !== t.key);
       return [...prev, t];
     });
-    if (!wasSelected) setStep(2);
-  }, [targets]);
+  }, []);
 
   const removeOneTarget = useCallback((key: string) => {
     setTargets((prev) => prev.filter((p) => p.key !== key));
@@ -656,16 +629,15 @@ export default function AddExpenseScreen() {
     setSplitExpanded(false);
   }, []);
 
-  // If all targets are removed while on step 2, go back to step 1
+  // Reset group state when all targets are removed
   useEffect(() => {
-    if (step === 2 && targets.length === 0) {
+    if (targets.length === 0) {
       setResolvedGroupId(null);
       setGroupMembers([]);
       setCustomSplits({});
       setSplitExpanded(false);
-      setStep(1);
     }
-  }, [step, targets.length]);
+  }, [targets.length]);
 
   const pickSplit = useCallback(
     (m: SplitMethod) => {
@@ -832,8 +804,6 @@ export default function AddExpenseScreen() {
     );
   }
 
-  const canReview = total > 0 && description.trim().length > 0 && resolvedGroupId && splitValid;
-
   const oweList = (() => {
     const effPayer = paidByMe ? (myMemberId ?? groupMembers[0]?.id ?? null) : payerMemberId;
     if (!effPayer) return [];
@@ -850,382 +820,339 @@ export default function AddExpenseScreen() {
     <SafeAreaView style={s.root}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
 
-        {/* ══════════ STEP 1: With whom? ══════════ */}
-        {step === 1 && (
+        {/* ══════════ COMPOSE VIEW (unified picker + form) ══════════ */}
+        {step < 3 && (
           <>
-            <View style={s.header}>
-              <TouchableOpacity onPress={() => targets.length > 0 ? setStep(2) : nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
-                <Ionicons name={targets.length > 0 ? "arrow-back" : "close"} size={22} color={darkUI.labelSecondary} />
-              </TouchableOpacity>
-              <Text style={s.headerTitle}>{targets.length > 0 ? "Add people" : "With whom?"}</Text>
-              {targets.length > 0 ? (
-                <TouchableOpacity onPress={() => setStep(2)} hitSlop={12} style={s.headerSide}>
-                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: colors.primary }}>Done</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={s.headerSide} />
-              )}
-            </View>
-
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-              {/* Selected targets as removable chips */}
-              {targets.length > 0 && (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                  {targets.map((t, idx) => (
-                    <View key={t.key} style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingLeft: 10, paddingRight: 4, paddingVertical: 4, gap: 5, borderWidth: 1, borderColor: darkUI.stroke }}>
-                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
-                        <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
-                      </View>
-                      <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{t.name}</Text>
-                      <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 2 }}>
-                        <Ionicons name="close-circle" size={15} color={darkUI.labelMuted} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Search */}
-              <View style={s.searchBar}>
-                <Ionicons name="search" size={16} color={darkUI.labelMuted} />
-                <TextInput
-                  ref={searchInputRef}
-                  style={s.searchInput}
-                  value={query}
-                  onChangeText={setQuery}
-                  onFocus={() => setSearchFocused(true)}
-                  placeholder="Search name or group"
-                  placeholderTextColor={darkUI.labelMuted}
-                  autoCorrect={false}
-                  maxLength={200}
-                />
-                {query.length > 0 && (
-                  <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
-                    <Ionicons name="close-circle" size={16} color={darkUI.labelMuted} />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Inline loading shimmer when first fetch is in progress */}
-              {loading && !summary && (
-                <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                  <ActivityIndicator size="small" color={darkUI.labelMuted} />
-                  <Text style={[s.listRowSub, { marginTop: 8 }]}>Loading your groups…</Text>
-                </View>
-              )}
-
-              {/* Friends */}
-              {filteredFriends.length > 0 && (
-                <>
-                  <Text style={s.secLabel}>Friends</Text>
-                  <View style={s.listCard}>
-                    {filteredFriends.map((f, i) => {
-                      const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
-                      const isGroupBackedFriend = !!groupBackedId;
-                      const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
-                      const on = selectedKeys.has(targetKey);
-                      const hue = ACCENT[i % ACCENT.length];
-                      return (
-                        <TouchableOpacity
-                          key={f.key}
-                          style={[s.listRow, i < filteredFriends.length - 1 && s.listRowBorder]}
-                          onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
-                            <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
-                          </View>
-                          <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
-                          <View style={[s.radio, on && s.radioOn]}>
-                            {on && <View style={s.radioDot} />}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
-
-              {/* Groups */}
-              {filteredGroups.length > 0 && (
-                <>
-                  <Text style={[s.secLabel, { marginTop: 16 }]}>Groups</Text>
-                  <View style={s.listCard}>
-                    {filteredGroups.map((g, i) => {
-                      const imageUrl = (g as { imageUrl?: string | null }).imageUrl ?? null;
-                      return (
-                        <TouchableOpacity
-                          key={g.id}
-                          style={[s.listRow, i < filteredGroups.length - 1 && s.listRowBorder]}
-                          onPress={() => selectTarget({ type: "group", key: g.id, name: g.name, imageUrl })}
-                          activeOpacity={0.7}
-                        >
-                          {imageUrl ? (
-                            <Image source={{ uri: imageUrl }} style={s.groupIconImg} />
-                          ) : (
-                            <View style={s.groupEmoji}>
-                              <Ionicons name="people" size={22} color={darkUI.label} />
-                            </View>
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text style={s.listRowTitle}>{g.name}</Text>
-                            <Text style={s.listRowSub}>{g.memberCount} people</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={darkUI.labelMuted} />
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
-
-              {/* Device contacts */}
-              {contactsPerm === "granted" && filteredDeviceContacts.length > 0 && (
-                <>
-                  <Text style={[s.secLabel, { marginTop: 16 }]}>From your contacts</Text>
-                  <View style={s.listCard}>
-                    {filteredDeviceContacts.map((c, i) => (
-                      <TouchableOpacity
-                        key={`dc-${c.id}`}
-                        style={[s.listRow, i < filteredDeviceContacts.length - 1 && s.listRowBorder]}
-                        onPress={() => startAddFriend(c)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
-                          <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.listRowTitle}>{c.name}</Text>
-                          {c.email ? (
-                            <Text style={s.listRowSub}>{c.email}</Text>
-                          ) : c.phone ? (
-                            <Text style={s.listRowSub}>{c.phone}</Text>
-                          ) : null}
-                        </View>
-                        <Ionicons name="person-add-outline" size={16} color={darkUI.labelMuted} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {contactsPerm === "undetermined" && q.length > 0 && filteredFriends.length === 0 && (
-                <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={requestContactsAccess}>
-                  <Ionicons name="people-circle-outline" size={20} color={colors.primary} />
-                  <Text style={s.addFriendTxt}>Search your contacts</Text>
-                  <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} />
-                </TouchableOpacity>
-              )}
-
-              {noMatches && (
-                <TouchableOpacity style={s.addFriendRow} onPress={() => startAddFriend()}>
-                  <Ionicons name="person-add" size={18} color={colors.primary} />
-                  <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
-                </TouchableOpacity>
-              )}
-              {!noMatches && q.length > 1 && (
-                <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={() => startAddFriend()}>
-                  <Ionicons name="person-add" size={18} color={colors.primary} />
-                  <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-          </>
-        )}
-
-        {/* ══════════ STEP 2: Enter details ══════════ */}
-        {step === 2 && (
-          <>
+            {/* Header: X | Title | Save */}
             <View style={s.header}>
               <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
                 <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Add an expense</Text>
-              <TouchableOpacity onPress={() => canReview && setStep(3)} hitSlop={12} style={s.headerSide} disabled={!canReview}>
-                <Text style={{ fontFamily: font.bold, fontSize: 15, color: canReview ? colors.primary : darkUI.labelMuted }}>Save</Text>
+              <TouchableOpacity
+                onPress={async () => {
+                  await save();
+                  if (savedRef.current) {
+                    setJustSaved(true);
+                    setTimeout(() => { resetForm(); nav.replace("/(tabs)"); }, 650);
+                  }
+                }}
+                hitSlop={12}
+                style={s.headerSide}
+                disabled={!canSave || saving || justSaved}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : justSaved ? (
+                  <Ionicons name="checkmark-circle" size={22} color="#3A7D44" />
+                ) : (
+                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: canSave ? colors.primary : darkUI.labelMuted }}>Save</Text>
+                )}
               </TouchableOpacity>
             </View>
-            {targets.length > 0 && (
-              <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 8, gap: 6, flexWrap: "wrap" }}>
-                <Text style={{ fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary }}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
+
+            {/* Person row: With you and: [chips] [inline search input] */}
+            <View style={s.withRow}>
+              <Text style={s.withLabel}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
+              <View style={s.withChipsWrap}>
                 {targets.map((t, idx) => (
-                  <View key={t.key} style={{ flexDirection: "row", alignItems: "center", backgroundColor: darkUI.bgElevated, borderRadius: 16, paddingLeft: 10, paddingRight: targets.length > 1 ? 4 : 10, paddingVertical: 4, gap: 5, borderWidth: 1, borderColor: darkUI.stroke }}>
+                  <View key={t.key} style={s.withChip}>
                     {t.type === "group" && t.imageUrl ? (
-                      <Image source={{ uri: t.imageUrl }} style={{ width: 22, height: 22, borderRadius: 6 }} />
+                      <Image source={{ uri: t.imageUrl }} style={{ width: 20, height: 20, borderRadius: 5 }} />
                     ) : t.type === "group" ? (
-                      <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="people" size={13} color={darkUI.label} />
+                      <View style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="people" size={11} color={darkUI.label} />
                       </View>
                     ) : (
-                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
-                        <Text style={{ fontSize: 9, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
                       </View>
                     )}
                     <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{t.name}</Text>
-                    {targets.length > 1 && (
-                      <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 2 }}>
-                        <Ionicons name="close-circle" size={15} color={darkUI.labelMuted} />
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 1 }}>
+                      <Ionicons name="close-circle" size={14} color={darkUI.labelMuted} />
+                    </TouchableOpacity>
                   </View>
                 ))}
-                {targets.every((t) => t.type === "friend") && (
-                  <TouchableOpacity
-                    onPress={() => setStep(1)}
-                    style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="add" size={16} color={colors.primary} />
+                <TextInput
+                  ref={searchInputRef}
+                  style={s.inlineSearchInput}
+                  value={query}
+                  onChangeText={setQuery}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => { if (!query) setSearchFocused(false); }}
+                  placeholder={targets.length === 0 ? "Search name or group" : ""}
+                  placeholderTextColor={darkUI.labelMuted}
+                  autoCorrect={false}
+                  maxLength={200}
+                />
+              </View>
+            </View>
+            <View style={s.withDivider} />
+
+            {/* Body: contact picker OR expense form */}
+            {showPicker ? (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+                {loading && !summary && (
+                  <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                    <ActivityIndicator size="small" color={darkUI.labelMuted} />
+                    <Text style={[s.listRowSub, { marginTop: 8 }]}>Loading your groups…</Text>
+                  </View>
+                )}
+
+                {filteredFriends.length > 0 && (
+                  <>
+                    <Text style={s.secLabel}>Friends</Text>
+                    <View style={s.listCard}>
+                      {filteredFriends.map((f, i) => {
+                        const groupBackedId = syntheticGroupIdFromFriendKey(f.key);
+                        const isGroupBackedFriend = !!groupBackedId;
+                        const targetKey = isGroupBackedFriend ? groupBackedId : f.key;
+                        const on = selectedKeys.has(targetKey);
+                        const hue = ACCENT[i % ACCENT.length];
+                        return (
+                          <TouchableOpacity
+                            key={f.key}
+                            style={[s.listRow, i < filteredFriends.length - 1 && s.listRowBorder]}
+                            onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                              <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
+                            </View>
+                            <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
+                            <View style={[s.radio, on && s.radioOn]}>
+                              {on && <View style={s.radioDot} />}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+
+                {filteredGroups.length > 0 && (
+                  <>
+                    <Text style={[s.secLabel, { marginTop: 16 }]}>Groups</Text>
+                    <View style={s.listCard}>
+                      {filteredGroups.map((g, i) => {
+                        const imageUrl = (g as { imageUrl?: string | null }).imageUrl ?? null;
+                        return (
+                          <TouchableOpacity
+                            key={g.id}
+                            style={[s.listRow, i < filteredGroups.length - 1 && s.listRowBorder]}
+                            onPress={() => selectTarget({ type: "group", key: g.id, name: g.name, imageUrl })}
+                            activeOpacity={0.7}
+                          >
+                            {imageUrl ? (
+                              <Image source={{ uri: imageUrl }} style={s.groupIconImg} />
+                            ) : (
+                              <View style={s.groupEmoji}>
+                                <Ionicons name="people" size={22} color={darkUI.label} />
+                              </View>
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.listRowTitle}>{g.name}</Text>
+                              <Text style={s.listRowSub}>{g.memberCount} people</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={darkUI.labelMuted} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+
+                {contactsPerm === "granted" && filteredDeviceContacts.length > 0 && (
+                  <>
+                    <Text style={[s.secLabel, { marginTop: 16 }]}>From your contacts</Text>
+                    <View style={s.listCard}>
+                      {filteredDeviceContacts.map((c, i) => (
+                        <TouchableOpacity
+                          key={`dc-${c.id}`}
+                          style={[s.listRow, i < filteredDeviceContacts.length - 1 && s.listRowBorder]}
+                          onPress={() => startAddFriend(c)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
+                            <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.listRowTitle}>{c.name}</Text>
+                            {c.email ? <Text style={s.listRowSub}>{c.email}</Text> : c.phone ? <Text style={s.listRowSub}>{c.phone}</Text> : null}
+                          </View>
+                          <Ionicons name="person-add-outline" size={16} color={darkUI.labelMuted} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {contactsPerm === "undetermined" && q.length > 0 && filteredFriends.length === 0 && (
+                  <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={requestContactsAccess}>
+                    <Ionicons name="people-circle-outline" size={20} color={colors.primary} />
+                    <Text style={s.addFriendTxt}>Search your contacts</Text>
+                    <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} />
                   </TouchableOpacity>
                 )}
-              </View>
-            )}
 
-            {error ? (
+                {noMatches && (
+                  <TouchableOpacity style={s.addFriendRow} onPress={() => startAddFriend()}>
+                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
+                  </TouchableOpacity>
+                )}
+                {!noMatches && q.length > 1 && (
+                  <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={() => startAddFriend()}>
+                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            ) : error ? (
               <View style={s.center}>
                 <Ionicons name="cloud-offline-outline" size={40} color={darkUI.labelMuted} />
                 <Text style={[s.err, { marginTop: 12, marginBottom: 16 }]}>{error}</Text>
-                <TouchableOpacity
-                  style={s.primaryBtn}
-                  onPress={() => { setError(null); setRetryCount((n) => n + 1); }}
-                  activeOpacity={0.85}
-                >
+                <TouchableOpacity style={s.primaryBtn} onPress={() => { setError(null); setRetryCount((n) => n + 1); }} activeOpacity={0.85}>
                   <Text style={s.primaryBtnText}>Try again</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setStep(1); removeAllTargets(); }} style={{ marginTop: 14 }}>
+                <TouchableOpacity onPress={removeAllTargets} style={{ marginTop: 14 }}>
                   <Text style={[s.listRowSub, { color: colors.primary }]}>← Back to list</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-                {/* Bank transaction context card */}
-                {prefillBankDate ? (
-                  <View style={s.bankContextCard}>
-                    <Ionicons name="card-outline" size={16} color={darkUI.labelSecondary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.bankContextMerchant} numberOfLines={1}>{description || prefillDesc || "Purchase"}</Text>
-                      <Text style={s.bankContextMeta}>
-                        {prefillBankDate}{prefillBankCategory ? ` · ${prefillBankCategory.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}` : ""}
-                      </Text>
-                    </View>
-                    <Text style={s.bankContextAmt}>${amount || prefillAmount || "0.00"}</Text>
-                  </View>
-                ) : null}
-
-                {/* Description */}
-                <Text style={s.secLabel}>Description</Text>
-                <TextInput
-                  ref={descInputRef}
-                  style={s.textField}
-                  value={description}
-                  onChangeText={(t) => { setDescription(t); setError(null); }}
-                  placeholder="What's this for?"
-                  placeholderTextColor={darkUI.labelMuted}
-                  returnKeyType="next"
-                  maxLength={500}
-                />
-
-                <Text style={[s.secLabel, { marginTop: 16 }]}>Category</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  nestedScrollEnabled
-                  contentContainerStyle={s.categoryChipsContent}
-                  style={s.categoryChipsScroll}
-                >
-                  {EXPENSE_CATEGORIES.map((c) => {
-                    const selected = category === c.label;
-                    return (
-                      <TouchableOpacity
-                        key={c.label}
-                        style={[s.categoryChip, selected && s.categoryChipSelected]}
-                        onPress={() => {
-                          sfx.toggle();
-                          setCategory(selected ? null : c.label);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons
-                          name={c.icon}
-                          size={16}
-                          color={selected ? colors.primary : darkUI.labelSecondary}
-                        />
-                        <Text style={[s.categoryChipLabel, selected && s.categoryChipLabelSelected]} numberOfLines={1}>
-                          {c.label}
+              <>
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={s.compactForm} keyboardShouldPersistTaps="handled">
+                  {prefillBankDate ? (
+                    <View style={s.bankContextCard}>
+                      <Ionicons name="card-outline" size={16} color={darkUI.labelSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.bankContextMerchant} numberOfLines={1}>{description || prefillDesc || "Purchase"}</Text>
+                        <Text style={s.bankContextMeta}>
+                          {prefillBankDate}{prefillBankCategory ? ` · ${prefillBankCategory.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}` : ""}
                         </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                      </View>
+                      <Text style={s.bankContextAmt}>${amount || prefillAmount || "0.00"}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Description row with icon */}
+                  <View style={s.compactRow}>
+                    <View style={s.compactIcon}>
+                      <Ionicons name="receipt-outline" size={20} color={darkUI.labelMuted} />
+                    </View>
+                    <TextInput
+                      ref={descInputRef}
+                      style={s.compactDescInput}
+                      value={description}
+                      onChangeText={(t) => { setDescription(t); setError(null); }}
+                      onFocus={() => setSearchFocused(false)}
+                      placeholder="Enter a description"
+                      placeholderTextColor={darkUI.labelMuted}
+                      returnKeyType="next"
+                      maxLength={500}
+                    />
+                  </View>
+                  <View style={s.compactSep} />
+
+                  {/* Amount row */}
+                  <View style={s.compactRow}>
+                    <View style={s.compactIcon}>
+                      <Text style={{ fontSize: 18, fontFamily: font.bold, color: darkUI.labelMuted }}>{currSymbol}</Text>
+                    </View>
+                    <TextInput
+                      style={s.compactAmountInput}
+                      value={amount}
+                      onChangeText={(t) => { setAmount(t.replace(/[^0-9.]/g, "")); setError(null); }}
+                      onFocus={() => setSearchFocused(false)}
+                      placeholder="0.00"
+                      placeholderTextColor={darkUI.labelMuted}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                      maxLength={20}
+                    />
+                  </View>
+                  <View style={s.compactSep} />
+
+                  {/* Paid by + split chip */}
+                  {resolving ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, gap: 8 }}>
+                      <ActivityIndicator size="small" color={darkUI.labelMuted} />
+                      <Text style={s.paidSplitTxt}>Loading split…</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={s.splitChipRow}
+                      onPress={() => setShowSplitMethodPicker(true)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={s.splitChipText}>
+                        Paid by{" "}
+                        <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{payerDisplay}</Text>
+                        {" "}and{" "}
+                        <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{splitDisplay}</Text>
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
+                    <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
+                  )}
+
+                  {/* Category chips */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                    contentContainerStyle={[s.categoryChipsContent, { marginTop: 20 }]}
+                    style={s.categoryChipsScroll}
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => {
+                      const selected = category === c.label;
+                      return (
+                        <TouchableOpacity
+                          key={c.label}
+                          style={[s.categoryChip, selected && s.categoryChipSelected]}
+                          onPress={() => { sfx.toggle(); setCategory(selected ? null : c.label); }}
+                          activeOpacity={0.75}
+                        >
+                          <Ionicons name={c.icon} size={16} color={selected ? colors.primary : darkUI.labelSecondary} />
+                          <Text style={[s.categoryChipLabel, selected && s.categoryChipLabelSelected]} numberOfLines={1}>{c.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
                 </ScrollView>
 
-                <Text style={[s.secLabel, { marginTop: 16 }]}>Notes</Text>
-                <TextInput
-                  style={s.notesField}
-                  value={notes}
-                  onChangeText={(t) => { setNotes(t); setError(null); }}
-                  placeholder="Add a note (optional)"
-                  placeholderTextColor={darkUI.labelMuted}
-                  multiline
-                  numberOfLines={2}
-                  textAlignVertical="top"
-                  maxLength={2000}
-                />
-
-                {/* Amount */}
-                <Text style={[s.secLabel, { marginTop: 16 }]}>Amount</Text>
-                <View style={s.amountField}>
-                  <Text style={s.amountPrefix}>{currSymbol}</Text>
-                  <TextInput
-                    style={s.amountFieldInput}
-                    value={amount}
-                    onChangeText={(t) => { setAmount(t.replace(/[^0-9.]/g, "")); setError(null); }}
-                    placeholder="0.00"
-                    placeholderTextColor={darkUI.labelMuted}
-                    keyboardType="decimal-pad"
-                    returnKeyType="done"
-                    maxLength={20}
-                  />
+                {/* Bottom toolbar */}
+                <View style={s.bottomBar}>
+                  <View style={s.bottomBarItem}>
+                    <Ionicons name="calendar-outline" size={16} color={darkUI.labelSecondary} />
+                    <Text style={s.bottomBarText}>Today</Text>
+                  </View>
+                  <View style={s.bottomBarItem}>
+                    <Ionicons name="people-outline" size={16} color={darkUI.labelSecondary} />
+                    <Text style={s.bottomBarText} numberOfLines={1}>
+                      {targets.length > 0 && targets[0].type === "group" ? targets[0].name : "No group"}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }} />
+                  <TouchableOpacity style={s.bottomBarIcon} activeOpacity={0.7}>
+                    <Ionicons name="camera-outline" size={20} color={darkUI.labelSecondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.bottomBarIcon}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      const notesEl = descInputRef.current;
+                      if (notesEl) notesEl.focus();
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={20} color={darkUI.labelSecondary} />
+                  </TouchableOpacity>
                 </View>
-
-                {/* Paid by + split method */}
-                {resolving ? (
-                  <View style={[s.paidSplitRow, { justifyContent: "center" }]}>
-                    <ActivityIndicator size="small" color={darkUI.labelMuted} />
-                    <Text style={[s.paidSplitTxt, { marginLeft: 8 }]}>Loading split details…</Text>
-                  </View>
-                ) : (
-                  <View style={s.paidSplitRow}>
-                    <Text style={s.paidSplitTxt}>Paid by </Text>
-                    <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowPaidByPicker(true)}>
-                      <Text style={s.paidSplitChipTxt}>{payerDisplay}</Text>
-                    </TouchableOpacity>
-                    <Text style={s.paidSplitTxt}> and split </Text>
-                    <TouchableOpacity style={s.paidSplitChip} onPress={() => setShowSplitMethodPicker(true)}>
-                      <Text style={s.paidSplitChipTxt}>{splitDisplay.replace("split ", "")}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
-                  <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
-                )}
-
-                {error ? <Text style={s.err}>{error}</Text> : null}
-              </ScrollView>
-            )}
-
-            {!resolving && !error && (
-              <View style={s.footer}>
-                <TouchableOpacity
-                  style={[s.primaryBtn, !canReview && { opacity: 0.5 }]}
-                  onPress={() => canReview && setStep(3)}
-                  disabled={!canReview}
-                  activeOpacity={0.85}
-                >
-                  <Text style={s.primaryBtnText}>Review summary →</Text>
-                </TouchableOpacity>
-              </View>
+              </>
             )}
           </>
         )}
@@ -1234,7 +1161,7 @@ export default function AddExpenseScreen() {
         {step === 3 && (
           <>
             <View style={s.header}>
-              <TouchableOpacity onPress={() => setStep(2)} hitSlop={12} style={s.headerSide}>
+              <TouchableOpacity onPress={() => setStep(1)} hitSlop={12} style={s.headerSide}>
                 <Ionicons name="chevron-back" size={22} color={darkUI.labelSecondary} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Summary</Text>
@@ -1703,6 +1630,43 @@ const s = StyleSheet.create({
   // Add friend row
   addFriendRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16 },
   addFriendTxt: { fontFamily: font.semibold, fontSize: 15, color: colors.primary },
+
+  // Unified compose: person row
+  withRow: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 20, paddingVertical: 10, gap: 6 },
+  withLabel: { fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary, lineHeight: 26 },
+  withChipsWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  withChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: darkUI.bgElevated, borderRadius: 14,
+    paddingLeft: 8, paddingRight: 4, paddingVertical: 3,
+    borderWidth: 1, borderColor: darkUI.stroke,
+  },
+  inlineSearchInput: { flex: 1, minWidth: 80, fontSize: 14, fontFamily: font.regular, color: darkUI.label, paddingVertical: 2 },
+  withDivider: { height: 1, backgroundColor: darkUI.sep, marginHorizontal: 20 },
+
+  // Unified compose: compact form
+  compactForm: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
+  compactRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  compactIcon: { width: 32, alignItems: "center", justifyContent: "center" },
+  compactDescInput: { flex: 1, fontSize: 16, fontFamily: font.semibold, color: darkUI.label },
+  compactSep: { height: 1, backgroundColor: darkUI.sep, marginLeft: 44 },
+  compactAmountInput: { flex: 1, fontSize: 28, fontFamily: font.bold, color: darkUI.label },
+
+  splitChipRow: {
+    alignSelf: "center", marginTop: 20, paddingVertical: 10, paddingHorizontal: 16,
+    backgroundColor: darkUI.card, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
+  },
+  splitChipText: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary },
+
+  // Bottom toolbar
+  bottomBar: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: 20, paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: darkUI.sep,
+  },
+  bottomBarItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  bottomBarText: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary, maxWidth: 120 },
+  bottomBarIcon: { padding: 6 },
 
   // Step 2: text field
   textField: {
