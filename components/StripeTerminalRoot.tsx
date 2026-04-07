@@ -29,16 +29,20 @@ export function StripeTerminalRoot({ children }: { children: ReactElement | Reac
         }
         if (i < 4) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
       }
+      if (!token) throw new Error("No auth token — cannot fetch Stripe Terminal connection token");
       const url = API_URL.replace(/\/$/, "");
       const res = await fetch(`${url}/api/stripe/terminal/connection-token`, {
         method: "POST",
         headers: {
-          Authorization: token ? `Bearer ${token}` : "",
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? "Failed to get connection token");
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
       if (!data.secret) throw new Error("No connection token");
       return data.secret;
     } catch (e) {

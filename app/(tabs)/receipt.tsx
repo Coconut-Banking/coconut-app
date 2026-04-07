@@ -169,10 +169,13 @@ export default function ReceiptScreen() {
 function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> }) {
   const { theme } = useTheme();
   const pick = async (camera: boolean) => {
-    const { status: lib } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    const { status: cam } = await ImagePicker.requestCameraPermissionsAsync();
-    if (camera && cam !== "granted") { Alert.alert("Permission needed", "Allow camera access."); return; }
-    if (!camera && lib !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+    if (camera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") { Alert.alert("Permission needed", "Allow camera access."); return; }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+    }
     const pickerOpts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ["images"],
       quality: 0.85,
