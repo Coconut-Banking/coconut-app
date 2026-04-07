@@ -380,7 +380,23 @@ export default function AddExpenseScreen() {
     return null;
   }, [groupMembers, userId, isDemoOn]);
 
-  const splitPeople = useMemo(() => groupMembers.map((m) => ({ key: m.id, name: m.display_name })), [groupMembers]);
+  const splitPeople = useMemo(() => {
+    const isSingleFriend = targets.length === 1 && targets[0].type === "friend";
+    if (isSingleFriend && myMemberId && groupMembers.length > 2) {
+      const me = groupMembers.find((m) => m.id === myMemberId);
+      const friendName = targets[0].name.toLowerCase();
+      const them = groupMembers.find(
+        (m) => m.id !== myMemberId && m.display_name.toLowerCase() === friendName
+      );
+      if (me && them) {
+        return [
+          { key: me.id, name: me.display_name },
+          { key: them.id, name: them.display_name },
+        ];
+      }
+    }
+    return groupMembers.map((m) => ({ key: m.id, name: m.display_name }));
+  }, [groupMembers, targets, myMemberId]);
 
   const total = parseFloat(amount) || 0;
 
@@ -481,13 +497,39 @@ export default function AddExpenseScreen() {
             const data = await res.json();
             if (cancelled) return;
             if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
-            const sg = data.sharedGroups as { id: string; name: string; memberCount: number }[] | undefined;
-            // sharedGroups is sorted by memberCount ascending, so sg[0] is the
-            // smallest (a 2-member 1:1 group if one exists, otherwise the next
-            // smallest). personKey on the backend ensures the split is only
-            // between the two people regardless of the group size.
-            gid = sg?.[0]?.id ?? (data.sharedGroupIds as string[] | undefined)?.[0] ?? null;
-            if (!gid) { if (!cancelled) { setError("No shared group with this person yet"); setResolving(false); } return; }
+            const sg = data.sharedGroups as { id: string; name: string; memberCount: number; groupType?: string | null }[] | undefined;
+
+            // Prefer a dedicated 1:1 friend group — NOT trip/household groups
+            // that happen to have only 2 members
+            const friendGroup = sg?.find((g) => g.groupType === "friend" && g.memberCount === 2);
+            gid = friendGroup?.id ?? null;
+
+            if (!gid) {
+              // No dedicated friend group exists — create one
+              const friendName = data.displayName ?? t.name;
+              const friendEmail = data.email ?? null;
+              const friendUserId = t.key?.startsWith("user_") ? t.key : null;
+              try {
+                const groupRes = await apiFetch("/api/groups", {
+                  method: "POST",
+                  body: { name: friendName, ownerDisplayName: "You", group_type: "friend" } as object,
+                });
+                const group = await groupRes.json();
+                if (cancelled) return;
+                if (groupRes.ok && group.id) {
+                  const memberBody: Record<string, string> = { displayName: friendName };
+                  if (friendEmail) memberBody.email = friendEmail;
+                  if (friendUserId) memberBody.userId = friendUserId;
+                  await apiFetch(`/api/groups/${group.id}/members`, {
+                    method: "POST",
+                    body: memberBody as object,
+                  });
+                  gid = group.id;
+                }
+              } catch { /* fall through */ }
+            }
+
+            if (!gid) { if (!cancelled) { setError("Could not create shared group"); setResolving(false); } return; }
             _friendGroupCache.set(t.key, gid);
           }
         }
