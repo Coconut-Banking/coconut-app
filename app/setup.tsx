@@ -118,6 +118,14 @@ export default function SetupScreen() {
     markSetupComplete();
   };
 
+  const goBack = () => {
+    if (currentStep > 0) {
+      const prev = currentStep - 1;
+      _savedSetupStep = prev;
+      setCurrentStep(prev);
+    }
+  };
+
   const goNext = () => {
     if (currentStep < TOTAL_STEPS - 1) {
       const next = currentStep + 1;
@@ -156,6 +164,21 @@ export default function SetupScreen() {
         />
       </View>
 
+      {/* Nav row */}
+      <View style={styles.navRow}>
+        <TouchableOpacity
+          onPress={goBack}
+          style={[styles.navBtn, currentStep === 0 && { opacity: 0 }]}
+          disabled={currentStep === 0}
+          hitSlop={12}
+        >
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={goNext} style={styles.navBtn} hitSlop={12}>
+          <Text style={[styles.navSkip, { color: theme.textTertiary }]}>Skip</Text>
+        </TouchableOpacity>
+      </View>
+
       {step === "bank" && <BankStep onDone={goNext} onSkip={goNext} />}
       {step === "splitwise" && <SplitwiseStep onDone={goNext} onSkip={goNext} />}
       {step === "tap-to-pay" && <TapToPayStep onContinue={goNext} />}
@@ -174,6 +197,8 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
   const toast = useToast();
   const [connecting, setConnecting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [linkedCount, setLinkedCount] = useState(0);
+  const [isDuplicate, setIsDuplicate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const connectBank = async () => {
@@ -198,8 +223,8 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
         const linked = await pollPlaidStatus(apiFetch);
         if (linked) {
           setSuccess(true);
+          setLinkedCount((c) => c + 1);
           toast.show("Bank connected!", "success");
-          setTimeout(onDone, 1200);
         } else {
           setError("Bank connection not detected. Please try again.");
         }
@@ -239,16 +264,23 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
           });
           if (!exchangeRes.ok) {
             const data = await exchangeRes.json().catch(() => ({}));
+            if ((data as { code?: string }).code === "DUPLICATE_INSTITUTION") {
+              setIsDuplicate(true);
+              setSuccess(true);
+              setConnecting(false);
+              toast.show("Already connected!", "success");
+              return;
+            }
             setError((data as { error?: string }).error ?? "Failed to connect bank");
             setConnecting(false);
             return;
           }
 
-          // 4. Success!
+          // 4. Success — let user add more or continue
           setSuccess(true);
           setConnecting(false);
+          setLinkedCount((c) => c + 1);
           toast.show("Bank connected!", "success");
-          setTimeout(onDone, 1200);
         } catch (e) {
           if (__DEV__) console.warn("[setup:bank] exchange error:", e);
           setError("Failed to save bank connection. Please try again.");
@@ -275,17 +307,45 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
 
   if (success) {
     return (
-      <View style={styles.centerFull}>
-        <Animated.View entering={FadeIn.duration(400)}>
-          <View style={[styles.successCircle, { borderColor: theme.primary }]}>
-            <Ionicons name="checkmark-circle" size={56} color={theme.primary} />
-          </View>
-        </Animated.View>
-        <Text style={[styles.successTitle, { color: theme.text }]}>Bank connected!</Text>
-        <Text style={[styles.successSub, { color: theme.textTertiary }]}>
-          Your accounts are now syncing...
-        </Text>
-      </View>
+      <Animated.View entering={FadeInDown.duration(400)} style={styles.stepContainer}>
+        <View style={styles.centerFull}>
+          <Animated.View entering={FadeIn.duration(400)}>
+            <View style={[styles.successCircle, { borderColor: theme.primary }]}>
+              <Ionicons name="checkmark-circle" size={56} color={theme.primary} />
+            </View>
+          </Animated.View>
+          <Text style={[styles.successTitle, { color: theme.text }]}>
+            {isDuplicate
+              ? "Already connected!"
+              : linkedCount === 1 ? "Bank connected!" : `${linkedCount} banks connected!`}
+          </Text>
+          <Text style={[styles.successSub, { color: theme.textTertiary }]}>
+            {isDuplicate
+              ? "This bank is already syncing your transactions."
+              : "Your accounts are syncing. Add another bank or continue."}
+          </Text>
+        </View>
+        <View style={{ gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+            onPress={onDone}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.primaryBtnText}>Continue</Text>
+            <Ionicons name="arrow-forward" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { setSuccess(false); setError(null); setIsDuplicate(false); }}
+            style={[styles.secondaryBtn, { flexDirection: "row", gap: 6, justifyContent: "center" }]}
+            hitSlop={8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={theme.primary} />
+            <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>
+              Add another bank
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     );
   }
 
@@ -328,10 +388,6 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
-      <TouchableOpacity onPress={onSkip} style={styles.skipBtn} hitSlop={12}>
-        <Text style={[styles.skipText, { color: theme.textTertiary }]}>Skip for now</Text>
-      </TouchableOpacity>
-
       <View style={styles.illustrationWrap}>
         <View style={[styles.iconBox, { backgroundColor: theme.primary }]}>
           <Ionicons name="business-outline" size={48} color="#fff" />
@@ -672,10 +728,6 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
-      <TouchableOpacity onPress={onSkip} style={styles.skipBtn} hitSlop={12}>
-        <Text style={[styles.skipText, { color: theme.textTertiary }]}>Skip for now</Text>
-      </TouchableOpacity>
-
       <View style={styles.illustrationWrap}>
         <View style={[styles.iconRow]}>
           <View style={[styles.iconBoxSmall, { backgroundColor: "#5BC5A7" }]}>
@@ -957,6 +1009,20 @@ function StatBadge({
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  navRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  navBtn: {
+    padding: 4,
+  },
+  navSkip: {
+    fontSize: 15,
+    fontFamily: font.medium,
+  },
   progressTrack: {
     height: 3,
     width: "100%",
