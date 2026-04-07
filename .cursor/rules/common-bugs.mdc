@@ -1,0 +1,29 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## Async / API Error Handling
+
+- Always capture the `Response` from `apiFetch()` — calling `await apiFetch(...)` without assigning the result silently discards HTTP errors (4xx/5xx), because `fetch()` does NOT throw on non-ok responses.
+- Always check `res.ok` before proceeding after an API call. If the server returns a 500 HTML error page, calling `.json()` first will throw a `SyntaxError` instead of a meaningful error.
+- Never use an empty `catch {}` or `catch { // stay on step }` — always set an error state so the user knows the operation failed. Silent failure is data loss waiting to happen.
+- When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
+
+- Always check `res.ok` before calling `res.json()`. Use `await res.json().catch(() => ({}))` when reading error details from a non-ok response to handle non-JSON bodies safely.
+- `try { } finally { }` without a `catch` block does NOT swallow errors — they propagate — but it also doesn't handle them. Any async action that can fail user-visibly must have an explicit `catch` that sets an error state.
+- Never gate navigation/step-advance on an awaited async call without checking success: `await save(); advance()` silently advances even if `save()` throws (and is caught elsewhere). Capture a success boolean instead.
+
+## Config and Credentials
+
+- Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
+- Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
+
+## Timeout Protection for Auth
+
+- All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
+- The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
