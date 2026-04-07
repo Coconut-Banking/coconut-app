@@ -130,6 +130,15 @@ export default function GroupScreen() {
   const [membersExpanded, setMembersExpanded] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
+  useEffect(() => {
+    if (!detail || detail.group_type !== "friend") return;
+    const otherMember = detail.members.find((m) => m.user_id !== userId);
+    if (otherMember) {
+      const personKey = otherMember.user_id ?? otherMember.email ?? otherMember.id;
+      router.replace({ pathname: "/(tabs)/shared/person", params: { key: personKey } });
+    }
+  }, [detail, userId]);
+
   const goBack = useCallback(() => {
     if (source === "home") {
       router.replace("/(tabs)");

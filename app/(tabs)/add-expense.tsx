@@ -214,6 +214,7 @@ export default function AddExpenseScreen() {
     setStep(1);
     setTargets([]);
     setQuery("");
+    setSearchFocused(false);
     setResolvedGroupId(null);
     setGroupMembers([]);
     setCustomSplits({});
@@ -239,46 +240,49 @@ export default function AddExpenseScreen() {
     if (isFocused && !prevFocused.current) {
       if (!prefillNonce || prefillNonce === lastPrefillNonce.current) {
         resetForm();
+        // Clear stale route params so they don't re-trigger the prefill effect
+        nav.setParams({
+          prefillDesc: undefined,
+          prefillAmount: undefined,
+          prefillNonce: undefined,
+          prefillPersonKey: undefined,
+          prefillPersonName: undefined,
+          prefillPersonType: undefined,
+          prefillBankDate: undefined,
+          prefillBankCategory: undefined,
+        } as Record<string, undefined>);
       }
     }
     prevFocused.current = isFocused;
-  }, [isFocused, prefillNonce, resetForm]);
+  }, [isFocused, prefillNonce, resetForm, nav]);
 
   // ── Prefill reset ──
   useEffect(() => {
-    if (prefillNonce != null && prefillNonce !== "") {
-      if (lastPrefillNonce.current !== prefillNonce) {
-        lastPrefillNonce.current = prefillNonce;
-        setQuery("");
-        setResolvedGroupId(null);
-        setGroupMembers([]);
-        setCustomSplits({});
-        setDupWarning(false);
-        setError(null);
-        setPaidByMe(true);
-        setPayerMemberId(null);
-        setSplitMethod("equal");
-        setSplitExpanded(false);
+    if (prefillNonce != null && prefillNonce !== "" && lastPrefillNonce.current !== prefillNonce) {
+      lastPrefillNonce.current = prefillNonce;
+      setQuery("");
+      setSearchFocused(false);
+      setResolvedGroupId(null);
+      setGroupMembers([]);
+      setCustomSplits({});
+      setDupWarning(false);
+      setError(null);
+      setPaidByMe(true);
+      setPayerMemberId(null);
+      setSplitMethod("equal");
+      setSplitExpanded(false);
 
-        if (prefillPersonKey && prefillPersonName) {
-          const type = (prefillPersonType === "group" ? "group" : "friend") as "group" | "friend";
-          setTargets([{ type, key: prefillPersonKey, name: prefillPersonName }]);
-        } else {
-          setTargets([]);
-        }
-        setStep(1);
-      }
-    }
-    if (prefillDesc !== undefined) {
-      if (typeof prefillDesc === "string" && prefillDesc.length > 0) setDescription(prefillDesc);
-      else setDescription("");
-    }
-    if (prefillAmount !== undefined) {
-      if (typeof prefillAmount === "string" && prefillAmount.length > 0) {
-        setAmount(prefillAmount.replace(/[^0-9.]/g, ""));
+      if (prefillPersonKey && prefillPersonName) {
+        const type = (prefillPersonType === "group" ? "group" : "friend") as "group" | "friend";
+        setTargets([{ type, key: prefillPersonKey, name: prefillPersonName }]);
       } else {
-        setAmount("");
+        setTargets([]);
       }
+      if (prefillDesc && prefillDesc.length > 0) setDescription(prefillDesc);
+      else setDescription("");
+      if (prefillAmount && prefillAmount.length > 0) setAmount(prefillAmount.replace(/[^0-9.]/g, ""));
+      else setAmount("");
+      setStep(1);
     }
   }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
 
@@ -543,7 +547,7 @@ export default function AddExpenseScreen() {
             const groupName = friendTargets.map((ft) => ft.name).join(", ");
             const groupRes = await apiFetch("/api/groups", {
               method: "POST",
-              body: { name: groupName, ownerDisplayName: "You" } as object,
+              body: { name: groupName, ownerDisplayName: "You", group_type: "friend" } as object,
             });
             const group = await groupRes.json();
             if (cancelled) return;

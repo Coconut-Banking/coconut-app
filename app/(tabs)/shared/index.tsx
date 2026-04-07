@@ -590,8 +590,9 @@ export default function SharedIndex() {
   const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
   const visibleGroups = groups
     .filter((g) => {
-      const groupName = g.name.trim().toLowerCase();
-      if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
+      if ("groupType" in g && g.groupType === "friend") return false;
+      const gName = g.name.trim().toLowerCase();
+      if (g.memberCount <= 2 && friendNameSet.has(gName)) return false;
       return true;
     })
     .map((g) => ({

@@ -404,7 +404,9 @@ export default function PersonScreen() {
                   )}
                   <View style={s.txInfo}>
                     <Text style={s.txMerchant}>{a.merchant}</Text>
-                    <Text style={s.txGroup}>{a.groupName}</Text>
+                    {a.groupType !== "friend" && a.groupName ? (
+                      <Text style={s.txGroup}>{a.groupName}</Text>
+                    ) : null}
                   </View>
                   <View style={s.txRight}>
                     <Text

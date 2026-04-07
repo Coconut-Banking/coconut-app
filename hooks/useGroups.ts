@@ -6,6 +6,7 @@ export interface GroupSummary {
   id: string;
   name: string;
   memberCount: number;
+  groupType?: string | null;
   imageUrl?: string | null;
   /** Net for you in this group when exactly one currency is outstanding; otherwise null. */
   myBalance: number | null;
@@ -72,6 +73,7 @@ export interface GroupDetail {
   owner_id?: string | null;
   invite_token?: string | null;
   image_url?: string | null;
+  group_type?: string | null;
   /** ISO timestamp when archived; null/undefined = active */
   archivedAt?: string | null;
   members: GroupMember[];
@@ -121,6 +123,7 @@ export interface PersonDetail {
     amount: number;
     currency: string;
     groupName: string;
+    groupType?: string | null;
     paidByMe: boolean;
     paidByThem: boolean;
     myShare: number;
@@ -432,6 +435,7 @@ export interface TransactionDetail {
   createdAt: string;
   groupName: string | null;
   groupId: string;
+  groupType?: string | null;
   paidBy: { memberId: string; displayName: string; isMe: boolean; image_url?: string | null } | null;
   shares: Array<{ memberId: string; displayName: string; isMe: boolean; amount: number; image_url?: string | null }>;
   notes: string | null;

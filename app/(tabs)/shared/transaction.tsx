@@ -59,7 +59,7 @@ export default function TransactionScreen() {
     if (!detail || !id) return;
     Alert.alert(
       "Delete expense",
-      `Remove "${detail.description}" from ${detail.groupName ?? "this group"}? This can't be undone.`,
+      `Remove "${detail.description}"${detail.groupName && detail.groupType !== "friend" ? ` from ${detail.groupName}` : ""}? This can't be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -175,6 +175,7 @@ export default function TransactionScreen() {
 
   const totalAmount = detail.amount ?? 0;
   const currency = detail.currency ?? "USD";
+  const isFriendGroup = detail.groupType === "friend";
 
   return (
     <SafeAreaView style={s.container} edges={["top"]}>
@@ -217,7 +218,7 @@ export default function TransactionScreen() {
               style={s.editAmountInput}
               prefix="$"
             />
-            {detail.groupName ? <Text style={s.heroGroup}>{detail.groupName}</Text> : null}
+            {detail.groupName && !isFriendGroup ? <Text style={s.heroGroup}>{detail.groupName}</Text> : null}
             <Text style={s.heroDate}>{formatDate(detail.date)}</Text>
           </View>
         ) : (
@@ -225,7 +226,7 @@ export default function TransactionScreen() {
             <MerchantLogo merchantName={detail.description ?? "Expense"} size={56} backgroundColor="#F7F3F0" borderColor="#E3DBD8" />
             <Text style={s.heroTitle}>{detail.description ?? "Expense"}</Text>
             <Text style={s.heroAmount}>{formatSplitCurrencyAmount(totalAmount, currency)}</Text>
-            {detail.groupName ? (
+            {detail.groupName && !isFriendGroup ? (
               <Text style={s.heroGroup}>{detail.groupName}</Text>
             ) : null}
             <Text style={s.heroDate}>{formatDate(detail.date)}</Text>
