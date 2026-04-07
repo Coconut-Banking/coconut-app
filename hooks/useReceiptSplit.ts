@@ -63,6 +63,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const [itemsWithExtras, setItemsWithExtras] = useState<ReceiptItemWithExtras[]>([]);
   const [personShares, setPersonShares] = useState<PersonShare[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const uploadReceipt = useCallback(
     async (
@@ -313,9 +314,10 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   }, [itemsWithExtras, assignments]);
 
   const saveAssignments = useCallback(
-    async () => {
-      if (!receiptId) return;
+    async (): Promise<boolean> => {
+      if (!receiptId) return false;
       setSaving(true);
+      setSaveError(null);
       try {
         const payload = Array.from(assignments.entries()).map(
           ([itemId, assignees]) => ({
@@ -326,10 +328,19 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as { error?: string };
+          setSaveError(errData.error ?? "Failed to save assignments");
+          return false;
+        }
+        return true;
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Network error");
+        return false;
       } finally {
         setSaving(false);
       }
@@ -390,6 +401,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     personShares,
     saveAssignments,
     saving,
+    saveError,
     reset,
   };
 }
