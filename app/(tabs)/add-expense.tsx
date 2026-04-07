@@ -94,12 +94,12 @@ export default function AddExpenseScreen() {
           personKey: selected.type === "person" ? selected.personKey : undefined,
         },
       });
-      const data = await res.json();
-      if (res.ok) {
-        router.back();
-      } else {
-        setError(data.error ?? "Failed to add expense");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        setError(errData.error ?? "Failed to add expense");
+        return;
       }
+      router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed");
     } finally {

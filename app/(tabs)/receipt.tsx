@@ -692,18 +692,18 @@ function SummaryStep({
           people: rs.people.map((p) => ({ name: p.name, email: p.email })),
         },
       });
-      const data = await res.json();
-
-      if (res.ok) {
-        setFinished(true);
-        setGroupBalances(data.balances || []);
-        setSuggestions(data.suggestions || []);
-        setGroupName(data.groupName || "");
-        setMembers(data.members || []);
-      } else {
-        Alert.alert("Error", data.error || "Failed to save to group");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        Alert.alert("Error", errData.error || "Failed to save to group");
         setFinishing(false);
+        return;
       }
+      const data = await res.json();
+      setFinished(true);
+      setGroupBalances(data.balances || []);
+      setSuggestions(data.suggestions || []);
+      setGroupName(data.groupName || "");
+      setMembers(data.members || []);
     } catch {
       Alert.alert("Error", "Failed to save to group");
       setFinishing(false);

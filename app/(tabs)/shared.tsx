@@ -135,19 +135,20 @@ export default function SharedScreen() {
         method: "POST",
         body: { name: newGroupName.trim(), ownerDisplayName: "You" } as object,
       });
-      const data = await res.json();
-      if (res.ok) {
-        refetch();
-        refetchActivity();
-        setNewGroupName("");
-        setShowCreate(false);
-        setSelectedGroupId(data.id);
-      } else {
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
         const msg = res.status === 401
           ? "Session expired. Sign out and sign back in, then try again."
-          : (data.error ?? "Failed to create group");
+          : (errData.error ?? "Failed to create group");
         setCreateError(msg);
+        return;
       }
+      const data = await res.json();
+      refetch();
+      refetchActivity();
+      setNewGroupName("");
+      setShowCreate(false);
+      setSelectedGroupId(data.id);
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Request failed");
     } finally {
@@ -177,15 +178,18 @@ export default function SharedScreen() {
           receiverMemberId: s?.toMemberId,
         },
       });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        await Share.share({
-          message: `You owe me $${personDetail.balance.toFixed(2)}. Pay here: ${data.url}`,
-          url: data.url,
-          title: "Payment request",
-        });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        Alert.alert("Error", errData.error ?? "Could not create payment link");
       } else {
-        Alert.alert("Error", (data as { error?: string })?.error ?? "Could not create payment link");
+        const data = await res.json();
+        if (data.url) {
+          await Share.share({
+            message: `You owe me $${personDetail.balance.toFixed(2)}. Pay here: ${data.url}`,
+            url: data.url,
+            title: "Payment request",
+          });
+        }
       }
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Request failed");
@@ -422,15 +426,18 @@ export default function SharedScreen() {
                                       receiverMemberId: s.toMemberId,
                                     },
                                   });
-                                  const data = await res.json();
-                                  if (res.ok && data.url) {
-                                    await Share.share({
-                                      message: `You owe me $${s.amount.toFixed(2)} for ${groupDetail.name}. Pay here: ${data.url}`,
-                                      url: data.url,
-                                      title: "Payment request",
-                                    });
+                                  if (!res.ok) {
+                                    const errData = await res.json().catch(() => ({})) as { error?: string };
+                                    Alert.alert("Error", errData.error ?? "Could not create link");
                                   } else {
-                                    Alert.alert("Error", (data as { error?: string })?.error ?? "Could not create link");
+                                    const data = await res.json();
+                                    if (data.url) {
+                                      await Share.share({
+                                        message: `You owe me $${s.amount.toFixed(2)} for ${groupDetail.name}. Pay here: ${data.url}`,
+                                        url: data.url,
+                                        title: "Payment request",
+                                      });
+                                    }
                                   }
                                 } finally {
                                   setRequestingPayment(false);
