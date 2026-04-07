@@ -712,7 +712,7 @@ export default function BalancesPrototypeScreen() {
 
         <View style={{ marginBottom: 12 }}>
           <View style={styles.sectionRow}>
-            <SLabel>Friends & groups</SLabel>
+            <SLabel>Friends</SLabel>
             <TouchableOpacity onPress={() => router.push("/(tabs)/shared")} hitSlop={8}>
               <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
             </TouchableOpacity>
@@ -751,7 +751,7 @@ export default function BalancesPrototypeScreen() {
                   <View key={f.key}>
                     <TouchableOpacity
                       style={styles.friendRow}
-                      onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } })}
+                      onPress={() => router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key, source: "home" } })}
                       activeOpacity={0.75}
                     >
                       <MemberAvatar name={f.displayName} size={42} imageUrl={f.image_url ?? null} variant="soft" />
@@ -804,7 +804,7 @@ export default function BalancesPrototypeScreen() {
                       {i > 0 ? <View style={styles.rowSep} /> : null}
                       <TouchableOpacity
                         style={styles.groupRow}
-                        onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
+                        onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id, source: "home" } })}
                         activeOpacity={0.75}
                       >
                         {g.imageUrl ? (
