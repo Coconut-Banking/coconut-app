@@ -36,7 +36,7 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchActivity } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -322,7 +322,8 @@ export default function BalancesPrototypeScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
-  usePrefetchActivity();
+  usePrefetchContactsSummary(500);
+  usePrefetchActivity(500);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);

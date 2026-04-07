@@ -26,7 +26,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import * as ImagePicker from "expo-image-picker";
-import { useApiFetch } from "../../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../../lib/api";
+import { clearMemSummaryCache } from "../../../hooks/useGroups";
 import { useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
@@ -91,7 +92,7 @@ const FriendPickerItem = React.memo(function FriendPickerItem({
 
 export default function GroupScreen() {
   const { theme } = useTheme();
-  const { id, localImage } = useLocalSearchParams<{ id: string; localImage?: string }>();
+  const { id, localImage, source } = useLocalSearchParams<{ id: string; localImage?: string; source?: string }>();
   const { userId } = useAuth();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
@@ -128,6 +129,14 @@ export default function GroupScreen() {
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+
+  const goBack = useCallback(() => {
+    if (source === "home") {
+      router.replace("/(tabs)");
+    } else {
+      router.back();
+    }
+  }, [source]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
@@ -327,19 +336,26 @@ export default function GroupScreen() {
     }
 
     setUploadingIcon(true);
+    setLocalIconUrl(asset.uri);
     try {
-      const imageDataUri = `data:${mimeType};base64,${asset.base64}`;
-      if (__DEV__) console.log(`[group-icon] uploading base64 to /api/groups/${id}/image, mimeType:`, mimeType, "length:", imageDataUri.length);
-      const res = await apiFetch(`/api/groups/${id}/image`, { method: "POST", body: { image: imageDataUri } as object });
+      const ext = mimeType === "image/png" ? "png" : "jpg";
+      const formData = new FormData();
+      formData.append("image", { uri: asset.uri, type: mimeType, name: `group-icon.${ext}` } as unknown as Blob);
+      if (__DEV__) console.log(`[group-icon] uploading to /api/groups/${id}/icon, mimeType:`, mimeType);
+      const res = await apiFetch(`/api/groups/${id}/icon`, { method: "POST", body: formData });
       if (__DEV__) console.log("[group-icon] response status:", res.status);
       if (res.ok) {
         if (__DEV__) console.log("[group-icon] success");
-        setLocalIconUrl(imageDataUri);
+        const data = await res.json().catch(() => ({}));
+        if ((data as { imageUrl?: string }).imageUrl) setLocalIconUrl((data as { imageUrl: string }).imageUrl);
         toast.show("Group icon updated");
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
         refetch(true);
         refetchSummary();
         DeviceEventEmitter.emit("groups-updated");
       } else {
+        setLocalIconUrl(null);
         const err = await res.json().catch(() => ({}));
         if (__DEV__) console.warn("[group-icon] upload failed:", res.status, JSON.stringify(err));
         Alert.alert("Upload failed", (err as { error?: string }).error ?? "Try again.");
@@ -368,8 +384,7 @@ export default function GroupScreen() {
             setUploadingIcon(true);
             try {
               const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
-            } finally { setUploadingIcon(false); }
+              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }            } finally { setUploadingIcon(false); }
           }
         }
       );
@@ -381,7 +396,7 @@ export default function GroupScreen() {
           setUploadingIcon(true);
           try {
             const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
+            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
           } finally { setUploadingIcon(false); }
         }}] : []),
         { text: "Cancel", style: "cancel" as const },
@@ -424,7 +439,7 @@ export default function GroupScreen() {
     DeviceEventEmitter.emit("groups-updated");
     await refetch(true);
     await refetchSummary();
-    if (archived) router.back();
+    if (archived) goBack();
   };
 
   const applyGroupRename = useCallback(
@@ -493,7 +508,7 @@ export default function GroupScreen() {
               if (res.ok) {
                 DeviceEventEmitter.emit("groups-updated");
                 await refetchSummary();
-                router.back();
+                goBack();
               } else {
                 const err = await res.json().catch(() => ({}));
                 Alert.alert("Couldn't leave", (err as { error?: string }).error ?? "Try again.");
@@ -653,7 +668,7 @@ export default function GroupScreen() {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
         <View style={[s.topBar, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+          <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
             <Ionicons name="chevron-back" size={20} color={theme.text} />
             <Text style={[s.backText, { color: theme.text }]}>Back</Text>
           </TouchableOpacity>
@@ -670,7 +685,7 @@ export default function GroupScreen() {
               <Text style={{ fontFamily: font.regular, fontSize: 14, color: theme.textTertiary, textAlign: "center", paddingHorizontal: 40 }}>
                 This group may have been deleted.
               </Text>
-              <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 10 }}>
+              <TouchableOpacity onPress={goBack} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.primary, borderRadius: 10 }}>
                 <Text style={{ fontFamily: font.semibold, fontSize: 15, color: "#fff" }}>Go back</Text>
               </TouchableOpacity>
             </>
@@ -690,9 +705,9 @@ export default function GroupScreen() {
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <View style={[s.topBar, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backRow} hitSlop={12}>
+        <TouchableOpacity onPress={goBack} style={s.backRow} hitSlop={12}>
           <Ionicons name="chevron-back" size={20} color={theme.text} />
-          <Text style={[s.backText, { color: theme.text }]}>Back</Text>
+          <Text style={[s.backText, { color: theme.text }]}>{source === "home" ? "Home" : "Back"}</Text>
         </TouchableOpacity>
       </View>
       <ScrollView

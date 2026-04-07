@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { InteractionManager } from "react-native";
-import { useApiFetch, getPersistedResponse } from "../lib/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useApiFetch, getPersistedResponse, invalidateApiCache } from "../lib/api";
 
 export interface GroupSummary {
   id: string;
@@ -186,6 +186,20 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
               "groups:",
               data.groups?.length ?? 0
             );
+            // Debug: show top friend balances to diagnose inflated numbers
+            type FriendRow = { displayName: string; balances: { currency: string; amount: number }[] };
+            const topFriends = (data.friends ?? [])
+              .slice(0, 5)
+              .map((f: FriendRow) => `${f.displayName}: ${f.balances?.map((b: { currency: string; amount: number }) => `${b.currency} ${b.amount}`).join(", ") || "0"}`);
+            if (topFriends.length > 0) console.log("[summary] top balances:", topFriends.join(" | "));
+            if (data._debug) {
+              console.log("[summary] debug:", JSON.stringify(data._debug, null, 0));
+              if (data._debug.topFriendBreakdown) {
+                for (const f of data._debug.topFriendBreakdown) {
+                  console.log(`[summary] ${f.name}:`, JSON.stringify(f.contributions));
+                }
+              }
+            }
             const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
             if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
           }
@@ -254,12 +268,15 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
  * cache in the background. When the user later navigates to Shared, the hook
  * picks up _memSummary instantly — no spinner.
  */
-export function usePrefetchContactsSummary() {
+export function usePrefetchContactsSummary(delayMs = 0) {
   const apiFetch = useApiFetch();
   useEffect(() => {
     const path = "/api/groups/summary?contacts=1";
     if (_memSummary.has(path)) return;
-    (async () => {
+    let cancelled = false;
+    const run = async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      if (cancelled) return;
       try {
         const persisted = await getPersistedResponse(path);
         if (persisted) {
@@ -267,14 +284,17 @@ export function usePrefetchContactsSummary() {
             _memSummary.set(path, JSON.parse(persisted.body));
           } catch { /* corrupt */ }
         }
+        if (cancelled) return;
         const res = await apiFetch(path);
         if (res.ok) {
           const data = await res.json();
           _memSummary.set(path, data);
         }
       } catch { /* best-effort */ }
-    })();
-  }, [apiFetch]);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [apiFetch, delayMs]);
 }
 
 export function useGroupDetail(id: string | null) {
@@ -294,7 +314,12 @@ export function useGroupDetail(id: string | null) {
       }
       if (!silent && !hasDetail.current) setLoading(true);
       try {
-        const res = await apiFetch(`/api/groups/${id}`);
+        let res = await apiFetch(`/api/groups/${id}`);
+        if (!res.ok && !hasDetail.current) {
+          await new Promise((r) => setTimeout(r, 500));
+          invalidateApiCache(`/api/groups/${id}`);
+          res = await apiFetch(`/api/groups/${id}`);
+        }
         if (res.ok) {
           const data = await res.json();
           setDetail(data);
@@ -479,7 +504,9 @@ export function clearMemActivityCache() {
   _memActivity = null;
 }
 
+const LAST_SEEN_KEY = "coconut.activity.lastSeenId";
 let _lastSeenActivityId: string | null = null;
+let _lastSeenLoaded = false;
 let _hasUnseen = false;
 const _unseenListeners = new Set<(v: boolean) => void>();
 
@@ -489,9 +516,25 @@ function _setHasUnseen(v: boolean) {
   _unseenListeners.forEach((fn) => fn(v));
 }
 
+async function _loadLastSeen(): Promise<string | null> {
+  if (_lastSeenLoaded) return _lastSeenActivityId;
+  _lastSeenLoaded = true;
+  try {
+    const v = await AsyncStorage.getItem(LAST_SEEN_KEY);
+    if (v) _lastSeenActivityId = v;
+  } catch { /* non-fatal */ }
+  return _lastSeenActivityId;
+}
+
+// Eagerly start loading the persisted value at module init
+_loadLastSeen();
+
 /** Mark all current activity as "seen" — call when the Activity tab is focused. */
 export function markActivitySeen() {
-  if (_memActivity?.[0]) _lastSeenActivityId = _memActivity[0].id;
+  if (_memActivity?.[0]) {
+    _lastSeenActivityId = _memActivity[0].id;
+    AsyncStorage.setItem(LAST_SEEN_KEY, _memActivity[0].id).catch(() => {});
+  }
   _setHasUnseen(false);
 }
 
@@ -526,6 +569,7 @@ export function useRecentActivity(enabled = true) {
     if (now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
     lastFetchTs.current = now;
     try {
+      await _loadLastSeen();
       const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
         retryCount.current = 0;
@@ -562,7 +606,11 @@ export function useRecentActivity(enabled = true) {
     }
 
     (async () => {
-      const cached = await getPersistedResponse(ACTIVITY_PATH);
+      // Show persisted data immediately while the network request runs in parallel
+      const [cached] = await Promise.all([
+        getPersistedResponse(ACTIVITY_PATH),
+        _loadLastSeen(),
+      ]);
       if (cached && !cancelled && activity.length === 0) {
         try {
           const data = JSON.parse(cached.body);
@@ -589,29 +637,33 @@ export function useRecentActivity(enabled = true) {
  * Prefetch recent activity in the background (call from home tab).
  * Populates _memActivity so Activity tab renders instantly.
  */
-export function usePrefetchActivity() {
+export function usePrefetchActivity(delayMs = 0) {
   const apiFetch = useApiFetch();
   useEffect(() => {
     if (_memActivity) return;
-    const handle = InteractionManager.runAfterInteractions(() => {
-      (async () => {
-        try {
-          const persisted = await getPersistedResponse(ACTIVITY_PATH);
-          if (persisted) {
-            try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
+    let cancelled = false;
+    const run = async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      if (cancelled) return;
+      try {
+        await _loadLastSeen();
+        const persisted = await getPersistedResponse(ACTIVITY_PATH);
+        if (persisted) {
+          try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
+        }
+        if (cancelled) return;
+        const res = await apiFetch(ACTIVITY_PATH);
+        if (res.ok) {
+          const data = await res.json();
+          const items: RecentActivityItem[] = data.activity ?? [];
+          _memActivity = items;
+          if (items[0] && items[0].id !== _lastSeenActivityId) {
+            _setHasUnseen(true);
           }
-          const res = await apiFetch(ACTIVITY_PATH);
-          if (res.ok) {
-            const data = await res.json();
-            const items: RecentActivityItem[] = data.activity ?? [];
-            _memActivity = items;
-            if (items[0] && items[0].id !== _lastSeenActivityId) {
-              _setHasUnseen(true);
-            }
-          }
-        } catch { /* best-effort */ }
-      })();
-    });
-    return () => handle.cancel();
-  }, [apiFetch]);
+        }
+      } catch { /* best-effort */ }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [apiFetch, delayMs]);
 }

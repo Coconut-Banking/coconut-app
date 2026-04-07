@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -25,7 +25,7 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener,
 } from "../lib/push-notifications";
-import { useApiFetch } from "../lib/api";
+import { useApiFetch, invalidateApiCache } from "../lib/api";
 import {
   useFonts,
   Inter_400Regular,
@@ -62,6 +62,7 @@ function AuthSwitch() {
   const [forceSignOutDone, setForceSignOutDone] = useState(false);
   const apiFetch = useApiFetch();
   const checkedStore = useRef(false);
+  const autoSkipChecked = useRef(false);
 
   useEffect(() => {
     if (!FORCE_SIGN_OUT_ON_LAUNCH || checkedStore.current) return;
@@ -82,6 +83,20 @@ function AuthSwitch() {
     const showAuth = !isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn);
     console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} setup=${setupComplete} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : setupComplete || isDemoOn ? "TABS" : "SETUP"}`);
   }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
+
+  const signingOutRef = useRef(false);
+  useEffect(() => {
+    if (SKIP_AUTH) return;
+    const sub = DeviceEventEmitter.addListener("session-expired", () => {
+      if (!isSignedIn || signingOutRef.current) return;
+      signingOutRef.current = true;
+      console.warn("[AuthSwitch] session-expired event — signing out");
+      signOut?.()
+        .catch((e: unknown) => console.warn("[AuthSwitch] session-expired signOut failed:", e))
+        .finally(() => { signingOutRef.current = false; });
+    });
+    return () => sub.remove();
+  }, [isSignedIn, signOut]);
 
   useEffect(() => {
     if (SKIP_AUTH || !FORCE_SIGN_OUT_ON_LAUNCH || !isLoaded || forceSignOutDone) return;
@@ -111,19 +126,39 @@ function AuthSwitch() {
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn, setupHydrated]);
 
+  // Auto-skip setup for RETURNING users who already linked a bank or have groups
+  // but lost the setupComplete flag (e.g. app reinstall). Runs exactly once: the
+  // first time auth + setup hydration is ready. After that, the ref prevents it
+  // from ever firing again (even if user resets setup from Settings).
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !setupHydrated || setupComplete || isDemoOn) return;
+    if (autoSkipChecked.current) return;
+    if (!isLoaded || !isSignedIn || !setupHydrated) return;
+    autoSkipChecked.current = true;
+    if (setupComplete || isDemoOn) return;
     let cancelled = false;
-    void apiFetch("/api/plaid/status").then(async (res) => {
-      if (cancelled || !res.ok) return;
-      const data = await res.json();
-      if (!cancelled && data.linked) markSetupComplete();
-    }).catch(() => {});
-    void apiFetch("/api/groups/summary").then(async (res) => {
-      if (cancelled || !res.ok) return;
-      const gData = await res.json();
-      if (!cancelled && ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0)) markSetupComplete();
-    }).catch(() => {});
+    (async () => {
+      try {
+        invalidateApiCache("/api/plaid/status");
+        const res = await apiFetch("/api/plaid/status");
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.linked) {
+            markSetupComplete();
+            return;
+          }
+        }
+        invalidateApiCache("/api/groups/summary");
+        const groupsRes = await apiFetch("/api/groups/summary");
+        if (cancelled) return;
+        if (groupsRes.ok) {
+          const gData = await groupsRes.json();
+          if ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0) {
+            markSetupComplete();
+          }
+        }
+      } catch {}
+    })();
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn, setupHydrated, setupComplete, isDemoOn, apiFetch, markSetupComplete]);
 
