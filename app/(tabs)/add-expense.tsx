@@ -556,8 +556,10 @@ export default function AddExpenseScreen() {
 
             await Promise.all(friendTargets.map((ft) => {
               const friendUserId = ft.key?.startsWith("user_") ? ft.key : null;
+              const friendEmail = !friendUserId && ft.key?.includes("@") ? ft.key : null;
               const body: Record<string, string> = { displayName: ft.name };
               if (friendUserId) body.userId = friendUserId;
+              if (friendEmail) body.email = friendEmail;
               return apiFetch(`/api/groups/${gid}/members`, { method: "POST", body: body as object });
             }));
             if (cancelled) return;
@@ -629,7 +631,7 @@ export default function AddExpenseScreen() {
     if (!name) return;
     setAddingNewPerson(true);
     try {
-      const groupRes = await apiFetch("/api/groups", { method: "POST", body: { name, ownerDisplayName: "You" } as object });
+      const groupRes = await apiFetch("/api/groups", { method: "POST", body: { name, ownerDisplayName: "You", group_type: "friend" } as object });
       const group = await groupRes.json();
       if (!groupRes.ok || !group.id) { setError("Failed to create"); return; }
       await apiFetch(`/api/groups/${group.id}/members`, {
