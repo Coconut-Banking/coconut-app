@@ -567,38 +567,22 @@ function PayScreenInner() {
       setPaymentPhase("collecting");
       const clientSecretForCollect = clientSecret;
 
-      let pi = retrieveResult.paymentIntent;
-      let collectResult: Awaited<ReturnType<typeof collectPaymentMethod>> | null = null;
+      const pi = retrieveResult.paymentIntent;
 
-      for (let collectAttempt = 0; collectAttempt < 2; collectAttempt++) {
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        if (USE_SIMULATED_TERMINAL_READER) {
-          const sim = await setSimulatedCard(SIMULATED_TERMINAL_CARD_PAN);
-          if (sim.error) {
-            logTerminalError("setSimulatedCard failed", sim.error);
-            Alert.alert(
-              "Simulated card",
-              sim.error.message ?? "Could not configure test card for simulated reader."
-            );
-            setCollecting(false);
-            return;
-          }
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      if (USE_SIMULATED_TERMINAL_READER) {
+        const sim = await setSimulatedCard(SIMULATED_TERMINAL_CARD_PAN);
+        if (sim.error) {
+          logTerminalError("setSimulatedCard failed", sim.error);
+          Alert.alert(
+            "Simulated card",
+            sim.error.message ?? "Could not configure test card for simulated reader."
+          );
+          setCollecting(false);
+          return;
         }
-        collectResult = await collectPaymentMethod({ paymentIntent: pi });
-        if (!collectResult.error) break;
-        if (collectResult.error.code === ErrorCode.CANCELED && collectAttempt === 0) {
-          if (__DEV__) console.log("[Pay] collect CANCELED — refreshing PaymentIntent and retrying collect once");
-          const again = await retrievePaymentIntent(clientSecretForCollect);
-          if (again.error || !again.paymentIntent) {
-            logTerminalError("retrievePaymentIntent retry after cancel failed", again.error);
-            break;
-          }
-          pi = again.paymentIntent;
-          await sleep(450);
-          continue;
-        }
-        break;
       }
+      const collectResult = await collectPaymentMethod({ paymentIntent: pi });
 
       if (!collectResult) {
         setCollecting(false);
