@@ -21,7 +21,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
+import { sendSmsInvite, sendEmailInvite, shareInvite } from "../../lib/invite";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { useGroupsSummary, clearMemSummaryCache, clearMemActivityCache } from "../../hooks/useGroups";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
@@ -144,7 +145,7 @@ function dedupeMembers(members: GroupMember[]): GroupMember[] {
 
 export default function AddExpenseScreen() {
   const nav = useRouter();
-  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType, prefillBankDate, prefillBankCategory } = useLocalSearchParams<{
+  const { prefillDesc, prefillAmount, prefillNonce, prefillPersonKey, prefillPersonName, prefillPersonType, prefillBankDate, prefillBankCategory, prefillContactName, prefillContactEmail, prefillContactPhone } = useLocalSearchParams<{
     prefillDesc?: string;
     prefillAmount?: string;
     prefillNonce?: string;
@@ -153,8 +154,12 @@ export default function AddExpenseScreen() {
     prefillPersonType?: string;
     prefillBankDate?: string;
     prefillBankCategory?: string;
+    prefillContactName?: string;
+    prefillContactEmail?: string;
+    prefillContactPhone?: string;
   }>();
   const { userId } = useAuth();
+  const { user } = useUser();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
@@ -200,6 +205,7 @@ export default function AddExpenseScreen() {
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [newFriendName, setNewFriendName] = useState(query);
   const [newFriendEmail, setNewFriendEmail] = useState("");
+  const [newFriendPhone, setNewFriendPhone] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
 
   const lastPrefillNonce = useRef<string | null>(null);
@@ -283,8 +289,14 @@ export default function AddExpenseScreen() {
       if (prefillAmount && prefillAmount.length > 0) setAmount(prefillAmount.replace(/[^0-9.]/g, ""));
       else setAmount("");
       setStep(1);
+      if (prefillContactName) {
+        setNewFriendName(prefillContactName);
+        setNewFriendEmail(prefillContactEmail ?? "");
+        setNewFriendPhone(prefillContactPhone ?? "");
+        setShowAddFriend(true);
+      }
     }
-  }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType]);
+  }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType, prefillContactName, prefillContactEmail, prefillContactPhone]);
 
   // ── Fallback groups fetch (skip if summary already has groups) ──
   const summaryGroups = summary?.groups ?? [];
@@ -622,8 +634,20 @@ export default function AddExpenseScreen() {
   const startAddFriend = (contact?: DeviceContact) => {
     setNewFriendName(contact?.name ?? query.trim());
     setNewFriendEmail(contact?.email ?? "");
+    setNewFriendPhone(contact?.phone ?? "");
     setShowAddFriend(true);
   };
+
+  const handleInviteContact = useCallback(async (c: DeviceContact) => {
+    const name = user?.firstName ?? undefined;
+    try {
+      if (c.phone) await sendSmsInvite([c.phone], name);
+      else if (c.email) await sendEmailInvite([c.email], name);
+      else await shareInvite(name);
+    } catch {
+      await shareInvite(name);
+    }
+  }, [user]);
 
   const addNewFriend = async () => {
     const name = newFriendName.trim();
@@ -636,9 +660,10 @@ export default function AddExpenseScreen() {
       if (!groupRes.ok || !group.id) { setError("Failed to create"); return; }
       await apiFetch(`/api/groups/${group.id}/members`, {
         method: "POST",
-        body: { displayName: name, ...(email ? { email } : {}) } as object,
+        body: { displayName: name, ...(email ? { email } : {}), ...(newFriendPhone.trim() ? { phone: newFriendPhone.trim() } : {}) } as object,
       });
       setShowAddFriend(false);
+      setNewFriendPhone("");
       setQuery("");
       selectTarget({ type: "group", key: group.id, name });
     } finally {
@@ -1017,21 +1042,27 @@ export default function AddExpenseScreen() {
                     <Text style={[s.secLabel, { marginTop: 16 }]}>From your contacts</Text>
                     <View style={s.listCard}>
                       {filteredDeviceContacts.map((c, i) => (
-                        <TouchableOpacity
+                        <View
                           key={`dc-${c.id}`}
-                          style={[s.listRow, i < filteredDeviceContacts.length - 1 && s.listRowBorder]}
-                          onPress={() => startAddFriend(c)}
-                          activeOpacity={0.7}
+                          style={[s.listRow, i < filteredDeviceContacts.length - 1 && s.listRowBorder, { flexDirection: "row", alignItems: "center" }]}
                         >
-                          <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
-                            <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={s.listRowTitle}>{c.name}</Text>
-                            {c.email ? <Text style={s.listRowSub}>{c.email}</Text> : c.phone ? <Text style={s.listRowSub}>{c.phone}</Text> : null}
-                          </View>
-                          <Ionicons name="person-add-outline" size={16} color={darkUI.labelMuted} />
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}
+                            onPress={() => startAddFriend(c)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[s.friendAvatar, { backgroundColor: "#8B5CF622", borderColor: "#8B5CF644" }]}>
+                              <Text style={[s.friendAvatarTxt, { color: "#8B5CF6" }]}>{c.name.slice(0, 2).toUpperCase()}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.listRowTitle}>{c.name}</Text>
+                              {c.email ? <Text style={s.listRowSub}>{c.email}</Text> : c.phone ? <Text style={s.listRowSub}>{c.phone}</Text> : null}
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleInviteContact(c)} style={s.inviteBtn} hitSlop={8}>
+                            <Text style={s.inviteBtnTxt}>Invite</Text>
+                          </TouchableOpacity>
+                        </View>
                       ))}
                     </View>
                   </>
@@ -1550,7 +1581,7 @@ export default function AddExpenseScreen() {
           <View style={s.modalCard}>
             <View style={s.modalHead}>
               <Text style={s.modalTitle}>Add friend</Text>
-              <TouchableOpacity onPress={() => setShowAddFriend(false)}>
+              <TouchableOpacity onPress={() => { setShowAddFriend(false); setNewFriendPhone(""); }}>
                 <Ionicons name="close" size={22} color={darkUI.labelMuted} />
               </TouchableOpacity>
             </View>
@@ -1564,6 +1595,15 @@ export default function AddExpenseScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               maxLength={254}
+            />
+            <TextInput
+              style={[s.modalIn, { marginTop: 10 }]}
+              value={newFriendPhone}
+              onChangeText={setNewFriendPhone}
+              placeholder="Phone (optional)"
+              placeholderTextColor={darkUI.labelMuted}
+              keyboardType="phone-pad"
+              maxLength={30}
             />
             <TouchableOpacity
               style={[s.primaryBtn, { marginTop: 16 }, (!newFriendName.trim() || addingNewPerson) && { opacity: 0.5 }]}
@@ -1841,6 +1881,20 @@ const s = StyleSheet.create({
   modalHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   modalTitle: { fontFamily: font.bold, fontSize: 18, color: darkUI.label },
   modalIn: { backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontFamily: font.regular, color: darkUI.label },
+
+  inviteBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#8B5CF622",
+    borderWidth: 1,
+    borderColor: "#8B5CF644",
+  },
+  inviteBtnTxt: {
+    fontSize: 13,
+    fontFamily: font.medium,
+    color: "#8B5CF6",
+  },
 
   // Settlement sheet
   sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },

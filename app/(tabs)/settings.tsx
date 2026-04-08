@@ -194,7 +194,7 @@ export default function SettingsScreen() {
   const [connectActionLoading, setConnectActionLoading] = useState(false);
   const connectReturnHandled = useRef(false);
 
-  const fetchAccounts = async (forceRefresh = false) => {
+  const fetchAccounts = useCallback(async (forceRefresh = false) => {
     setAccountsLoading(true);
     setAccountsError(null);
     try {
@@ -216,7 +216,7 @@ export default function SettingsScreen() {
     } finally {
       setAccountsLoading(false);
     }
-  };
+  }, [apiFetch]);
 
   const fetchConnectStatus = useCallback(async () => {
     if (!user) return;
@@ -334,7 +334,7 @@ export default function SettingsScreen() {
     } else if (linked && !wasLinked) {
       fetchAccounts(true);
     }
-  }, [isFocused, linked]);
+  }, [isFocused, linked, fetchAccounts]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("bank-disconnected", async () => {
@@ -403,7 +403,7 @@ export default function SettingsScreen() {
     [user, apiFetch]
   );
 
-  const fetchGmailStatus = async () => {
+  const fetchGmailStatus = useCallback(async () => {
     if (!user) return;
     try {
       const res = await apiFetch("/api/gmail/status");
@@ -413,7 +413,7 @@ export default function SettingsScreen() {
     } catch {
       setGmailStatus(null);
     }
-  };
+  }, [user, apiFetch]);
 
   useEffect(() => {
     if (!user) return;
@@ -423,7 +423,7 @@ export default function SettingsScreen() {
       fetchGmailStatus(),
       fetchConnectStatus(),
     ]);
-  }, [isFocused, user, fetchSplitwiseStatus, fetchConnectStatus]);
+  }, [isFocused, user, fetchSplitwiseStatus, fetchGmailStatus, fetchConnectStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
   useEffect(() => {
