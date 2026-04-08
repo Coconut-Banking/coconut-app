@@ -18,7 +18,7 @@ import type { Reader, StripeError } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useApiFetch } from "../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
@@ -682,7 +682,35 @@ function PayScreenInner() {
         }
       } else {
         logPaymentIntentStep("after process (success)", processResult.paymentIntent);
+
+        if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+          try {
+            const settleRes = await apiFetch("/api/settlements", {
+              method: "POST",
+              body: {
+                groupId: params.groupId,
+                payerMemberId: params.payerMemberId,
+                receiverMemberId: params.receiverMemberId,
+                amount: amt,
+                method: "in_person",
+                currency: params.currency ?? "USD",
+              },
+            });
+            if (settleRes.ok) {
+              if (__DEV__) console.log("[Pay] settlement recorded directly");
+            } else {
+              const errData = await settleRes.json().catch(() => ({}));
+              if (__DEV__) console.warn("[Pay] settlement recording failed:", errData);
+            }
+          } catch (e) {
+            if (__DEV__) console.warn("[Pay] settlement recording error:", e);
+          }
+        }
+
         setPaymentOutcome("approved");
+        invalidateApiCache("/api/groups/summary");
+        invalidateApiCache("/api/groups/person");
+        invalidateApiCache("/api/groups/recent-activity");
         DeviceEventEmitter.emit("groups-updated");
         setLastOutcomeAmount(amt);
         setLastPayment(
@@ -691,12 +719,6 @@ function PayScreenInner() {
             : `Paid $${amt.toFixed(2)} successfully`
         );
         setAmount("");
-        // Auto-navigate back after a brief delay so the user sees the success state
-        if (hasPrefilledCheckout) {
-          setTimeout(() => {
-            if (router.canGoBack()) router.back();
-          }, 2000);
-        }
       }
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Payment failed");
@@ -897,15 +919,47 @@ function PayScreenInner() {
         </View>
       )}
 
-      {/* 5.9 Outcome + 5.10 Share receipt */}
-      {lastPayment && (
+      {/* Full-screen success overlay */}
+      {paymentOutcome === "approved" && lastOutcomeAmount != null && (
+        <View style={[styles.overlay, { backgroundColor: theme.surface, zIndex: 200 }]}>
+          <View style={{ alignItems: "center", gap: 16, paddingHorizontal: 32 }}>
+            <Ionicons name="checkmark-circle" size={64} color={theme.positive} />
+            <Text style={[styles.overlayTitle, { fontSize: 22 }]}>Payment successful</Text>
+            <Text style={[styles.overlaySubtitle, { fontSize: 18, color: theme.text }]}>
+              ${lastOutcomeAmount.toFixed(2)}
+            </Text>
+            {lastPayment ? (
+              <Text style={[styles.overlaySubtitle, { color: theme.textSecondary }]}>
+                {lastPayment}
+              </Text>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: theme.primary, marginTop: 20, minWidth: 200 }]}
+              onPress={() => {
+                setPaymentOutcome(null);
+                handleClose();
+              }}
+            >
+              <Text style={styles.buttonText}>Done</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() => shareReceipt("approved", lastOutcomeAmount)}
+            >
+              <Ionicons name="share-outline" size={18} color={theme.primary} />
+              <Text style={[styles.shareButtonText, { color: theme.primary }]}>Share receipt</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Non-approved outcomes (declined, timeout, canceled) */}
+      {lastPayment && paymentOutcome !== "approved" && (
         <View style={[styles.result, { backgroundColor: theme.primaryLight }]}>
           <View style={styles.resultRow}>
             <Ionicons
               name={
-                paymentOutcome === "approved"
-                  ? "checkmark-circle"
-                  : paymentOutcome === "declined"
+                paymentOutcome === "declined"
                   ? "close-circle"
                   : paymentOutcome === "canceled"
                   ? "alert-circle-outline"
@@ -913,9 +967,7 @@ function PayScreenInner() {
               }
               size={24}
               color={
-                paymentOutcome === "approved"
-                  ? theme.positive
-                  : paymentOutcome === "declined"
+                paymentOutcome === "declined"
                   ? theme.negative
                   : paymentOutcome === "canceled"
                   ? theme.textTertiary
@@ -926,12 +978,10 @@ function PayScreenInner() {
           </View>
           <Text style={[styles.resultText, { color: theme.text }]}>{lastPayment}</Text>
           {lastOutcomeAmount != null &&
-            (paymentOutcome === "approved" ||
-              paymentOutcome === "declined" ||
-              paymentOutcome === "timeout") && (
+            (paymentOutcome === "declined" || paymentOutcome === "timeout") && (
             <TouchableOpacity
               style={styles.shareButton}
-              onPress={() => shareReceipt(paymentOutcome, lastOutcomeAmount)}
+              onPress={() => shareReceipt(paymentOutcome!, lastOutcomeAmount)}
             >
               <Ionicons name="share-outline" size={18} color={theme.primary} />
               <Text style={[styles.shareButtonText, { color: theme.primary }]}>Share receipt</Text>
