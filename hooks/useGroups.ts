@@ -202,6 +202,11 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
                   console.log(`[summary] ${f.name}:`, JSON.stringify(f.contributions));
                 }
               }
+              if (data._debug.groupPairwise) {
+                for (const gp of data._debug.groupPairwise) {
+                  console.log(`[summary] group-pw ${gp.name}: splits=${gp.splitCount} shares=${gp.shareCount} payers=${gp.payerFoundCount}/${gp.totalPayerAttempts} myMember=${gp.hasMyMember} sw=${gp.isSw} keys=${JSON.stringify(gp.memberKeys)}`);
+                }
+              }
             }
             const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
             if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
