@@ -25,8 +25,28 @@ import { useDemoData } from "../../lib/demo-context";
 import { font, radii, prototype, colors } from "../../lib/theme";
 import { useTheme } from "../../lib/theme-context";
 
-function ActivityHeader() {
+type ActivityFilter = "all" | "get_back" | "owe" | "settled";
+
+const FILTER_OPTIONS: { value: ActivityFilter; label: string; icon: React.ComponentProps<typeof Ionicons>["name"]; color: string }[] = [
+  { value: "all",       label: "All",         icon: "list-outline",       color: "#6B7280" },
+  { value: "get_back",  label: "You're owed",  icon: "arrow-down-outline", color: "#3A7D44" },
+  { value: "owe",       label: "You owe",      icon: "arrow-up-outline",   color: "#C23934" },
+  { value: "settled",   label: "Settled",      icon: "checkmark-outline",  color: "#6B7280" },
+];
+
+function ActivityHeader({
+  filter,
+  showMenu,
+  onToggleMenu,
+}: {
+  filter: ActivityFilter;
+  showMenu: boolean;
+  onToggleMenu: () => void;
+}) {
   const { theme } = useTheme();
+  const isFiltered = filter !== "all";
+  const activeOption = FILTER_OPTIONS.find((o) => o.value === filter)!;
+
   return (
     <View style={styles.headerRow}>
       <View>
@@ -34,15 +54,71 @@ function ActivityHeader() {
         <Text style={[styles.titleSub, { color: theme.textTertiary }]}>Splits & settlements</Text>
       </View>
       <TouchableOpacity
-        onPress={() => router.push("/(tabs)/settings")}
-        style={styles.settingsBtn}
+        onPress={onToggleMenu}
+        style={[styles.filterBtn, showMenu && { backgroundColor: theme.surfaceSecondary }]}
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Settings"
+        accessibilityLabel="Filter activity"
+        activeOpacity={0.7}
       >
-        <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
+        <Ionicons
+          name="options-outline"
+          size={20}
+          color={isFiltered ? activeOption.color : theme.textSecondary}
+        />
+        {isFiltered ? (
+          <View style={[styles.filterDot, { backgroundColor: activeOption.color }]} />
+        ) : null}
       </TouchableOpacity>
     </View>
+  );
+}
+
+function FilterMenu({
+  filter,
+  onSelect,
+  onClose,
+}: {
+  filter: ActivityFilter;
+  onSelect: (f: ActivityFilter) => void;
+  onClose: () => void;
+}) {
+  const { theme } = useTheme();
+  return (
+    <>
+      {/* Tap-outside dismissal overlay */}
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        onPress={onClose}
+        activeOpacity={1}
+        accessible={false}
+      />
+      <View style={[styles.filterMenu, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {FILTER_OPTIONS.map((opt, i) => {
+          const isActive = filter === opt.value;
+          return (
+            <TouchableOpacity
+              key={opt.value}
+              style={[
+                styles.filterMenuItem,
+                isActive && { backgroundColor: theme.surfaceSecondary },
+                i < FILTER_OPTIONS.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+              ]}
+              onPress={() => { onSelect(opt.value); onClose(); }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.filterMenuIcon, { backgroundColor: isActive ? opt.color + "22" : theme.surfaceSecondary }]}>
+                <Ionicons name={opt.icon} size={14} color={isActive ? opt.color : theme.textTertiary} />
+              </View>
+              <Text style={[styles.filterMenuLabel, { color: isActive ? theme.text : theme.textSecondary, fontFamily: isActive ? font.semibold : font.regular }]}>
+                {opt.label}
+              </Text>
+              {isActive ? <Ionicons name="checkmark" size={16} color={opt.color} style={{ marginLeft: "auto" }} /> : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </>
   );
 }
 
@@ -60,15 +136,21 @@ export default function ActivityTabScreen() {
   const { activity: realActivity, loading, refetch } = useRecentActivity(!isDemoOn);
   const activity = isDemoOn ? demo.activity : realActivity;
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
 
   const filteredActivity = useMemo(() => {
+    let items = activity;
+    if (filter !== "all") {
+      items = items.filter((it) => it.direction === filter);
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return activity;
-    return activity.filter((it) => activitySearchHaystack(it).includes(q));
-  }, [activity, search]);
+    if (!q) return items;
+    return items.filter((it) => activitySearchHaystack(it).includes(q));
+  }, [activity, search, filter]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -86,8 +168,6 @@ export default function ActivityTabScreen() {
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
 
-  // When activity data changes while the tab is focused, mark as seen
-  // so the badge doesn't re-appear for the user's own actions
   useEffect(() => {
     if (isFocused && activity.length > 0) markActivitySeen();
   }, [isFocused, activity]);
@@ -113,6 +193,11 @@ export default function ActivityTabScreen() {
 
   const showInitialLoading = !isDemoOn && loading && activity.length === 0;
 
+  const activeFilterOption = FILTER_OPTIONS.find((o) => o.value === filter)!;
+  const sectionLabel = filter === "all"
+    ? (search.trim() ? `Matches · ${filteredActivity.length}` : "Recent")
+    : (search.trim() ? `Matches · ${filteredActivity.length}` : activeFilterOption.label);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -128,7 +213,18 @@ export default function ActivityTabScreen() {
         }
       >
         <View style={styles.pad}>
-          <ActivityHeader />
+          <ActivityHeader
+            filter={filter}
+            showMenu={showFilterMenu}
+            onToggleMenu={() => setShowFilterMenu((v) => !v)}
+          />
+          {showFilterMenu ? (
+            <FilterMenu
+              filter={filter}
+              onSelect={setFilter}
+              onClose={() => setShowFilterMenu(false)}
+            />
+          ) : null}
         </View>
 
         {showInitialLoading ? (
@@ -160,10 +256,8 @@ export default function ActivityTabScreen() {
         </View>
 
         <View style={styles.sectionLabelRow}>
-          <Text style={styles.sLabel}>
-            {search.trim() ? `Matches · ${filteredActivity.length}` : "Recent"}
-          </Text>
-          {search.trim() && activity.length > 0 ? (
+          <Text style={styles.sLabel}>{sectionLabel}</Text>
+          {(search.trim() || filter !== "all") && activity.length > 0 ? (
             <Text style={styles.sLabelMeta}>{activity.length} total</Text>
           ) : null}
         </View>
@@ -177,7 +271,9 @@ export default function ActivityTabScreen() {
           <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Ionicons name="search-outline" size={32} color={theme.textTertiary} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>No matches</Text>
-            <Text style={[styles.emptySub, { color: theme.textTertiary }]}>Try another name, merchant, or amount.</Text>
+            <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
+              {filter !== "all" ? `No "${activeFilterOption.label.toLowerCase()}" items yet.` : "Try another name, merchant, or amount."}
+            </Text>
           </View>
         ) : (
           <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -288,7 +384,53 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  settingsBtn: { padding: 4, marginTop: 2 },
+  filterBtn: {
+    padding: 8,
+    marginTop: 2,
+    borderRadius: 10,
+  },
+  filterDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.5,
+    borderColor: "#F5F3F2",
+  },
+  filterMenu: {
+    position: "absolute",
+    top: 52,
+    right: 0,
+    width: 200,
+    borderRadius: 14,
+    borderWidth: 1,
+    zIndex: 100,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  filterMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  filterMenuIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterMenuLabel: {
+    fontSize: 14,
+  },
   title: { fontSize: 32, fontFamily: font.black, color: "#1F2328", letterSpacing: -0.9 },
   titleSub: { fontSize: 13, fontFamily: font.medium, color: "#7A8088", marginTop: 2 },
   searchBox: {

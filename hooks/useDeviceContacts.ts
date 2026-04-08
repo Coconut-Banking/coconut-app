@@ -56,7 +56,7 @@ async function _loadContactsList() {
   try {
     const { data } = await mod.getContactsAsync({
       fields: [mod.Fields.Emails, mod.Fields.PhoneNumbers, mod.Fields.Name],
-      sort: mod.SortTypes.LastName,
+      ...(mod.SortTypes?.LastName != null ? { sort: mod.SortTypes.LastName } : {}),
     });
     const mapped: DeviceContact[] = data
       .filter((c) => c.name)

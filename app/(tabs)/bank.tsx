@@ -741,6 +741,39 @@ export default function BankTabScreen() {
                 <Text style={sheetStyles.amt}>${selectedStrip.amount.toFixed(2)}</Text>
               </View>
 
+              {selectedStrip.isPending ? (
+                <View style={sheetStyles.metaBadgeRow}>
+                  <View style={[sheetStyles.metaBadge, { backgroundColor: "#FFF3E0" }]}>
+                    <Ionicons name="time-outline" size={12} color="#E65100" />
+                    <Text style={[sheetStyles.metaBadgeText, { color: "#E65100" }]}>Pending</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {(selectedStrip.isRecurring || selectedStrip.accountIndicator || selectedStrip.category) ? (
+                <View style={sheetStyles.metaBadgeRow}>
+                  {selectedStrip.isRecurring ? (
+                    <View style={[sheetStyles.metaBadge, { backgroundColor: "#EDE7F6" }]}>
+                      <Ionicons name="refresh-outline" size={12} color="#5E35B1" />
+                      <Text style={[sheetStyles.metaBadgeText, { color: "#5E35B1" }]}>Recurring</Text>
+                    </View>
+                  ) : null}
+                  {selectedStrip.category ? (
+                    <View style={[sheetStyles.metaBadge, { backgroundColor: "#F3F4F6" }]}>
+                      <Text style={[sheetStyles.metaBadgeText, { color: "#4B5563" }]}>
+                        {selectedStrip.category.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {selectedStrip.accountIndicator ? (
+                    <View style={[sheetStyles.metaBadge, { backgroundColor: "#F3F4F6" }]}>
+                      <Ionicons name="card-outline" size={12} color="#4B5563" />
+                      <Text style={[sheetStyles.metaBadgeText, { color: "#4B5563" }]}>{selectedStrip.accountIndicator}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
               {selectedStrip.showReceiptBox ? (
                 <View style={sheetStyles.emailBox}>
                   <Ionicons name="mail-outline" size={12} color={prototype.blue} />
@@ -1112,5 +1145,23 @@ const sheetStyles = StyleSheet.create({
     fontSize: 15,
     fontFamily: font.medium,
     color: "#8A9098",
+  },
+  metaBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 10,
+  },
+  metaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  metaBadgeText: {
+    fontSize: 12,
+    fontFamily: font.medium,
   },
 });

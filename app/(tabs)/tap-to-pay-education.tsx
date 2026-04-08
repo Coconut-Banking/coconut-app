@@ -1,32 +1,47 @@
 import { useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
-import { font, radii, space } from "../../lib/theme";
+import { font, radii } from "../../lib/theme";
 import { markTapToPayEducationCompleted } from "../../lib/tap-to-pay-onboarding";
 
-const SECTIONS: { title: string; body: string }[] = [
+const SECTIONS: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  color: string;
+  title: string;
+  body: string;
+}[] = [
   {
-    title: "Contactless cards",
-    body: "Hold the customer’s contactless card or device near the top of your iPhone. Wait for the checkmark—don’t remove the card too early.",
+    icon: "wifi-outline",
+    color: "#3B82F6",
+    title: "Tap a contactless card",
+    body: "Hold the card near the top of your iPhone and wait for the checkmark.",
   },
   {
+    icon: "phone-portrait-outline",
+    color: "#1F2328",
     title: "Apple Pay & digital wallets",
-    body: "Customers can pay with Apple Pay and other digital wallets the same way: they hold their phone or watch near the top of your iPhone until the payment completes.",
+    body: "Customers hold their phone or watch near yours — same as a card.",
   },
   {
-    title: "PIN (where supported)",
-    body: "In regions that require a PIN, the customer enters it on the on-screen PIN pad. Accessibility options on that screen follow system settings.",
+    icon: "keypad-outline",
+    color: "#F59E0B",
+    title: "PIN entry (where required)",
+    body: "The customer enters their PIN on the on-screen pad if needed.",
   },
   {
-    title: "If a card can’t be read",
-    body: "If Tap to Pay can’t read a card, offer another way to pay—for example a payment link or a physical card reader if you use one. Requirements vary by region.",
+    icon: "refresh-circle-outline",
+    color: "#EF4444",
+    title: "If a card can't be read",
+    body: "Ask the customer to try again or use an alternative payment method.",
   },
   {
-    title: "iOS 18+ discovery",
-    body: "On supported versions of iOS, Apple may show system discovery and education for Tap to Pay. Your Payment Service Provider (Stripe) integrates with these experiences where available.",
+    icon: "shield-checkmark-outline",
+    color: "#8B5CF6",
+    title: "Powered by Stripe",
+    body: "Payments are processed securely by Stripe Terminal — no card data stored.",
   },
 ];
 
@@ -47,66 +62,70 @@ export default function TapToPayEducationScreen() {
   }, [router]);
 
   return (
-    <>
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity onPress={back} style={styles.headerBtn} hitSlop={12}>
-            <Ionicons name="chevron-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Tap to Pay guide</Text>
-          <View style={styles.headerBtn} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <TouchableOpacity onPress={back} style={styles.headerBtn} hitSlop={12}>
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Tap to Pay guide</Text>
+        <View style={styles.headerBtn} />
+      </View>
+
+      <View style={styles.body}>
+        {/* Hero */}
+        <View style={styles.hero}>
+          <View style={[styles.heroIconWrap, { backgroundColor: theme.surfaceSecondary }]}>
+            <Ionicons name="phone-portrait" size={32} color={theme.text} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>How it works</Text>
+            {params.fromTerms === "1" ? (
+              <Text style={[styles.heroSub, { color: theme.positive }]}>Terms accepted — you're ready to collect.</Text>
+            ) : (
+              <Text style={[styles.heroSub, { color: theme.textTertiary }]}>Accept contactless payments right from your iPhone.</Text>
+            )}
+          </View>
         </View>
 
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          {params.fromTerms === "1" ? (
-            <View style={[styles.banner, { backgroundColor: theme.successLight, borderColor: theme.border }]}>
-              <Ionicons name="checkmark-circle" size={22} color={theme.positive} />
-              <Text style={[styles.bannerText, { color: theme.text }]}>
-                Terms accepted. Review these tips once—then collect from an expense or settlement.
-              </Text>
-            </View>
-          ) : null}
-
-          <Text style={[styles.lead, { color: theme.textSecondary }]}>
-            Use this guide when accepting payments with Tap to Pay on iPhone. You can open it anytime from
-            Settings.
-          </Text>
-
-          {SECTIONS.map((s) => (
-            <View
-              key={s.title}
-              style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}
-            >
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{s.title}</Text>
-              <Text style={[styles.cardBody, { color: theme.textSecondary }]}>{s.body}</Text>
+        {/* Sections */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {SECTIONS.map((s, i) => (
+            <View key={s.title}>
+              <View style={styles.row}>
+                <View style={[styles.iconWrap, { backgroundColor: s.color + "18" }]}>
+                  <Ionicons name={s.icon} size={20} color={s.color} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>{s.title}</Text>
+                  <Text style={[styles.rowBody, { color: theme.textTertiary }]} numberOfLines={2}>{s.body}</Text>
+                </View>
+              </View>
+              {i < SECTIONS.length - 1 ? (
+                <View style={[styles.sep, { backgroundColor: theme.borderLight }]} />
+              ) : null}
             </View>
           ))}
+        </View>
 
-          <TouchableOpacity
-            style={[styles.cta, { backgroundColor: theme.primary }]}
-            onPress={done}
-            activeOpacity={0.9}
-          >
-            <TapToPayCtaIcon color="#fff" />
-            <Text style={styles.ctaText}>Add an expense to collect</Text>
-          </TouchableOpacity>
+        {/* CTA */}
+        <TouchableOpacity
+          style={[styles.cta, { backgroundColor: theme.primary }]}
+          onPress={done}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="phone-portrait-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.ctaText}>Add an expense to collect</Text>
+        </TouchableOpacity>
 
-          {Platform.OS !== "web" ? (
-            <Text style={[styles.note, { color: theme.textQuaternary }]}>
-              Requires a dev or production build with Stripe Terminal native modules (not Expo Go).
-            </Text>
-          ) : null}
-        </ScrollView>
-      </SafeAreaView>
-    </>
+        {Platform.OS !== "web" ? (
+          <Text style={[styles.note, { color: theme.textQuaternary }]}>
+            Requires a dev or production build with Stripe Terminal.
+          </Text>
+        ) : null}
+      </View>
+    </SafeAreaView>
   );
-}
-
-function TapToPayCtaIcon({ color }: { color: string }) {
-  return <Ionicons name="phone-portrait-outline" size={20} color={color} style={{ marginRight: 8 }} />;
 }
 
 const styles = StyleSheet.create({
@@ -120,35 +139,71 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 17, fontFamily: font.semibold, fontWeight: "600" },
-  scroll: { padding: space.lg, paddingBottom: 40 },
-  banner: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 14,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    marginBottom: 16,
+  headerTitle: { fontSize: 17, fontFamily: font.semibold },
+  body: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    justifyContent: "space-between",
   },
-  bannerText: { flex: 1, fontSize: 15, fontFamily: font.medium, lineHeight: 22 },
-  lead: { fontSize: 16, fontFamily: font.regular, lineHeight: 24, marginBottom: 20 },
+  hero: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginBottom: 4,
+  },
+  heroIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontFamily: font.bold,
+    letterSpacing: -0.4,
+  },
+  heroSub: {
+    fontSize: 14,
+    fontFamily: font.regular,
+    marginTop: 2,
+    lineHeight: 20,
+  },
   card: {
     borderRadius: radii.xl,
     borderWidth: 1,
-    padding: 16,
-    marginBottom: 12,
+    overflow: "hidden",
+    flex: 1,
+    marginVertical: 16,
   },
-  cardTitle: { fontSize: 17, fontFamily: font.semibold, fontWeight: "600", marginBottom: 8 },
-  cardBody: { fontSize: 15, fontFamily: font.regular, lineHeight: 22 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 14,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  rowText: { flex: 1 },
+  rowTitle: { fontSize: 15, fontFamily: font.semibold },
+  rowBody: { fontSize: 13, fontFamily: font.regular, marginTop: 1, lineHeight: 18 },
+  sep: { height: StyleSheet.hairlineWidth, marginLeft: 70 },
   cta: {
-    marginTop: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
     borderRadius: radii.xl,
   },
-  ctaText: { color: "#fff", fontSize: 17, fontFamily: font.semibold, fontWeight: "600" },
-  note: { marginTop: 16, fontSize: 12, fontFamily: font.regular, textAlign: "center", lineHeight: 18 },
+  ctaText: { color: "#fff", fontSize: 17, fontFamily: font.semibold },
+  note: { marginTop: 10, fontSize: 12, fontFamily: font.regular, textAlign: "center" },
 });

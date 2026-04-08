@@ -1062,7 +1062,7 @@ export default function SettingsScreen() {
                 <View style={styles.profilePhotoWrap}>
                   {uploadingPhoto ? (
                     <View style={[styles.profilePhoto, { backgroundColor: theme.surfaceSecondary, justifyContent: "center", alignItems: "center" }]}>
-                      <ActivityIndicator size="small" color={theme.primary} />
+                      <ActivityIndicator size="small" color={theme.text} />
                     </View>
                   ) : user.imageUrl && !user.imageUrl.includes("default") ? (
                     <Image
@@ -1112,7 +1112,7 @@ export default function SettingsScreen() {
                   <Text
                     style={[
                       styles.segmentText,
-                      { color: selected ? theme.primary : theme.textSecondary, fontFamily: selected ? font.semibold : font.medium },
+                      { color: selected ? theme.text : theme.textSecondary, fontFamily: selected ? font.semibold : font.medium },
                     ]}
                   >
                     {opt.label}
@@ -1193,7 +1193,7 @@ export default function SettingsScreen() {
                           <Text style={[styles.currencyOptName, { color: theme.text }]}>{c.name}</Text>
                           <Text style={{ fontSize: 13, fontFamily: font.regular, color: theme.textTertiary }}>{c.code} — {c.symbol}</Text>
                         </View>
-                        {selected && <Ionicons name="checkmark-circle" size={22} color={theme.primary} />}
+                        {selected && <Ionicons name="checkmark-circle" size={22} color={theme.text} />}
                       </TouchableOpacity>
                     );
                   })}
@@ -1207,7 +1207,7 @@ export default function SettingsScreen() {
         {Platform.OS !== "web" ? (
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <Ionicons name="people-circle-outline" size={24} color={theme.primary} />
+              <Ionicons name="people-circle-outline" size={24} color={theme.text} />
               <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Contacts</Text>
             </View>
             <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
@@ -1257,7 +1257,7 @@ export default function SettingsScreen() {
         {Platform.OS !== "web" ? (
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <TapToPayButtonIcon color={theme.primary} size={24} />
+              <TapToPayButtonIcon color={theme.text} size={24} />
               <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Tap to Pay on iPhone</Text>
             </View>
             <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
@@ -1268,8 +1268,8 @@ export default function SettingsScreen() {
               style={styles.linkRow}
               onPress={() => globalRouter.push("/(tabs)/tap-to-pay-education")}
             >
-              <Ionicons name="book-outline" size={16} color={theme.primary} />
-              <Text style={[styles.linkInline, { color: theme.primary }]}>How Tap to Pay works</Text>
+              <Ionicons name="book-outline" size={16} color={theme.text} />
+              <Text style={[styles.linkInline, { color: theme.accent }]}>How Tap to Pay works</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1282,7 +1282,7 @@ export default function SettingsScreen() {
           </Text>
 
           {connectLoading && connectStatus === null ? (
-            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
+            <ActivityIndicator style={{ marginTop: 14 }} color={theme.text} />
           ) : connectStatus?.onboardingComplete ? (
             <View style={[styles.resultBox, { backgroundColor: "#F5F3F2", borderColor: "#E3DBD8" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -1343,11 +1343,11 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={() => openBankConnect(connectUrl)} hitSlop={8}>
-              <Text style={[styles.link, { color: theme.primary }]}>{linked ? "Add account" : "Connect"}</Text>
+              <Text style={[styles.link, { color: theme.accent }]}>{linked ? "Add account" : "Connect"}</Text>
             </TouchableOpacity>
           </View>
           {accountsLoading ? (
-            <ActivityIndicator color={theme.primary} style={{ paddingVertical: 20 }} />
+            <ActivityIndicator color={theme.text} style={{ paddingVertical: 20 }} />
           ) : accountsError ? (
             <Text style={[styles.error, { color: theme.error }]}>{accountsError}</Text>
           ) : accounts.length === 0 ? (
@@ -1384,13 +1384,13 @@ export default function SettingsScreen() {
                   style={[styles.showAllRow, { borderTopColor: theme.borderLight }]}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.showAllText, { color: theme.primary }]}>
+                  <Text style={[styles.showAllText, { color: theme.accent }]}>
                     {showAllAccounts ? "Show less" : `Show all · ${accounts.length} accounts`}
                   </Text>
                   <Ionicons
                     name={showAllAccounts ? "chevron-up" : "chevron-down"}
                     size={14}
-                    color={theme.primary}
+                    color={theme.text}
                   />
                 </TouchableOpacity>
               ) : null}
@@ -1399,8 +1399,8 @@ export default function SettingsScreen() {
           {linked ? (
             <>
               <TouchableOpacity style={styles.linkRow} onPress={() => openBankConnect(`${base}/connect?update=1&from_app=1&scheme=${appScheme}`)}>
-                <Ionicons name="refresh-outline" size={18} color={theme.primary} />
-                <Text style={[styles.linkInline, { color: theme.primary }]}>Update bank connection</Text>
+                <Ionicons name="refresh-outline" size={18} color={theme.text} />
+                <Text style={[styles.linkInline, { color: theme.accent }]}>Update bank connection</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.dangerOutline, { borderColor: theme.errorLight }]}
@@ -1448,7 +1448,7 @@ export default function SettingsScreen() {
           ) : null}
 
           {splitwiseLoading && splitwiseStatus === null ? (
-            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
+            <ActivityIndicator style={{ marginTop: 14 }} color={theme.text} />
           ) : splitwiseStatus === null ? (
             <Text style={[styles.muted, { color: theme.textQuaternary, marginTop: 8 }]}>
               Couldn&apos;t load Splitwise status. Check your connection and open Settings again.
@@ -1619,8 +1619,8 @@ export default function SettingsScreen() {
                 style={styles.linkRow}
                 onPress={() => router.push("/(tabs)/email-receipts")}
               >
-                <Ionicons name="mail-outline" size={16} color={theme.primary} />
-                <Text style={[styles.linkInline, { color: theme.primary }]}>View all receipts</Text>
+                <Ionicons name="mail-outline" size={16} color={theme.text} />
+                <Text style={[styles.linkInline, { color: theme.accent }]}>View all receipts</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
@@ -1760,7 +1760,7 @@ export default function SettingsScreen() {
               <Ionicons
                 name={selectedInvites.size === uninvitedMembers.length ? "checkbox" : "square-outline"}
                 size={22}
-                color={selectedInvites.size === uninvitedMembers.length ? theme.primary : theme.textTertiary}
+                color={selectedInvites.size === uninvitedMembers.length ? theme.text : theme.textTertiary}
               />
               <Text style={[styles.inviteSelectAllTxt, { color: theme.text }]}>
                 {selectedInvites.size === uninvitedMembers.length ? "Deselect all" : "Select all"}
@@ -1780,7 +1780,7 @@ export default function SettingsScreen() {
                     <Ionicons
                       name={checked ? "checkbox" : "square-outline"}
                       size={22}
-                      color={checked ? theme.primary : theme.textTertiary}
+                      color={checked ? theme.text : theme.textTertiary}
                     />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.inviteName, { color: theme.text }]}>{m.displayName}</Text>

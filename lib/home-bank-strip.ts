@@ -80,6 +80,10 @@ export type HomeBankStripRow = {
   accountIndicator?: string | null;
   /** Whether this transaction has already been split. */
   alreadySplit?: boolean;
+  /** Whether this transaction is still pending settlement. */
+  isPending?: boolean;
+  /** Whether this is a known recurring/subscription charge. */
+  isRecurring?: boolean;
 };
 
 export function demoChargeToStripRow(
@@ -119,6 +123,10 @@ export function txToSheetRow(tx: {
   hasReceipt?: boolean;
   logoUrl?: string | null;
   category?: string;
+  accountName?: string | null;
+  accountMask?: string | null;
+  isPending?: boolean;
+  isRecurring?: boolean;
 }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
   const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
@@ -136,6 +144,9 @@ export function txToSheetRow(tx: {
     logoUrl: tx.logoUrl ?? null,
     category: tx.category ?? null,
     alreadySplit: tx.alreadySplit,
+    accountIndicator: formatTransactionAccountIndicator(tx.accountName, tx.accountMask) ?? undefined,
+    isPending: tx.isPending,
+    isRecurring: tx.isRecurring,
   };
 }
 

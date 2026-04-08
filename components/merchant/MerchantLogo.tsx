@@ -8,6 +8,19 @@ import { colors, font } from "../../lib/theme";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
+/** Hardcoded icon overrides for merchants with no logo. Key = lowercase substring to match. */
+const MERCHANT_ICON_OVERRIDES: Array<{ match: string; icon: IoniconsName; color: string }> = [
+  { match: "clipper",  icon: "train-outline", color: "#0074D4" },
+  { match: "bart",     icon: "train-outline", color: "#00AEE5" },
+  { match: "caltrain", icon: "train-outline", color: "#C41230" },
+  { match: "muni",     icon: "train-outline", color: "#BA0C2F" },
+  { match: "metro",    icon: "train-outline", color: "#3B82F6" },
+  { match: "subway",   icon: "train-outline", color: "#3B82F6" },
+  { match: "amtrak",   icon: "train-outline", color: "#1D6FA4" },
+  { match: "uber",     icon: "car-outline",   color: "#000000" },
+  { match: "lyft",     icon: "car-outline",   color: "#FF00BF" },
+];
+
 const CATEGORY_ICONS: Record<string, { icon: IoniconsName; color: string }> = {
   "FOOD_AND_DRINK":      { icon: "restaurant-outline",  color: "#F59E0B" },
   "FOOD AND DRINK":      { icon: "restaurant-outline",  color: "#F59E0B" },
@@ -67,12 +80,18 @@ export const MerchantLogo = React.memo(function MerchantLogo({
     setErrorCount(0);
   }, [merchantName, externalLogoUrl]);
 
+  const nameLower = (merchantName ?? "").toLowerCase();
+  const merchantOverride = MERCHANT_ICON_OVERRIDES.find((o) => nameLower.includes(o.match)) ?? null;
+
   const logoUrl = useMemo(() => {
-    const quikrturnUrl = getMerchantLogoUrl(merchantName, Math.round(size * 1.5));
+    // Plaid CDN logo always takes priority
     if (errorCount === 0 && externalLogoUrl) return externalLogoUrl;
+    // If we have a hardcoded override, skip Quikrturn (avoids wrong/generic images)
+    if (merchantOverride) return null;
+    const quikrturnUrl = getMerchantLogoUrl(merchantName, Math.round(size * 1.5));
     if (errorCount <= 1 && quikrturnUrl) return quikrturnUrl;
     return null;
-  }, [merchantName, size, errorCount, externalLogoUrl]);
+  }, [merchantName, size, errorCount, externalLogoUrl, merchantOverride]);
 
   const catInfo = category ? CATEGORY_ICONS[category.toUpperCase()] ?? CATEGORY_ICONS[category] : null;
   const initials = getInitials(merchantName);
@@ -93,6 +112,8 @@ export const MerchantLogo = React.memo(function MerchantLogo({
           recyclingKey={logoUrl}
           onError={() => setErrorCount((c) => c + 1)}
         />
+      ) : merchantOverride ? (
+        <Ionicons name={merchantOverride.icon} size={Math.max(12, size * 0.48)} color={merchantOverride.color} />
       ) : catInfo ? (
         <Ionicons name={catInfo.icon} size={Math.max(12, size * 0.48)} color={catInfo.color} />
       ) : (

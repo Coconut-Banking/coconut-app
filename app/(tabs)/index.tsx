@@ -363,6 +363,7 @@ export default function BalancesPrototypeScreen() {
   } | null>(null);
   const [itemizedLoading, setItemizedLoading] = useState(false);
   const [itemizedError, setItemizedError] = useState<string | null>(null);
+  const [mapLoadFailed, setMapLoadFailed] = useState(false);
 
   // Contacts banner (one-time dismissable)
   const { permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
@@ -473,6 +474,10 @@ export default function BalancesPrototypeScreen() {
   const renderAllBankItem = useCallback(({ item: tx }: { item: any }) => (
     <AllBankListItem tx={tx} onPress={handleAllBankItemPress} onSplit={handleAllBankItemSplit} theme={theme} />
   ), [theme, handleAllBankItemPress, handleAllBankItemSplit]);
+
+  useEffect(() => {
+    setMapLoadFailed(false);
+  }, [selectedStrip]);
 
   useEffect(() => {
     if (!selectedStrip) {
@@ -888,11 +893,12 @@ export default function BalancesPrototypeScreen() {
                   itemizedReceipt?.merchantType === "rideshare" ? (
                     <>
                       <Text style={styles.itemizedSectionTitle}>Trip details</Text>
-                      {itemizedReceipt.rideshare?.map_url ? (
+                      {!mapLoadFailed && itemizedReceipt.rideshare?.map_url ? (
                         <Image
                           source={{ uri: itemizedReceipt.rideshare.map_url }}
                           style={styles.rideshareMap}
                           resizeMode="cover"
+                          onError={() => setMapLoadFailed(true)}
                         />
                       ) : null}
                       <View style={styles.rideshareRoute}>
