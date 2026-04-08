@@ -105,6 +105,44 @@ export function useTransactions() {
       _notify();
     };
 
+    // If we already know the user is linked, skip the status check entirely.
+    if (_sharedLinked === true) {
+      if (__DEV__) console.log("[pipeline:tx] 1b. already linked — skipping status check");
+      const p2 = apiFetch("/api/plaid/transactions", { signal: controller.signal })
+        .then((r) => {
+          clearTimeout(timeout);
+          if (fetchCancelledRef.current || !r || !r.ok) return null;
+          return r.json();
+        })
+        .then((data) => {
+          if (fetchCancelledRef.current) return;
+          if (Array.isArray(data)) {
+            const mapped = (data as unknown[]).map((raw) => {
+              const t = raw as Record<string, unknown>;
+              const rid = t.receipt_id ?? t.receiptId;
+              const base = { ...t } as unknown as Transaction;
+              if (rid != null && rid !== "") base.receiptId = String(rid);
+              return base;
+            });
+            if (__DEV__) console.log("[pipeline:tx] 2b. output (fast path)", { count: (data as unknown[]).length });
+            updateShared(mapped, true, "ok");
+          }
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+          _inflightPipeline = null;
+          _sharedHasLoaded = true;
+          _notify();
+        })
+        .catch(() => {
+          clearTimeout(timeout);
+          _inflightPipeline = null;
+          _notify();
+        });
+      _inflightPipeline = p2;
+      return p2;
+    }
+
     const p = apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
         clearTimeout(timeout);

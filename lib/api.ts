@@ -29,15 +29,15 @@ const _inflightGets = new Map<string, Promise<Response>>();
 const MAX_CACHE_ENTRIES = 50;
 const _responseCache = new Map<string, { body: unknown; status: number; ts: number }>();
 const CACHE_TTL_MS: Record<string, number> = {
-  "/api/plaid/status": 10_000,
-  "/api/plaid/transactions": 30_000,
-  "/api/groups/summary": 15_000,
-  "/api/groups/recent-activity": 15_000,
-  "/api/groups/person": 10_000,
-  "/api/plaid/accounts": 30_000,
-  "/api/splitwise/status": 30_000,
-  "/api/gmail/status": 60_000,
-  "/api/stripe/connect/status": 60_000,
+  "/api/plaid/status": 60_000,
+  "/api/plaid/transactions": 60_000,
+  "/api/groups/summary": 45_000,
+  "/api/groups/recent-activity": 30_000,
+  "/api/groups/person": 30_000,
+  "/api/plaid/accounts": 120_000,
+  "/api/splitwise/status": 120_000,
+  "/api/gmail/status": 300_000,
+  "/api/stripe/connect/status": 300_000,
 };
 
 const GROUP_DETAIL_RE = /^\/api\/groups\/[a-f0-9-]+$/;
@@ -397,12 +397,8 @@ export function useApiFetch() {
                 if (ttl > 0) {
                   const parsed = JSON.parse(body);
                   if (_responseCache.size >= MAX_CACHE_ENTRIES) {
-                    let oldestKey: string | undefined;
-                    let oldestTs = Infinity;
-                    for (const [k, v] of _responseCache) {
-                      if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; }
-                    }
-                    if (oldestKey) _responseCache.delete(oldestKey);
+                    const firstKey = _responseCache.keys().next().value;
+                    if (firstKey !== undefined) _responseCache.delete(firstKey);
                   }
                   _responseCache.set(path, { body: parsed, status: res.status, ts: Date.now() });
                 }

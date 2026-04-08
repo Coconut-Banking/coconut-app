@@ -193,10 +193,20 @@ export default function ActivityTabScreen() {
 
   const showInitialLoading = !isDemoOn && loading && activity.length === 0;
 
-  const activeFilterOption = FILTER_OPTIONS.find((o) => o.value === filter)!;
-  const sectionLabel = filter === "all"
-    ? (search.trim() ? `Matches · ${filteredActivity.length}` : "Recent")
-    : (search.trim() ? `Matches · ${filteredActivity.length}` : activeFilterOption.label);
+  const onToggleFilterMenu = useCallback(() => setShowFilterMenu((v) => !v), []);
+  const onCloseFilterMenu = useCallback(() => setShowFilterMenu(false), []);
+
+  const activeFilterOption = useMemo(
+    () => FILTER_OPTIONS.find((o) => o.value === filter)!,
+    [filter]
+  );
+  const sectionLabel = useMemo(
+    () =>
+      filter === "all"
+        ? (search.trim() ? `Matches · ${filteredActivity.length}` : "Recent")
+        : (search.trim() ? `Matches · ${filteredActivity.length}` : activeFilterOption.label),
+    [filter, search, filteredActivity.length, activeFilterOption.label]
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -216,13 +226,13 @@ export default function ActivityTabScreen() {
           <ActivityHeader
             filter={filter}
             showMenu={showFilterMenu}
-            onToggleMenu={() => setShowFilterMenu((v) => !v)}
+            onToggleMenu={onToggleFilterMenu}
           />
           {showFilterMenu ? (
             <FilterMenu
               filter={filter}
               onSelect={setFilter}
-              onClose={() => setShowFilterMenu(false)}
+              onClose={onCloseFilterMenu}
             />
           ) : null}
         </View>
@@ -304,11 +314,11 @@ const ActivityRow = React.memo(function ActivityRow({ it, showSep }: { it: Recen
   const sym = currencySymbol(it.currency);
   const isSettlement = it.direction === "settled";
 
-  const handlePress = () => {
+  const handlePress = useCallback(() => {
     if (!isSettlement) {
       router.push({ pathname: "/(tabs)/shared/transaction", params: { id: it.id } } as Href);
     }
-  };
+  }, [isSettlement, it.id]);
 
   return (
     <View>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useApiFetch, getPersistedResponse, invalidateApiCache } from "../lib/api";
 
@@ -425,7 +426,14 @@ export function usePersonDetail(key: string | null) {
       }, interval);
     };
     schedule();
-    return () => clearTimeout(timer);
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") {
+        clearTimeout(timer); // pause polling when backgrounded
+      } else {
+        schedule(); // resume polling when app comes back
+      }
+    });
+    return () => { clearTimeout(timer); appStateSub.remove(); };
   }, [key, fetchDetail]);
 
   return { detail, loading, refetch };
@@ -558,7 +566,7 @@ export function useHasUnseenActivity(): boolean {
   return unseen;
 }
 
-const ACTIVITY_DEBOUNCE_MS = 5_000;
+const ACTIVITY_DEBOUNCE_MS = 2_000;
 
 export function useRecentActivity(enabled = true) {
   const apiFetch = useApiFetch();
@@ -578,7 +586,8 @@ export function useRecentActivity(enabled = true) {
     if (!force && now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
     lastFetchTs.current = now;
     try {
-      await _loadLastSeen();
+      // _loadLastSeen() is already called at module level and has a _lastSeenLoaded guard;
+      // no need to await it here on every fetch — skip the redundant async call.
       const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
         retryCount.current = 0;

@@ -150,13 +150,12 @@ const BankCardItem = React.memo(function BankCardItem({
   item,
   onPress,
   onSplit,
-  theme,
 }: {
   item: HomeBankStripRow;
   onPress: (item: HomeBankStripRow) => void;
   onSplit: (item: HomeBankStripRow) => void;
-  theme: any;
 }) {
+  const { theme } = useTheme();
   return (
     <Pressable
       style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
@@ -208,13 +207,12 @@ const LiveBankCardItem = React.memo(function LiveBankCardItem({
   item,
   onPress,
   onSplit,
-  theme,
 }: {
   item: HomeBankStripRow;
   onPress: (item: HomeBankStripRow) => void;
   onSplit: (item: HomeBankStripRow) => void;
-  theme: any;
 }) {
+  const { theme } = useTheme();
   return (
     <Pressable
       style={[styles.bankCard, item.cardDetailIsReceipt && styles.bankCardEmail, { backgroundColor: theme.surface, borderColor: item.cardDetailIsReceipt ? "#D9D7F0" : theme.border }]}
@@ -266,13 +264,12 @@ const AllBankListItem = React.memo(function AllBankListItem({
   tx,
   onPress,
   onSplit,
-  theme,
 }: {
   tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; logoUrl?: string | null; category?: string };
   onPress: (tx: any) => void;
   onSplit: (tx: any) => void;
-  theme: any;
 }) {
+  const { theme } = useTheme();
   return (
     <TouchableOpacity
       style={styles.friendRow}
@@ -366,7 +363,7 @@ export default function BalancesPrototypeScreen() {
   const [mapLoadFailed, setMapLoadFailed] = useState(false);
 
   // Contacts banner (one-time dismissable)
-  const { permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
+  const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
   const [contactsBannerDismissed, setContactsBannerDismissed] = useState(true);
   useEffect(() => {
     AsyncStorage.getItem("coconut.contacts.banner.dismissed").then((v) => {
@@ -390,6 +387,21 @@ export default function BalancesPrototypeScreen() {
     contactsPerm !== "granted" &&
     isSignedIn &&
     !isDemoOn;
+
+  const knownNames = useMemo(
+    () => new Set(
+      [...(summary?.friends ?? []), ...(summary?.groups ?? [])]
+        .map((f) => f.displayName.toLowerCase())
+    ),
+    [summary?.friends, summary?.groups]
+  );
+
+  const contactSuggestions = useMemo(
+    () => contactsPerm !== "granted" || !deviceContacts.length
+      ? []
+      : deviceContacts.filter((c) => !knownNames.has(c.name.toLowerCase())).slice(0, 6),
+    [deviceContacts, contactsPerm, knownNames]
+  );
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
@@ -464,16 +476,16 @@ export default function BalancesPrototypeScreen() {
   }, []);
 
   const renderBankCardItem = useCallback(({ item }: { item: HomeBankStripRow }) => (
-    <BankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} theme={theme} />
-  ), [theme, handleBankCardPress, handleBankCardSplit]);
+    <BankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} />
+  ), [handleBankCardPress, handleBankCardSplit]);
 
   const renderLiveBankCardItem = useCallback(({ item }: { item: HomeBankStripRow }) => (
-    <LiveBankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} theme={theme} />
-  ), [theme, handleBankCardPress, handleBankCardSplit]);
+    <LiveBankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} />
+  ), [handleBankCardPress, handleBankCardSplit]);
 
   const renderAllBankItem = useCallback(({ item: tx }: { item: any }) => (
-    <AllBankListItem tx={tx} onPress={handleAllBankItemPress} onSplit={handleAllBankItemSplit} theme={theme} />
-  ), [theme, handleAllBankItemPress, handleAllBankItemSplit]);
+    <AllBankListItem tx={tx} onPress={handleAllBankItemPress} onSplit={handleAllBankItemSplit} />
+  ), [handleAllBankItemPress, handleAllBankItemSplit]);
 
   useEffect(() => {
     setMapLoadFailed(false);
@@ -520,7 +532,7 @@ export default function BalancesPrototypeScreen() {
   }, [selectedStrip, apiFetch]);
 
   const allLinkedBankRows = useMemo(() => {
-    if (!linked) return [];
+    if (!linked || !showAllBank) return [];
     return bankVisibleTransactions
       .filter((tx) => Number(tx.amount) < 0)
       .sort((a, b) => {
@@ -529,7 +541,7 @@ export default function BalancesPrototypeScreen() {
         return (Number.isNaN(db) ? 0 : db) - (Number.isNaN(da) ? 0 : da);
       })
       .slice(0, 500);
-  }, [bankVisibleTransactions, linked]);
+  }, [bankVisibleTransactions, linked, showAllBank]);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
     if (datePreset === "all" || datePreset === "receipts") return null;
@@ -545,6 +557,7 @@ export default function BalancesPrototypeScreen() {
   }, [datePreset, customDateStart, customDateEnd]);
 
   const filteredAllBankRows = useMemo(() => {
+    if (!showAllBank) return [];
     const q = committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
@@ -562,7 +575,7 @@ export default function BalancesPrototypeScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, bankFilter, committedSearch, dateFilterRange, datePreset]);
+  }, [allLinkedBankRows, bankFilter, committedSearch, dateFilterRange, datePreset, showAllBank]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
@@ -596,7 +609,7 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refetch();
+      if (state === "active" && focusedRef.current) void refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);
@@ -715,6 +728,49 @@ export default function BalancesPrototypeScreen() {
           </View>
         ) : null}
 
+        {contactSuggestions.length > 0 ? (
+          <View style={{ marginBottom: 18 }}>
+            <View style={styles.sectionRow}>
+              <SLabel>People you know</SLabel>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+            >
+              {contactSuggestions.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/add-expense",
+                      params: {
+                        prefillContactName: c.name,
+                        prefillContactEmail: c.email ?? "",
+                        prefillContactPhone: c.phone ?? "",
+                      },
+                    })
+                  }
+                  style={[
+                    styles.contactPill,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.contactPillAvatar, { backgroundColor: "#8B5CF622" }]}>
+                    <Text style={[styles.contactPillInitials, { color: "#8B5CF6" }]}>
+                      {c.name.slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.contactPillName, { color: theme.text }]} numberOfLines={1}>
+                    {c.name.split(" ")[0]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <View style={{ marginBottom: 12 }}>
           <View style={styles.sectionRow}>
             <SLabel>Friends</SLabel>
@@ -804,7 +860,9 @@ export default function BalancesPrototypeScreen() {
                   >
                     <Text style={styles.inlineSectionLabelText}>Groups</Text>
                   </View>
-                  {groups.map((g, i) => (
+                  {groups.map((g, i) => {
+                    const balLines = groupBalanceLines(g);
+                    return (
                     <View key={g.id}>
                       {i > 0 ? <View style={styles.rowSep} /> : null}
                       <TouchableOpacity
@@ -825,9 +883,9 @@ export default function BalancesPrototypeScreen() {
                             {g.memberCount} members · {timeAgo(g.lastActivityAt)}
                           </Text>
                         </View>
-                        {groupBalanceLines(g).length > 0 ? (
+                        {balLines.length > 0 ? (
                           <View style={{ alignItems: "flex-end" }}>
-                            {groupBalanceLines(g).map((b) => (
+                            {balLines.map((b) => (
                               <Text
                                 key={b.currency}
                                 style={[
@@ -846,7 +904,8 @@ export default function BalancesPrototypeScreen() {
                         <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
                       </TouchableOpacity>
                     </View>
-                  ))}
+                    );
+                  })}
                 </>
               ) : null}
             </View>
@@ -1874,6 +1933,33 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontFamily: font.semibold,
+  },
+  contactPill: {
+    flexDirection: "column",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    minWidth: 70,
+  },
+  contactPillAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactPillInitials: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+  },
+  contactPillName: {
+    fontSize: 12,
+    fontFamily: font.medium,
+    maxWidth: 70,
+    textAlign: "center",
   },
 });
 

@@ -74,6 +74,178 @@ function timeAgo(iso: string) {
   return d === 0 ? "Today" : d === 1 ? "Yesterday" : d < 7 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+type FriendSummaryItem = {
+  key: string;
+  displayName: string;
+  balance: number;
+  balances?: { currency: string; amount: number }[];
+  lastActivityAt?: string | null;
+};
+
+type GroupSummaryItem = {
+  id: string;
+  name: string;
+  memberCount: number;
+  imageUrl?: string | null;
+  myBalance: number;
+  myBalances?: { currency: string; amount: number }[];
+  lastActivityAt?: string | null;
+  groupType?: string | null;
+};
+
+const ContactRow = React.memo(function ContactRow({
+  contact,
+  onPress,
+}: {
+  contact: DeviceContact;
+  onPress: (c: DeviceContact) => void;
+}) {
+  const { theme } = useTheme();
+  const handlePress = useCallback(() => onPress(contact), [contact, onPress]);
+  return (
+    <TouchableOpacity
+      style={[st.afContactRow, { borderBottomColor: theme.borderLight }]}
+      onPress={handlePress}
+      activeOpacity={0.65}
+    >
+      <View style={[st.afContactAvatar, { backgroundColor: theme.surfaceSecondary }]}>
+        <Text style={[st.afContactInitial, { color: theme.text }]}>
+          {contact.name.charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[st.afContactName, { color: theme.text }]}>{contact.name}</Text>
+        {(contact.phone || contact.email) ? (
+          <Text style={[st.afContactPhone, { color: theme.textTertiary }]}>
+            {contact.phone ?? contact.email ?? ""}
+          </Text>
+        ) : null}
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
+    </TouchableOpacity>
+  );
+});
+
+const FriendRow = React.memo(function FriendRow({
+  friend,
+  showSep,
+  myCurrency,
+}: {
+  friend: FriendSummaryItem;
+  showSep: boolean;
+  myCurrency: string;
+}) {
+  const { theme } = useTheme();
+  const balanceLines = useMemo(() => friendBalanceLines(friend), [friend]);
+  const balanceLabel = useMemo(() => {
+    if (balanceLines.length === 0) return "settled up";
+    const pos = balanceLines.some((l) => l.amount > 0.005) && balanceLines.every((l) => l.amount >= -0.005);
+    const neg = balanceLines.some((l) => l.amount < -0.005) && balanceLines.every((l) => l.amount <= 0.005);
+    if (!pos && !neg) return "balances";
+    return pos ? "owes you" : "you owe";
+  }, [balanceLines]);
+
+  const handlePress = useCallback(() => {
+    if (friend.key.startsWith("opt-")) {
+      router.push({ pathname: "/(tabs)/shared/group", params: { id: friend.key.slice(4) } });
+      return;
+    }
+    if (friend.key.startsWith("fb-")) {
+      router.push({ pathname: "/(tabs)/shared/group", params: { id: friend.key.slice(3) } });
+      return;
+    }
+    router.push({ pathname: "/(tabs)/shared/person", params: { key: friend.key } });
+  }, [friend.key]);
+
+  return (
+    <View>
+      <TouchableOpacity style={st.groupedRow} onPress={handlePress} activeOpacity={0.75}>
+        <Avatar name={friend.displayName} size={42} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[st.rowName, { color: theme.text }]}>{friend.displayName}</Text>
+          <Text style={st.rowSub}>{balanceLabel}</Text>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          {balanceLines.length === 0 ? (
+            <Text style={[st.rowBal, st.muted]}>—</Text>
+          ) : (
+            balanceLines.map((b) => {
+              const p = b.amount > 0.005;
+              const n = b.amount < -0.005;
+              return (
+                <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  {b.currency.toUpperCase() !== myCurrency && (
+                    <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
+                  )}
+                  <Text style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
+                    {p ? "+" : n ? "−" : ""}
+                    {formatSplitCurrencyAmount(b.amount, b.currency)}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+        <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+      </TouchableOpacity>
+      {showSep ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+    </View>
+  );
+});
+
+const GroupRow = React.memo(function GroupRow({
+  group,
+  showSep,
+  myCurrency,
+}: {
+  group: GroupSummaryItem;
+  showSep: boolean;
+  myCurrency: string;
+}) {
+  const { theme } = useTheme();
+  const balanceLines = useMemo(() => groupBalanceLines(group), [group]);
+  const handlePress = useCallback(() => {
+    router.push({ pathname: "/(tabs)/shared/group", params: { id: group.id } });
+  }, [group.id]);
+
+  return (
+    <View>
+      <TouchableOpacity style={st.groupedRow} onPress={handlePress} activeOpacity={0.75}>
+        {group.imageUrl ? (
+          <Image source={{ uri: group.imageUrl }} style={st.groupIconImg} />
+        ) : (
+          <View style={[st.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
+            <Ionicons name="people" size={18} color={theme.text} />
+          </View>
+        )}
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[st.rowName, { color: theme.text }]}>{group.name}</Text>
+          <Text style={[st.rowSub, { color: theme.textTertiary }]}>{group.memberCount} members · {timeAgo(group.lastActivityAt ?? new Date().toISOString())}</Text>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          {balanceLines.length === 0 ? (
+            <Text style={[st.rowBal, st.muted]}>—</Text>
+          ) : (
+            balanceLines.map((b) => (
+              <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {b.currency.toUpperCase() !== myCurrency && (
+                  <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
+                )}
+                <Text style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
+                  {b.amount > 0 ? "+" : "−"}
+                  {formatSplitCurrencyAmount(b.amount, b.currency)}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+        <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
+      </TouchableOpacity>
+      {showSep ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+    </View>
+  );
+});
+
 export default function SharedIndex() {
   const { theme } = useTheme();
   const { userId } = useAuth();
@@ -341,7 +513,7 @@ export default function SharedIndex() {
     };
   }, [optimisticStoreKey]);
 
-  const createGroup = async () => {
+  const createGroup = useCallback(async () => {
     const name = groupName.trim();
     if (!name) return;
     if (isDemoOn) {
@@ -403,10 +575,10 @@ export default function SharedIndex() {
               }
             } else {
               const err = await uploadRes.json().catch(() => ({}));
-              console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
+              if (__DEV__) console.warn("[createGroup] image upload failed:", (err as { error?: string }).error);
             }
           } catch (e) {
-            console.warn("[createGroup] image upload error:", e);
+            if (__DEV__) console.warn("[createGroup] image upload error:", e);
           }
         }
         invalidateApiCache("/api/groups/summary");
@@ -417,7 +589,7 @@ export default function SharedIndex() {
     } finally {
       setCreating(false);
     }
-  };
+  }, [isDemoOn, groupName, groupType, groupImage, groupImageMime, optimisticGroups, optimisticFriends, apiFetch, persistOptimistic, refetch]);
 
   const existingFriendNames = useMemo(() => {
     const names = new Set<string>();
@@ -443,6 +615,16 @@ export default function SharedIndex() {
     setFriendEmail(contact.email ?? "");
   }, []);
 
+  const onContactRowPress = useCallback((contact: DeviceContact) => {
+    Keyboard.dismiss();
+    addFriendFromContact(contact);
+    setShowManualEntry(false);
+    setContactSearch("");
+  }, [addFriendFromContact]);
+
+  const onToggleArchived = useCallback(() => setShowArchived((v) => !v), []);
+  const onClearSelectedFriend = useCallback(() => { setFriendName(""); setFriendEmail(""); }, []);
+
   const closeAddFriend = useCallback(() => {
     setShowAddFriend(false);
     setFriendName("");
@@ -451,7 +633,7 @@ export default function SharedIndex() {
     setShowManualEntry(false);
   }, []);
 
-  const addFriend = async () => {
+  const addFriend = useCallback(async () => {
     const name = friendName.trim();
     const email = friendEmail.trim() || null;
     if (!name) return;
@@ -506,99 +688,116 @@ export default function SharedIndex() {
     } finally {
       setAddingFriend(false);
     }
-  };
+  }, [isDemoOn, friendName, friendEmail, optimisticGroups, optimisticFriends, apiFetch, closeAddFriend, persistOptimistic, refetch]);
 
   const summaryFriends = summary?.friends ?? [];
   const summaryGroups = summary?.groups ?? [];
-  const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
-  const fallbackFriendRows = fallbackGroups
-    .filter((g) => (g.groupType ?? "other") !== "home")
-    .map((g) => ({
-      key: `fb-${g.id}`,
-      displayName: g.name,
-      balance: 0,
-      balances: [] as { currency: string; amount: number }[],
-    }));
-  const mergedFallbackFriends = [
-    ...optimisticFriends,
-    ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
-  ];
-  // When the API returns successfully, trust it — including empty lists (all settled). Do not fall back
-  // to “everyone from /api/groups” or we’d show people with $0 net like Splitwise hides.
-  const unsortedFriends =
-    !isDemoOn && realSummary != null
-      ? summaryFriends
-      : isDemoOn
+
+  const friends = useMemo(() => {
+    const mergedFallbackGroups = [
+      ...optimisticGroups,
+      ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id)),
+    ];
+    const fallbackFriendRows = fallbackGroups
+      .filter((g) => (g.groupType ?? “other”) !== “home”)
+      .map((g) => ({
+        key: `fb-${g.id}`,
+        displayName: g.name,
+        balance: 0,
+        balances: [] as { currency: string; amount: number }[],
+      }));
+    const mergedFallbackFriends = [
+      ...optimisticFriends,
+      ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
+    ];
+    // When the API returns successfully, trust it — including empty lists (all settled). Do not fall back
+    // to “everyone from /api/groups” or we’d show people with $0 net like Splitwise hides.
+    const unsortedFriends =
+      !isDemoOn && realSummary != null
         ? summaryFriends
-        : mergedFallbackFriends;
-  const friends = [...unsortedFriends].sort((a, b) => {
-    const aHasBalance = (a.balances?.length ?? 0) > 0 ? 1 : 0;
-    const bHasBalance = (b.balances?.length ?? 0) > 0 ? 1 : 0;
-    if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
-    const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? "";
-    const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? "";
-    if (aTime !== bTime) return bTime > aTime ? 1 : -1;
-    return a.displayName.localeCompare(b.displayName);
-  });
-  const groupsBase =
-    !isDemoOn && realSummary != null
-      ? summaryGroups
-      : mergedFallbackGroups.map((g) => ({
-          id: g.id,
-          name: g.name,
-          memberCount: g.memberCount,
-          imageUrl: g.imageUrl ?? null as string | null | undefined,
-          myBalance: 0,
-          myBalances: [] as { currency: string; amount: number }[],
-          lastActivityAt: new Date().toISOString(),
-        }));
-  const optimisticNotInApi = optimisticGroups
-    .filter((og) => !groupsBase.some((g) => g.id === og.id))
-    .map((og) => ({
-      id: og.id,
-      name: og.name,
-      memberCount: og.memberCount,
-      imageUrl: og.imageUrl ?? null as string | null | undefined,
-      myBalance: 0,
-      myBalances: [] as { currency: string; amount: number }[],
-      lastActivityAt: new Date().toISOString(),
-    }));
-  const groupsFromApi = [...optimisticNotInApi, ...groupsBase];
-  const groupsMerged = !isDemoOn && realSummary != null ? groupsFromApi : isDemoOn ? summaryGroups : groupsFromApi;
-  const groupsById = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
-  // Deduplicate by name — prefer the group with a nonzero balance or more members
-  const groupsByName = new Map<string, (typeof groupsById)[0]>();
-  for (const g of groupsById) {
-    const key = g.name.trim().toLowerCase();
-    const prev = groupsByName.get(key);
-    if (!prev) { groupsByName.set(key, g); continue; }
-    const prevHasBalance = prev.myBalance !== 0 || (prev.myBalances?.length ?? 0) > 0;
-    const thisHasBalance = g.myBalance !== 0 || (g.myBalances?.length ?? 0) > 0;
-    if (thisHasBalance && !prevHasBalance) groupsByName.set(key, g);
-    else if (thisHasBalance === prevHasBalance && g.memberCount > prev.memberCount) groupsByName.set(key, g);
-    else if (thisHasBalance === prevHasBalance && g.memberCount === prev.memberCount && g.imageUrl && !prev.imageUrl) groupsByName.set(key, g);
-  }
-  const groups = [...groupsByName.values()].sort((a, b) => {
-    const aHasBalance = (a.myBalances?.length ?? 0) > 0 ? 1 : 0;
-    const bHasBalance = (b.myBalances?.length ?? 0) > 0 ? 1 : 0;
-    if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
-    const aTime = a.lastActivityAt ?? "";
-    const bTime = b.lastActivityAt ?? "";
-    if (aTime !== bTime) return bTime > aTime ? 1 : -1;
-    return a.name.localeCompare(b.name);
-  });
-  const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
-  const visibleGroups = groups
-    .filter((g) => {
-      if ("groupType" in g && g.groupType === "friend") return false;
-      const gName = g.name.trim().toLowerCase();
-      if (g.memberCount <= 2 && friendNameSet.has(gName)) return false;
-      return true;
-    })
-    .map((g) => ({
-      ...g,
-      imageUrl: g.imageUrl || localGroupImages[g.id] || null,
-    }));
+        : isDemoOn
+          ? summaryFriends
+          : mergedFallbackFriends;
+    return [...unsortedFriends].sort((a, b) => {
+      const aHasBalance = (a.balances?.length ?? 0) > 0 ? 1 : 0;
+      const bHasBalance = (b.balances?.length ?? 0) > 0 ? 1 : 0;
+      if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+      const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? “”;
+      const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? “”;
+      if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [summaryFriends, optimisticFriends, fallbackGroups, optimisticGroups, isDemoOn, realSummary]);
+
+  const friendNameSet = useMemo(
+    () => new Set(friends.map((f) => f.displayName.trim().toLowerCase())),
+    [friends]
+  );
+
+  const visibleGroups = useMemo(() => {
+    const mergedFallbackGroups = [
+      ...optimisticGroups,
+      ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id)),
+    ];
+    const groupsBase =
+      !isDemoOn && realSummary != null
+        ? summaryGroups
+        : mergedFallbackGroups.map((g) => ({
+            id: g.id,
+            name: g.name,
+            memberCount: g.memberCount,
+            imageUrl: g.imageUrl ?? null as string | null | undefined,
+            myBalance: 0,
+            myBalances: [] as { currency: string; amount: number }[],
+            lastActivityAt: new Date().toISOString(),
+          }));
+    const optimisticNotInApi = optimisticGroups
+      .filter((og) => !groupsBase.some((g) => g.id === og.id))
+      .map((og) => ({
+        id: og.id,
+        name: og.name,
+        memberCount: og.memberCount,
+        imageUrl: og.imageUrl ?? null as string | null | undefined,
+        myBalance: 0,
+        myBalances: [] as { currency: string; amount: number }[],
+        lastActivityAt: new Date().toISOString(),
+      }));
+    const groupsFromApi = [...optimisticNotInApi, ...groupsBase];
+    const groupsMerged = !isDemoOn && realSummary != null ? groupsFromApi : isDemoOn ? summaryGroups : groupsFromApi;
+    const groupsById = groupsMerged.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i);
+    // Deduplicate by name — prefer the group with a nonzero balance or more members
+    const groupsByName = new Map<string, (typeof groupsById)[0]>();
+    for (const g of groupsById) {
+      const key = g.name.trim().toLowerCase();
+      const prev = groupsByName.get(key);
+      if (!prev) { groupsByName.set(key, g); continue; }
+      const prevHasBalance = prev.myBalance !== 0 || (prev.myBalances?.length ?? 0) > 0;
+      const thisHasBalance = g.myBalance !== 0 || (g.myBalances?.length ?? 0) > 0;
+      if (thisHasBalance && !prevHasBalance) groupsByName.set(key, g);
+      else if (thisHasBalance === prevHasBalance && g.memberCount > prev.memberCount) groupsByName.set(key, g);
+      else if (thisHasBalance === prevHasBalance && g.memberCount === prev.memberCount && g.imageUrl && !prev.imageUrl) groupsByName.set(key, g);
+    }
+    const sortedGroups = [...groupsByName.values()].sort((a, b) => {
+      const aHasBalance = (a.myBalances?.length ?? 0) > 0 ? 1 : 0;
+      const bHasBalance = (b.myBalances?.length ?? 0) > 0 ? 1 : 0;
+      if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+      const aTime = a.lastActivityAt ?? “”;
+      const bTime = b.lastActivityAt ?? “”;
+      if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+    return sortedGroups
+      .filter((g) => {
+        if (“groupType” in g && g.groupType === “friend”) return false;
+        const gName = g.name.trim().toLowerCase();
+        if (g.memberCount <= 2 && friendNameSet.has(gName)) return false;
+        return true;
+      })
+      .map((g) => ({
+        ...g,
+        imageUrl: g.imageUrl || localGroupImages[g.id] || null,
+      }));
+  }, [summaryGroups, optimisticGroups, fallbackGroups, isDemoOn, realSummary, friendNameSet, localGroupImages]);
 
   if (loading && !summary) return <SharedSkeletonScreen />;
 
@@ -750,32 +949,7 @@ export default function SharedIndex() {
                   </Text>
                 ) : (
                   filteredContacts.map((c) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[st.afContactRow, { borderBottomColor: theme.borderLight }]}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        addFriendFromContact(c);
-                        setShowManualEntry(false);
-                        setContactSearch("");
-                      }}
-                      activeOpacity={0.65}
-                    >
-                      <View style={[st.afContactAvatar, { backgroundColor: theme.surfaceSecondary }]}>
-                        <Text style={[st.afContactInitial, { color: theme.text }]}>
-                          {c.name.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[st.afContactName, { color: theme.text }]}>{c.name}</Text>
-                        {(c.phone || c.email) ? (
-                          <Text style={[st.afContactPhone, { color: theme.textTertiary }]}>
-                            {c.phone ?? c.email ?? ""}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
-                    </TouchableOpacity>
+                    <ContactRow key={c.id} contact={c} onPress={onContactRowPress} />
                   ))
                 )}
               </>
@@ -788,7 +962,7 @@ export default function SharedIndex() {
               <View style={st.afSelectedPill}>
                 <Avatar name={friendName} size={28} />
                 <Text style={[st.afSelectedName, { color: theme.text }]} numberOfLines={1}>{friendName}</Text>
-                <TouchableOpacity onPress={() => { setFriendName(""); setFriendEmail(""); }} hitSlop={8}>
+                <TouchableOpacity onPress={onClearSelectedFriend} hitSlop={8}>
                   <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
                 </TouchableOpacity>
               </View>
@@ -927,63 +1101,12 @@ export default function SharedIndex() {
           ) : (
             <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {friends.map((f, i) => (
-                <View key={f.key}>
-                  <TouchableOpacity
-                    style={st.groupedRow}
-                    onPress={() => {
-                      if (f.key.startsWith("opt-")) {
-                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(4) } });
-                        return;
-                      }
-                      if (f.key.startsWith("fb-")) {
-                        router.push({ pathname: "/(tabs)/shared/group", params: { id: f.key.slice(3) } });
-                        return;
-                      }
-                      router.push({ pathname: "/(tabs)/shared/person", params: { key: f.key } });
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Avatar name={f.displayName} size={42} />
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={[st.rowName, { color: theme.text }]}>{f.displayName}</Text>
-                      <Text style={st.rowSub}>
-                        {(() => {
-                          const lines = friendBalanceLines(f);
-                          if (lines.length === 0) return "settled up";
-                          const pos =
-                            lines.some((l) => l.amount > 0.005) && lines.every((l) => l.amount >= -0.005);
-                          const neg =
-                            lines.some((l) => l.amount < -0.005) && lines.every((l) => l.amount <= 0.005);
-                          if (!pos && !neg) return "balances";
-                          return pos ? "owes you" : "you owe";
-                        })()}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      {friendBalanceLines(f).length === 0 ? (
-                        <Text style={[st.rowBal, st.muted]}>—</Text>
-                      ) : (
-                        friendBalanceLines(f).map((b) => {
-                          const p = b.amount > 0.005;
-                          const n = b.amount < -0.005;
-                          return (
-                            <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              {b.currency.toUpperCase() !== myCurrency && (
-                                <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
-                              )}
-                              <Text style={[st.rowBal, p ? st.balIn : n ? st.balOut : st.muted]}>
-                                {p ? "+" : n ? "−" : ""}
-                                {formatSplitCurrencyAmount(b.amount, b.currency)}
-                              </Text>
-                            </View>
-                          );
-                        })
-                      )}
-                    </View>
-                    <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                  </TouchableOpacity>
-                  {i < friends.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-                </View>
+                <FriendRow
+                  key={f.key}
+                  friend={f}
+                  showSep={i < friends.length - 1}
+                  myCurrency={myCurrency}
+                />
               ))}
             </View>
           )}
@@ -1005,44 +1128,12 @@ export default function SharedIndex() {
           ) : (
             <View style={[st.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {visibleGroups.map((g, i) => (
-                <View key={g.id}>
-                  <TouchableOpacity
-                    style={st.groupedRow}
-                    onPress={() => router.push({ pathname: "/(tabs)/shared/group", params: { id: g.id } })}
-                    activeOpacity={0.75}
-                  >
-                    {g.imageUrl ? (
-                      <Image source={{ uri: g.imageUrl }} style={st.groupIconImg} />
-                    ) : (
-                      <View style={[st.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
-                        <Ionicons name="people" size={18} color={theme.text} />
-                      </View>
-                    )}
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={[st.rowName, { color: theme.text }]}>{g.name}</Text>
-                      <Text style={[st.rowSub, { color: theme.textTertiary }]}>{g.memberCount} members · {timeAgo(g.lastActivityAt)}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      {groupBalanceLines(g).length === 0 ? (
-                        <Text style={[st.rowBal, st.muted]}>—</Text>
-                      ) : (
-                        groupBalanceLines(g).map((b) => (
-                          <View key={b.currency} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                            {b.currency.toUpperCase() !== myCurrency && (
-                              <Text style={[st.currBadge, { backgroundColor: theme.surfaceSecondary, color: theme.textTertiary }]}>{b.currency}</Text>
-                            )}
-                            <Text style={[st.rowBal, b.amount > 0 ? st.balIn : st.balOut]}>
-                              {b.amount > 0 ? "+" : "−"}
-                              {formatSplitCurrencyAmount(b.amount, b.currency)}
-                            </Text>
-                          </View>
-                        ))
-                      )}
-                    </View>
-                    <Ionicons name="chevron-forward" size={14} color="#8A9098" style={{ marginLeft: 6, opacity: 0.5 }} />
-                  </TouchableOpacity>
-                  {i < visibleGroups.length - 1 ? <View style={[st.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-                </View>
+                <GroupRow
+                  key={g.id}
+                  group={g}
+                  showSep={i < visibleGroups.length - 1}
+                  myCurrency={myCurrency}
+                />
               ))}
             </View>
           )}
@@ -1050,7 +1141,7 @@ export default function SharedIndex() {
           {!isDemoOn ? (
             <View style={{ marginTop: 8 }}>
               <TouchableOpacity
-                onPress={() => setShowArchived((v) => !v)}
+                onPress={onToggleArchived}
                 style={{ paddingVertical: 14 }}
                 hitSlop={8}
                 activeOpacity={0.7}
