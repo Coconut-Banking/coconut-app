@@ -472,6 +472,8 @@ export default function AddExpenseScreen() {
     }
 
     let cancelled = false;
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
     setError(null);
     setResolving(true);
 
@@ -509,7 +511,8 @@ export default function AddExpenseScreen() {
           if (cachedGid) {
             gid = cachedGid;
           } else {
-            const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(t.key)}`);
+            const res = await apiFetch(`/api/groups/person?key=${encodeURIComponent(t.key)}`, { signal });
+            if (cancelled) return;
             const data = await res.json();
             if (cancelled) return;
             if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
@@ -529,6 +532,7 @@ export default function AddExpenseScreen() {
                 const groupRes = await apiFetch("/api/groups", {
                   method: "POST",
                   body: { name: friendName, ownerDisplayName: "You", group_type: "friend" } as object,
+                  signal,
                 });
                 const group = await groupRes.json();
                 if (cancelled) return;
@@ -539,6 +543,7 @@ export default function AddExpenseScreen() {
                   await apiFetch(`/api/groups/${group.id}/members`, {
                     method: "POST",
                     body: memberBody as object,
+                    signal,
                   });
                   gid = group.id;
                 }
@@ -560,6 +565,7 @@ export default function AddExpenseScreen() {
             const groupRes = await apiFetch("/api/groups", {
               method: "POST",
               body: { name: groupName, ownerDisplayName: "You", group_type: "friend" } as object,
+              signal,
             });
             const group = await groupRes.json();
             if (cancelled) return;
@@ -572,7 +578,7 @@ export default function AddExpenseScreen() {
               const body: Record<string, string> = { displayName: ft.name };
               if (friendUserId) body.userId = friendUserId;
               if (friendEmail) body.email = friendEmail;
-              return apiFetch(`/api/groups/${gid}/members`, { method: "POST", body: body as object });
+              return apiFetch(`/api/groups/${gid}/members`, { method: "POST", body: body as object, signal });
             }));
             if (cancelled) return;
             _friendGroupCache.set(cacheKey, gid!);
@@ -595,7 +601,7 @@ export default function AddExpenseScreen() {
         }
 
         // Fetch only the member list (lightweight)
-        const gr = await apiFetch(`/api/groups/${gid}/members`);
+        const gr = await apiFetch(`/api/groups/${gid}/members`, { signal });
         const raw = await gr.json();
         if (cancelled) return;
         if (!gr.ok) {
@@ -614,8 +620,8 @@ export default function AddExpenseScreen() {
         setPayerMemberId(null);
         setPaidByMe(true);
         if (!cancelled) setResolving(false);
-      } catch {
-        if (cancelled) return;
+      } catch (e) {
+        if (cancelled || (e instanceof Error && e.name === "AbortError")) return;
         if (attempt < 1) {
           await new Promise((r) => setTimeout(r, 200));
           if (!cancelled) load(1);
@@ -627,7 +633,7 @@ export default function AddExpenseScreen() {
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; abortCtrl.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, apiFetch, isDemoOn, retryCount]);
 

@@ -281,20 +281,37 @@ export function useApiFetch() {
               ? 30_000
               : 20_000;
 
+      const externalSignal = opts.signal as AbortSignal | undefined;
+
       const doFetch = async (authToken: string) => {
         const reqHeaders = { ...headers, Authorization: `Bearer ${authToken}` };
-        if (!timeoutMs) {
+        if (!timeoutMs && !externalSignal) {
           return fetch(url, { ...opts, headers: reqHeaders, body });
         }
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+        let onExternalAbort: (() => void) | null = null;
+        if (externalSignal) {
+          if (externalSignal.aborted) {
+            controller.abort();
+          } else {
+            onExternalAbort = () => controller.abort();
+            externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+          }
+        }
+
         try {
           const response = await fetch(url, { ...opts, headers: reqHeaders, body, signal: controller.signal });
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           return response;
         } catch (e) {
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           throw e;
+        } finally {
+          if (onExternalAbort && externalSignal) {
+            externalSignal.removeEventListener("abort", onExternalAbort);
+          }
         }
       };
 
