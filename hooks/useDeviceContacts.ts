@@ -50,15 +50,22 @@ function _broadcastContacts(c: DeviceContact[]) {
   _contactsListeners.forEach((fn) => fn(c));
 }
 
+let _loadingContacts = false;
+
 async function _loadContactsList() {
+  if (_loadingContacts) return;
+  _loadingContacts = true;
   const mod = await getContacts();
-  if (!mod) return;
+  if (!mod) { _loadingContacts = false; return; }
   try {
+    const fields = [mod.Fields.Emails, mod.Fields.PhoneNumbers, mod.Fields.Name].filter(Boolean);
     const { data } = await mod.getContactsAsync({
-      fields: [mod.Fields.Emails, mod.Fields.PhoneNumbers, mod.Fields.Name],
+      fields,
+      pageSize: 2000,
+      pageOffset: 0,
       ...(mod.SortTypes?.LastName != null ? { sort: mod.SortTypes.LastName } : {}),
     });
-    const mapped: DeviceContact[] = data
+    const mapped: DeviceContact[] = (data ?? [])
       .filter((c) => c.name)
       .map((c) => {
         const emails = (c.emails ?? []).map((e) => e.email ?? "").filter(Boolean);
@@ -73,7 +80,9 @@ async function _loadContactsList() {
         };
       });
     _broadcastContacts(mapped);
-  } catch { /* non-fatal */ }
+  } catch { /* non-fatal */ } finally {
+    _loadingContacts = false;
+  }
 }
 
 async function _checkPermission() {
@@ -113,23 +122,26 @@ export function useDeviceContacts() {
     return () => sub.remove();
   }, []);
 
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
   const requestAccess = useCallback(async (): Promise<boolean> => {
     try {
       const mod = await getContacts();
       if (!mod) return false;
-      setLoading(true);
-      const { status } = await mod.requestPermissionsAsync();
-      const granted = status === "granted";
+      if (mountedRef.current) setLoading(true);
+      const result = await mod.requestPermissionsAsync().catch(() => ({ status: "denied" as const }));
+      const granted = result.status === "granted";
       _broadcastPerm(granted ? "granted" : "denied");
       if (granted && !_contactsFetched) {
         _contactsFetched = true;
-        await _loadContactsList();
+        _loadContactsList(); // fire-and-forget so permission result returns immediately
       }
       return granted;
     } catch {
       return false;
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
