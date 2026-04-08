@@ -938,10 +938,6 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
-      <TouchableOpacity onPress={onContinue} style={styles.skipBtn} hitSlop={12}>
-        <Text style={[styles.skipText, { color: theme.textTertiary }]}>Skip for now</Text>
-      </TouchableOpacity>
-
       <View style={styles.illustrationWrap}>
         <View style={[styles.phoneFrame, { backgroundColor: theme.primary, borderColor: theme.primary }]}>
           <View style={[styles.phoneScreen, { backgroundColor: theme.background }]}>
