@@ -93,7 +93,9 @@ async function _checkPermission() {
   _broadcastPerm(mapped);
   if (mapped === "granted" && !_contactsFetched) {
     _contactsFetched = true;
-    await _loadContactsList();
+    // Delay so the app finishes transitioning from inactive→active before
+    // hitting CNContactStore. Calling it mid-transition crashes on iOS.
+    setTimeout(() => { _loadContactsList(); }, 600);
   }
 }
 
@@ -133,10 +135,9 @@ export function useDeviceContacts() {
       const result = await mod.requestPermissionsAsync().catch(() => ({ status: "denied" as const }));
       const granted = result.status === "granted";
       _broadcastPerm(granted ? "granted" : "denied");
-      if (granted && !_contactsFetched) {
-        _contactsFetched = true;
-        _loadContactsList(); // fire-and-forget so permission result returns immediately
-      }
+      // Don't call _loadContactsList here — the AppState "active" event fires
+      // when the iOS dialog dismisses and _checkPermission handles the load
+      // with a proper delay. Calling it here races with that transition.
       return granted;
     } catch {
       return false;
