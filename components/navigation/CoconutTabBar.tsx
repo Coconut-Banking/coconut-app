@@ -59,13 +59,25 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
   const goActivity = () => { sfx.tabTap(); navigation.navigate("activity" as never); };
   const goFriends = () => {
     sfx.tabTap();
+    const route = state.routes.find((r) => r.name === "shared");
+    const nested = route?.state;
+    const nestedIdx = nested?.index ?? 0;
+    const nestedRouteName = (nested?.routes as { name: string }[] | undefined)?.[nestedIdx]?.name;
+
     if (current === "shared") {
-      const route = state.routes.find((r) => r.name === "shared");
-      if (route?.state && route.state.index !== undefined && route.state.index > 0) {
-        navigation.dispatch({ ...StackActions.popToTop(), target: route.state.key });
+      if (nested?.key && nestedIdx > 0) {
+        navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
+      } else if (nestedRouteName && nestedRouteName !== "index") {
+        navigation.dispatch({
+          ...CommonActions.reset({ index: 0, routes: [{ name: "index" }] }),
+          target: nested?.key,
+        });
       }
     } else {
-      navigation.dispatch(CommonActions.navigate({ name: "shared", params: {} }));
+      if (nested?.key && nestedIdx > 0) {
+        navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
+      }
+      navigation.dispatch(CommonActions.navigate({ name: "shared" }));
     }
   };
   const goAccount = () => { sfx.tabTap(); navigation.navigate("settings" as never); };
