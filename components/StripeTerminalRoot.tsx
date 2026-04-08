@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { useAuth } from "@clerk/expo";
 import { StripeTerminalProvider } from "@stripe/stripe-terminal-react-native";
 import { StripeTerminalBridgePriming } from "./StripeTerminalBridgePriming";
+import { StripeTerminalEagerConnect } from "./StripeTerminalEagerConnect";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "";
 
@@ -54,6 +55,7 @@ export function StripeTerminalRoot({ children }: { children: ReactElement | Reac
     <StripeTerminalProvider logLevel="error" tokenProvider={fetchConnectionToken}>
       <View style={{ flex: 1 }}>
         <StripeTerminalBridgePriming />
+        <StripeTerminalEagerConnect />
         {children}
       </View>
     </StripeTerminalProvider>

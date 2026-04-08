@@ -23,6 +23,7 @@ import { useTheme } from "../../lib/theme-context";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
+import { waitForConnectLock } from "../../lib/terminal-connect-lock";
 
 /**
  * iOS often returns UNSUPPORTED_OPERATION / native 2900 when the app binary was signed without
@@ -723,7 +724,10 @@ function PayScreenInner() {
     if (!isInitialized || isConnected || connecting || collecting) return;
     if (autoConnectAttempted.current) return;
     autoConnectAttempted.current = true;
-    void connectTapToPay();
+    waitForConnectLock().then(() => {
+      if (connectedReaderRef.current) return;
+      void connectTapToPay();
+    });
   }, [hasPrefilledCheckout, isInitialized, isConnected, connecting, collecting, connectTapToPay]);
 
   return (
