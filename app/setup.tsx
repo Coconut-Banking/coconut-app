@@ -963,12 +963,13 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
           <BenefitRow icon="shield-checkmark-outline" text="Powered by Stripe — bank-grade security" theme={theme} />
         </View>
 
-        {error && (
-          <Text style={{ color: theme.error ?? "#D32F2F", fontSize: 14, fontFamily: font.medium, marginTop: 8, textAlign: "center" }}>
-            {error}
-          </Text>
-        )}
       </View>
+
+      {error ? (
+        <Text style={{ color: theme.error ?? "#D32F2F", fontSize: 13, fontFamily: font.medium, textAlign: "center", paddingHorizontal: 4, paddingVertical: 12 }}>
+          {error}
+        </Text>
+      ) : <View style={{ height: 12 }} />}
 
       <View style={{ gap: 8 }}>
         <TouchableOpacity
