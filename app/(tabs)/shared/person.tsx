@@ -196,6 +196,7 @@ export default function PersonScreen() {
       pathname: "/(tabs)/pay",
       params: {
         amount: firstLine.amount.toFixed(2),
+        currency: firstLine.currency,
         groupId: se.groupId,
         payerMemberId: se.fromMemberId,
         receiverMemberId: se.toMemberId,

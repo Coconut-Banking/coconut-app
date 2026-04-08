@@ -982,7 +982,7 @@ function SummaryStep({
             <View style={smst.personActions}>
               <TouchableOpacity
                 style={[smst.settleBtn, { backgroundColor: theme.text }]}
-                onPress={() => { sfx.paymentTap(); router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), groupId: resolvedGroupId ?? "" } }); }}
+                onPress={() => { sfx.paymentTap(); router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), currency: "USD", groupId: resolvedGroupId ?? "" } }); }}
                 activeOpacity={0.8}
               >
                 <Ionicons name="wifi" size={14} color={theme.surface} style={{ transform: [{ rotate: "90deg" }] }} />

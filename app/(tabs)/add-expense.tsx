@@ -815,6 +815,7 @@ export default function AddExpenseScreen() {
       pathname: "/(tabs)/pay",
       params: {
         amount: amountToCharge.toFixed(2),
+        currency: currencyCode,
         groupId: tapToPaySuggestion?.groupId ?? (resolvedGroupId ?? ""),
         payerMemberId: tapToPaySuggestion?.payerMemberId ?? "",
         receiverMemberId: tapToPaySuggestion?.receiverMemberId ?? "",
@@ -1266,6 +1267,7 @@ export default function AddExpenseScreen() {
                                   pathname: "/(tabs)/pay",
                                   params: {
                                     amount: person.amount.toFixed(2),
+                                    currency: currencyCode,
                                     groupId: resolvedGroupId ?? "",
                                     payerMemberId: person.memberId,
                                     receiverMemberId: effPayer ?? "",
