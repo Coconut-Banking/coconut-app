@@ -78,6 +78,8 @@ export type HomeBankStripRow = {
   category?: string | null;
   /** Shown under merchant when user has multiple linked accounts (e.g. "Chase ••1234"). */
   accountIndicator?: string | null;
+  /** Whether this transaction has already been split. */
+  alreadySplit?: boolean;
 };
 
 export function demoChargeToStripRow(
@@ -101,6 +103,39 @@ export function demoChargeToStripRow(
     receiptBoxText: tx.emailLine,
     receiptId: tx.receiptId ?? null,
     accountIndicator: accountIndicator ?? undefined,
+  };
+}
+
+/** Convert a raw bank Transaction into a sheet-compatible HomeBankStripRow. */
+export function txToSheetRow(tx: {
+  id: string;
+  merchant?: string;
+  rawDescription?: string;
+  amount: number;
+  dateStr?: string;
+  date?: string;
+  alreadySplit?: boolean;
+  receiptId?: string | null;
+  hasReceipt?: boolean;
+  logoUrl?: string | null;
+  category?: string;
+}): HomeBankStripRow {
+  const merchant = tx.merchant || tx.rawDescription || "Purchase";
+  const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
+  return {
+    stripId: tx.id,
+    merchant,
+    emoji: merchantEmoji(merchant),
+    amount: Math.abs(Number(tx.amount)),
+    cardDetailLine: tx.dateStr || tx.date || "",
+    cardDetailIsReceipt: false,
+    hasMailBadge: hasReceipt,
+    sheetDateLine: tx.dateStr || tx.date || "",
+    showReceiptBox: hasReceipt,
+    receiptId: tx.receiptId ?? null,
+    logoUrl: tx.logoUrl ?? null,
+    category: tx.category ?? null,
+    alreadySplit: tx.alreadySplit,
   };
 }
 

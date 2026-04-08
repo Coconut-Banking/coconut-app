@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
+  Modal,
+  Pressable,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +25,11 @@ import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
 import { sfx } from "../../lib/sounds";
+import { type HomeBankStripRow, txToSheetRow } from "../../lib/home-bank-strip";
+import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
+import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
+import { useApiFetch } from "../../lib/api";
+import type { ReceiptItem } from "../../lib/receipt-split";
 
 function normalizeMerchant(tx: Transaction) {
   return (tx.merchant || tx.rawDescription || "purchase").trim().toLowerCase();
@@ -170,7 +177,50 @@ export default function BankTabScreen() {
   const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
+  const [itemizedReceipt, setItemizedReceipt] = useState<{
+    items: ReceiptItem[];
+    merchantName: string;
+    merchantType: string | null;
+    merchantDetails: Record<string, unknown> | null;
+    subtotal: number;
+    tax: number;
+    tip: number;
+    total: number;
+    extras: Array<{ name: string; amount: number }>;
+  } | null>(null);
+  const [itemizedLoading, setItemizedLoading] = useState(false);
+  const [itemizedError, setItemizedError] = useState<string | null>(null);
+  const apiFetch = useApiFetch();
 
+  useEffect(() => {
+    if (!selectedStrip) {
+      setItemizedReceipt(null);
+      setItemizedError(null);
+      setItemizedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setItemizedReceipt(null);
+    setItemizedError(null);
+    if (!selectedStrip.receiptId) {
+      setItemizedLoading(false);
+      return;
+    }
+    setItemizedLoading(true);
+    fetchReceiptDetailForTransaction(apiFetch, selectedStrip.receiptId)
+      .then((d) => {
+        if (cancelled) return;
+        if (d) setItemizedReceipt(d);
+      })
+      .catch(() => {
+        if (!cancelled) setItemizedError("Could not load receipt details.");
+      })
+      .finally(() => {
+        if (!cancelled) setItemizedLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedStrip, apiFetch]);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
     if (datePreset === "all" || datePreset === "receipts") return null;
@@ -281,7 +331,7 @@ export default function BankTabScreen() {
               activeOpacity={0.75}
               onPress={() => {
                 sfx.pop();
-                pushPrefillFromKeywordRow(tx);
+                setSelectedStrip(txToSheetRow(tx));
               }}
             >
               <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -370,7 +420,19 @@ export default function BankTabScreen() {
                       activeOpacity={0.75}
                       onPress={() => {
                         sfx.pop();
-                        pushPrefillFromSearchTx(tx);
+                        const merchant = tx.merchant_name || tx.normalized_merchant || tx.raw_name || "Purchase";
+                        setSelectedStrip({
+                          stripId: tx.id,
+                          merchant,
+                          emoji: merchant[0] ?? "•",
+                          amount: Math.abs(tx.amount),
+                          cardDetailLine: tx.date,
+                          cardDetailIsReceipt: false,
+                          hasMailBadge: false,
+                          sheetDateLine: tx.date,
+                          showReceiptBox: false,
+                          receiptId: null,
+                        });
                       }}
                     >
                       <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
@@ -655,6 +717,89 @@ export default function BankTabScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {selectedStrip ? <Modal visible={true} transparent animationType="slide" onRequestClose={() => setSelectedStrip(null)}>
+        <Pressable style={sheetStyles.overlay} onPress={() => setSelectedStrip(null)}>
+          <Pressable style={sheetStyles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={sheetStyles.handle} />
+            <ScrollView style={sheetStyles.scroll} showsVerticalScrollIndicator={false}>
+              <View style={sheetStyles.head}>
+                <View style={sheetStyles.logoWrap}>
+                  <MerchantLogo
+                    merchantName={selectedStrip.merchant}
+                    size={32}
+                    logoUrl={selectedStrip.logoUrl}
+                    category={selectedStrip.category}
+                    backgroundColor="transparent"
+                    borderColor="transparent"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={sheetStyles.merchant}>{selectedStrip.merchant}</Text>
+                  <Text style={sheetStyles.date}>{selectedStrip.sheetDateLine}</Text>
+                </View>
+                <Text style={sheetStyles.amt}>${selectedStrip.amount.toFixed(2)}</Text>
+              </View>
+
+              {selectedStrip.showReceiptBox ? (
+                <View style={sheetStyles.emailBox}>
+                  <Ionicons name="mail-outline" size={12} color={prototype.blue} />
+                  <Text style={sheetStyles.emailLbl}>MATCHED FROM EMAIL RECEIPT</Text>
+                </View>
+              ) : null}
+
+              {selectedStrip.receiptId ? (
+                <>
+                  <Text style={sheetStyles.sectionTitle}>Details</Text>
+                  <ItemizedReceiptPreview
+                    loading={itemizedLoading}
+                    error={itemizedError}
+                    merchantName={itemizedReceipt?.merchantName ?? ""}
+                    items={itemizedReceipt?.items ?? []}
+                    subtotal={itemizedReceipt?.subtotal ?? 0}
+                    tax={itemizedReceipt?.tax ?? 0}
+                    tip={itemizedReceipt?.tip ?? 0}
+                    extras={itemizedReceipt?.extras ?? []}
+                    total={itemizedReceipt?.total ?? selectedStrip.amount}
+                  />
+                </>
+              ) : itemizedLoading ? (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <ActivityIndicator size="small" color="#8A9098" />
+                </View>
+              ) : null}
+
+              {!selectedStrip.alreadySplit ? (
+                <TouchableOpacity
+                  style={sheetStyles.splitBtn}
+                  onPress={() => {
+                    const row = selectedStrip;
+                    setSelectedStrip(null);
+                    router.push({
+                      pathname: "/(tabs)/add-expense",
+                      params: {
+                        prefillDesc: row.merchant,
+                        prefillAmount: row.amount.toFixed(2),
+                        prefillNonce: String(Date.now()),
+                        prefillPersonKey: "",
+                        prefillPersonName: "",
+                        prefillPersonType: "",
+                      },
+                    });
+                  }}
+                >
+                  <Ionicons name="git-branch-outline" size={18} color="#fff" />
+                  <Text style={sheetStyles.splitBtnText}>Split this charge</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity style={sheetStyles.closeBtn} onPress={() => setSelectedStrip(null)}>
+                <Text style={sheetStyles.closeBtnText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal> : null}
     </SafeAreaView>
   );
 }
@@ -860,5 +1005,112 @@ const searchStyles = StyleSheet.create({
     fontSize: 14,
     fontFamily: font.semibold,
     color: "#fff",
+  },
+});
+
+const sheetStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "85%",
+    paddingBottom: 32,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#D1D5DB",
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  scroll: {
+    paddingHorizontal: 20,
+  },
+  head: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 16,
+  },
+  logoWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#F5F3F2",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  merchant: {
+    fontSize: 16,
+    fontFamily: font.semibold,
+    color: "#1F2328",
+  },
+  date: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    color: "#8A9098",
+    marginTop: 2,
+  },
+  amt: {
+    fontSize: 18,
+    fontFamily: font.bold,
+    color: "#1F2328",
+  },
+  emailBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  emailLbl: {
+    fontSize: 11,
+    fontFamily: font.semibold,
+    color: prototype.blue,
+    letterSpacing: 0.5,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontFamily: font.semibold,
+    color: "#8A9098",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  splitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#1F2328",
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  splitBtnText: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    color: "#fff",
+  },
+  closeBtn: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  closeBtnText: {
+    fontSize: 15,
+    fontFamily: font.medium,
+    color: "#8A9098",
   },
 });
