@@ -128,6 +128,7 @@ export default function GroupScreen() {
   const [pendingP2PSuggestion, setPendingP2PSuggestion] = useState<{ fromMemberId: string; toMemberId: string; amount: number; currency: string } | null>(null);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -681,6 +682,7 @@ export default function GroupScreen() {
             <Ionicons name="chevron-back" size={20} color={theme.text} />
             <Text style={[s.backText, { color: theme.text }]}>Back</Text>
           </TouchableOpacity>
+          <View style={{ width: 30 }} />
         </View>
         <View style={s.center}>
           {loading ? (
@@ -718,6 +720,11 @@ export default function GroupScreen() {
           <Ionicons name="chevron-back" size={20} color={theme.text} />
           <Text style={[s.backText, { color: theme.text }]}>{source === "home" ? "Home" : "Back"}</Text>
         </TouchableOpacity>
+        {!isArchived && (
+          <TouchableOpacity onPress={() => setShowSettingsModal(true)} hitSlop={12} style={s.settingsBtn}>
+            <Ionicons name="settings-outline" size={22} color={theme.text} />
+          </TouchableOpacity>
+        )}
       </View>
       <ScrollView
         style={s.scroll}
@@ -743,16 +750,7 @@ export default function GroupScreen() {
               <Ionicons name="camera" size={12} color="#fff" />
             </View>
           </TouchableOpacity>
-          {detail.isOwner && !isDemoOn && !isArchived ? (
-            <Pressable onPress={openRenameGroup} style={({ pressed }) => [pressed && { opacity: 0.65 }]}>
-              <View style={s.groupNameRow}>
-                <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
-                <Ionicons name="pencil" size={16} color={theme.textTertiary} style={{ marginLeft: 6, marginTop: 2 }} />
-              </View>
-            </Pressable>
-          ) : (
-            <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
-          )}
+          <Text style={[s.groupName, { color: theme.text }]}>{detail.name}</Text>
           <Text style={[s.groupMeta, { color: theme.textTertiary }]}>
             {detail.members.length} member{detail.members.length !== 1 ? "s" : ""} ·{" "}
             {detail.totalSpend != null
@@ -762,32 +760,6 @@ export default function GroupScreen() {
                   .join(" · ") || "—"}{" "}
             total
           </Text>
-
-          {!isArchived ? (
-            <View style={s.actionRow}>
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-                onPress={openAddMembers}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="person-add-outline" size={16} color={theme.text} />
-                <Text style={[s.actionBtnText, { color: theme.text }]}>Add members</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
-                onPress={async () => {
-                  sfx.pop();
-                  const link = `${BASE_URL.replace(/\/$/, "")}/join/${detail.invite_token}`;
-                  await Clipboard.setStringAsync(link);
-                  toast.show("Link copied");
-                }}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="link-outline" size={16} color={theme.surface} />
-                <Text style={[s.actionBtnText, { color: theme.surface }]}>Copy link</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
         </View>
 
         {(detail.mySpend != null && detail.mySpend > 0) || (detail.mySpendByCurrency && detail.mySpendByCurrency.length > 0) ? (
@@ -800,88 +772,6 @@ export default function GroupScreen() {
             </Text>
           </View>
         ) : null}
-
-        <TouchableOpacity
-          style={s.membersToggle}
-          onPress={() => setMembersExpanded((p) => !p)}
-          activeOpacity={0.65}
-        >
-          <Text style={[s.section, { color: theme.textTertiary, marginTop: 4, marginBottom: 0 }]}>
-            Members · {detail.members.length}
-          </Text>
-          <Ionicons
-            name={membersExpanded ? "chevron-up" : "chevron-down"}
-            size={16}
-            color={theme.textTertiary}
-            style={{ marginTop: 4 }}
-          />
-        </TouchableOpacity>
-
-        {membersExpanded && (
-          <View style={[s.card, s.membersCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-            {detail.members.map((m, i) => {
-              const isOwnerMember = memberIsGroupOwner(m);
-              const isMe = Boolean(userId && m.user_id === userId);
-              const showRemove =
-                detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
-              const showEditHandles = detail.isOwner && !isDemoOn && !isArchived;
-              return (
-                <View
-                  key={m.id}
-                  style={[
-                    s.memberRow,
-                    i < detail.members.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.borderLight },
-                  ]}
-                >
-                  <MemberAvatar name={m.display_name} imageUrl={m.image_url} />
-                  <View style={s.memberRowText}>
-                    <Text style={[s.memberRowName, { color: theme.text }]} numberOfLines={1}>
-                      {m.display_name}
-                      {isMe ? " (you)" : ""}
-                      {isOwnerMember ? " · Owner" : ""}
-                    </Text>
-                    {(m.venmo_username || m.cashapp_cashtag || m.paypal_username) ? (
-                      <Text style={[s.memberRowHandles, { color: theme.textQuaternary }]} numberOfLines={2}>
-                        {[m.venmo_username ? `Venmo @${m.venmo_username}` : null, m.cashapp_cashtag ? `Cash ${m.cashapp_cashtag.startsWith("$") ? m.cashapp_cashtag : `$${m.cashapp_cashtag}`}` : null, m.paypal_username ? `PayPal ${m.paypal_username}` : null]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View style={s.memberRowActions}>
-                    {showEditHandles ? (
-                      <TouchableOpacity
-                        onPress={() => openEditHandles(m)}
-                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-                        accessibilityLabel={`Edit payment handles for ${m.display_name}`}
-                      >
-                        <Ionicons name="wallet-outline" size={20} color={theme.textTertiary} />
-                      </TouchableOpacity>
-                    ) : null}
-                    {showRemove ? (
-                      removingMemberId === m.id ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <TouchableOpacity
-                          onPress={() => {
-                            sfx.pop();
-                            confirmRemoveMember(m);
-                          }}
-                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                          accessibilityLabel={`Remove ${m.display_name}`}
-                        >
-                          <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
-                        </TouchableOpacity>
-                      )
-                    ) : !showEditHandles ? (
-                      <View style={{ width: 22 }} />
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
 
         {isArchived ? (
           <View
@@ -1090,37 +980,6 @@ export default function GroupScreen() {
           </View>
         )}
 
-        {!isDemoOn && !isArchived ? (
-          detail.isOwner ? (
-            <TouchableOpacity
-              style={{ marginTop: 28, paddingVertical: 12 }}
-              onPress={() =>
-                Alert.alert(
-                  "Archive this group?",
-                  "It will disappear from your main list. Open People & groups → Show archived groups to restore it.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Archive", style: "destructive", onPress: () => void patchArchive(true) },
-                  ]
-                )
-              }
-              activeOpacity={0.7}
-            >
-              <Text style={[s.archiveLink, { color: theme.textQuaternary }]}>Archive group</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={{ marginTop: 28, paddingVertical: 12 }}
-              onPress={() => {
-                sfx.pop();
-                leaveGroup();
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.archiveLink, { color: theme.negative }]}>Leave group</Text>
-            </TouchableOpacity>
-          )
-        ) : null}
       </ScrollView>
 
       {/* Add members — full-screen multi-select picker */}
@@ -1390,6 +1249,165 @@ export default function GroupScreen() {
         </KeyboardAvoidingView>
       </Modal> : null}
 
+      {/* Group Settings modal */}
+      {showSettingsModal ? <Modal
+        visible={true}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowSettingsModal(false)}
+      >
+        <SafeAreaView style={[s.pickerRoot, { backgroundColor: theme.surface }]} edges={["top", "bottom"]}>
+          <View style={s.pickerTopBar}>
+            <TouchableOpacity onPress={() => setShowSettingsModal(false)} hitSlop={10}>
+              <Text style={[s.pickerCancel, { color: theme.primary }]}>Done</Text>
+            </TouchableOpacity>
+            <Text style={[s.pickerTitle, { color: theme.text }]}>Group settings</Text>
+            <View style={{ width: 52 }} />
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
+            {/* Actions */}
+            <View style={s.settingsActionRow}>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                onPress={() => { setShowSettingsModal(false); setTimeout(openAddMembers, 300); }}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="person-add-outline" size={16} color={theme.text} />
+                <Text style={[s.actionBtnText, { color: theme.text }]}>Add members</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: theme.text, borderColor: theme.text }]}
+                onPress={async () => {
+                  sfx.pop();
+                  const link = `${BASE_URL.replace(/\/$/, "")}/join/${detail.invite_token}`;
+                  await Clipboard.setStringAsync(link);
+                  toast.show("Link copied");
+                }}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="link-outline" size={16} color={theme.surface} />
+                <Text style={[s.actionBtnText, { color: theme.surface }]}>Copy link</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Members list */}
+            <Text style={[s.section, { color: theme.textTertiary, marginTop: 20 }]}>
+              Members · {detail.members.length}
+            </Text>
+            <View style={[s.card, s.membersCard, { backgroundColor: theme.background, borderColor: theme.borderLight }]}>
+              {detail.members.map((m, i) => {
+                const isOwnerMember = memberIsGroupOwner(m);
+                const isMe = Boolean(userId && m.user_id === userId);
+                const showRemove =
+                  detail.isOwner && !isDemoOn && !isArchived && !isOwnerMember;
+                const showEditHandles = detail.isOwner && !isDemoOn && !isArchived;
+                return (
+                  <View
+                    key={m.id}
+                    style={[
+                      s.memberRow,
+                      i < detail.members.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.borderLight },
+                    ]}
+                  >
+                    <MemberAvatar name={m.display_name} imageUrl={m.image_url} />
+                    <View style={s.memberRowText}>
+                      <Text style={[s.memberRowName, { color: theme.text }]} numberOfLines={1}>
+                        {m.display_name}
+                        {isMe ? " (you)" : ""}
+                        {isOwnerMember ? " · Owner" : ""}
+                      </Text>
+                      {(m.venmo_username || m.cashapp_cashtag || m.paypal_username) ? (
+                        <Text style={[s.memberRowHandles, { color: theme.textQuaternary }]} numberOfLines={2}>
+                          {[m.venmo_username ? `Venmo @${m.venmo_username}` : null, m.cashapp_cashtag ? `Cash ${m.cashapp_cashtag.startsWith("$") ? m.cashapp_cashtag : `$${m.cashapp_cashtag}`}` : null, m.paypal_username ? `PayPal ${m.paypal_username}` : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={s.memberRowActions}>
+                      {showEditHandles ? (
+                        <TouchableOpacity
+                          onPress={() => { setShowSettingsModal(false); setTimeout(() => openEditHandles(m), 300); }}
+                          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                          accessibilityLabel={`Edit payment handles for ${m.display_name}`}
+                        >
+                          <Ionicons name="wallet-outline" size={20} color={theme.textTertiary} />
+                        </TouchableOpacity>
+                      ) : null}
+                      {showRemove ? (
+                        removingMemberId === m.id ? (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        ) : (
+                          <TouchableOpacity
+                            onPress={() => {
+                              sfx.pop();
+                              setShowSettingsModal(false);
+                              setTimeout(() => confirmRemoveMember(m), 300);
+                            }}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                            accessibilityLabel={`Remove ${m.display_name}`}
+                          >
+                            <Ionicons name="close-circle" size={22} color={theme.textQuaternary} />
+                          </TouchableOpacity>
+                        )
+                      ) : !showEditHandles ? (
+                        <View style={{ width: 22 }} />
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Rename / Archive / Leave */}
+            {detail.isOwner && !isDemoOn && !isArchived ? (
+              <View style={{ marginTop: 24, gap: 8 }}>
+                <TouchableOpacity
+                  style={[s.settingsRowBtn, { backgroundColor: theme.background, borderColor: theme.borderLight }]}
+                  onPress={() => { setShowSettingsModal(false); setTimeout(openRenameGroup, 300); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={theme.text} />
+                  <Text style={[s.settingsRowBtnText, { color: theme.text }]}>Rename group</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.settingsRowBtn, { backgroundColor: theme.background, borderColor: theme.borderLight }]}
+                  onPress={() => {
+                    setShowSettingsModal(false);
+                    setTimeout(() => {
+                      Alert.alert(
+                        "Archive this group?",
+                        "It will disappear from your main list.",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Archive", style: "destructive", onPress: () => void patchArchive(true) },
+                        ]
+                      );
+                    }, 300);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="archive-outline" size={18} color={theme.negative} />
+                  <Text style={[s.settingsRowBtnText, { color: theme.negative }]}>Archive group</Text>
+                </TouchableOpacity>
+              </View>
+            ) : !isDemoOn && !isArchived ? (
+              <View style={{ marginTop: 24 }}>
+                <TouchableOpacity
+                  style={[s.settingsRowBtn, { backgroundColor: theme.background, borderColor: theme.borderLight }]}
+                  onPress={() => { setShowSettingsModal(false); setTimeout(leaveGroup, 300); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="exit-outline" size={18} color={theme.negative} />
+                  <Text style={[s.settingsRowBtnText, { color: theme.negative }]}>Leave group</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal> : null}
+
       {confirmPaymentOpen ? <Modal visible={true} transparent animationType="fade" onRequestClose={() => setConfirmPaymentOpen(false)}>
         <Pressable style={s.confirmOverlay} onPress={() => setConfirmPaymentOpen(false)}>
           <Pressable style={[s.confirmCard, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
@@ -1420,7 +1438,8 @@ export default function GroupScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  topBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  settingsBtn: { padding: 4 },
   backRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   backText: { fontSize: 16, fontFamily: font.medium },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -1543,6 +1562,9 @@ const s = StyleSheet.create({
   archivedBannerText: { flex: 1, fontSize: 13, fontFamily: font.regular },
   archivedRestore: { fontSize: 14, fontFamily: font.semibold },
   archiveLink: { fontSize: 14, fontFamily: font.medium, textAlign: "center" },
+  settingsActionRow: { flexDirection: "row", gap: 10, marginBottom: 4 },
+  settingsRowBtn: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 16, borderRadius: radii.lg, borderWidth: 1 },
+  settingsRowBtnText: { fontSize: 15, fontFamily: font.medium },
   confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" },
   confirmCard: { borderRadius: 24, marginHorizontal: 32, paddingHorizontal: 28, paddingTop: 28, paddingBottom: 24, alignItems: "center", alignSelf: "center" },
   confirmTitle: { fontFamily: font.black, fontSize: 20, marginBottom: 6, textAlign: "center" },
