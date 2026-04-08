@@ -718,7 +718,6 @@ function PayScreenInner() {
             ? `Paid $${amt.toFixed(2)} — depositing to recipient's bank`
             : `Paid $${amt.toFixed(2)} successfully`
         );
-        setAmount("");
       }
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Payment failed");
@@ -919,7 +918,11 @@ function PayScreenInner() {
         </View>
       )}
 
-      {/* Full-screen success overlay */}
+          </>
+        )}
+      </View>
+
+      {/* Full-screen success overlay — outside hasPrefilledCheckout so it persists */}
       {paymentOutcome === "approved" && lastOutcomeAmount != null && (
         <View style={[styles.overlay, { backgroundColor: theme.surface, zIndex: 200 }]}>
           <View style={{ alignItems: "center", gap: 16, paddingHorizontal: 32 }}>
@@ -989,10 +992,6 @@ function PayScreenInner() {
           )}
         </View>
       )}
-
-          </>
-        )}
-      </View>
     </SafeAreaView>
   );
 }
