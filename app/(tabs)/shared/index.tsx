@@ -77,7 +77,7 @@ function timeAgo(iso: string) {
 type FriendSummaryItem = {
   key: string;
   displayName: string;
-  balance: number;
+  balance: number | null;
   balances?: { currency: string; amount: number }[];
   lastActivityAt?: string | null;
 };
@@ -87,7 +87,7 @@ type GroupSummaryItem = {
   name: string;
   memberCount: number;
   imageUrl?: string | null;
-  myBalance: number;
+  myBalance: number | null;
   myBalances?: { currency: string; amount: number }[];
   lastActivityAt?: string | null;
   groupType?: string | null;
@@ -699,7 +699,7 @@ export default function SharedIndex() {
       ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id)),
     ];
     const fallbackFriendRows = fallbackGroups
-      .filter((g) => (g.groupType ?? “other”) !== “home”)
+      .filter((g) => (g.groupType ?? "other") !== "home")
       .map((g) => ({
         key: `fb-${g.id}`,
         displayName: g.name,
@@ -711,7 +711,7 @@ export default function SharedIndex() {
       ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
     ];
     // When the API returns successfully, trust it — including empty lists (all settled). Do not fall back
-    // to “everyone from /api/groups” or we’d show people with $0 net like Splitwise hides.
+    // to "everyone from /api/groups" or we'd show people with $0 net like Splitwise hides.
     const unsortedFriends =
       !isDemoOn && realSummary != null
         ? summaryFriends
@@ -722,8 +722,8 @@ export default function SharedIndex() {
       const aHasBalance = (a.balances?.length ?? 0) > 0 ? 1 : 0;
       const bHasBalance = (b.balances?.length ?? 0) > 0 ? 1 : 0;
       if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
-      const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? “”;
-      const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? “”;
+      const aTime = (a as { lastActivityAt?: string | null }).lastActivityAt ?? "";
+      const bTime = (b as { lastActivityAt?: string | null }).lastActivityAt ?? "";
       if (aTime !== bTime) return bTime > aTime ? 1 : -1;
       return a.displayName.localeCompare(b.displayName);
     });
@@ -781,14 +781,14 @@ export default function SharedIndex() {
       const aHasBalance = (a.myBalances?.length ?? 0) > 0 ? 1 : 0;
       const bHasBalance = (b.myBalances?.length ?? 0) > 0 ? 1 : 0;
       if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
-      const aTime = a.lastActivityAt ?? “”;
-      const bTime = b.lastActivityAt ?? “”;
+      const aTime = a.lastActivityAt ?? "";
+      const bTime = b.lastActivityAt ?? "";
       if (aTime !== bTime) return bTime > aTime ? 1 : -1;
       return a.name.localeCompare(b.name);
     });
     return sortedGroups
       .filter((g) => {
-        if (“groupType” in g && g.groupType === “friend”) return false;
+        if ("groupType" in g && g.groupType === "friend") return false;
         const gName = g.name.trim().toLowerCase();
         if (g.memberCount <= 2 && friendNameSet.has(gName)) return false;
         return true;

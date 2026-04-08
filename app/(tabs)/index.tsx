@@ -389,10 +389,10 @@ export default function BalancesPrototypeScreen() {
     !isDemoOn;
 
   const knownNames = useMemo(
-    () => new Set(
-      [...(summary?.friends ?? []), ...(summary?.groups ?? [])]
-        .map((f) => f.displayName.toLowerCase())
-    ),
+    () => new Set([
+      ...(summary?.friends ?? []).map((f) => f.displayName.toLowerCase()),
+      ...(summary?.groups ?? []).map((g) => g.name.toLowerCase()),
+    ]),
     [summary?.friends, summary?.groups]
   );
 
