@@ -86,13 +86,19 @@ export default function ActivityTabScreen() {
     prevFocused.current = isFocused;
   }, [isFocused, isDemoOn, refetch]);
 
+  // When activity data changes while the tab is focused, mark as seen
+  // so the badge doesn't re-appear for the user's own actions
+  useEffect(() => {
+    if (isFocused && activity.length > 0) markActivitySeen();
+  }, [isFocused, activity]);
+
   const focusedRef = useRef(isFocused);
   focusedRef.current = isFocused;
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) refetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { refetch(true); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);

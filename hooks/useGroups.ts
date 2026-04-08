@@ -569,13 +569,13 @@ export function useRecentActivity(enabled = true) {
   const retryCount = useRef(0);
   const lastFetchTs = useRef(0);
 
-  const fetchActivity = useCallback(async () => {
+  const fetchActivity = useCallback(async (force = false) => {
     if (!enabled) {
       setLoading(false);
       return;
     }
     const now = Date.now();
-    if (now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
+    if (!force && now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
     lastFetchTs.current = now;
     try {
       await _loadLastSeen();

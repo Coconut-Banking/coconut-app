@@ -72,6 +72,14 @@ export default function PersonScreen() {
     return () => setExpensePrefillTarget(null);
   }, [key, detail?.displayName]);
 
+  useEffect(() => {
+    const subs = [
+      DeviceEventEmitter.addListener("expense-added", () => refetch(true)),
+      DeviceEventEmitter.addListener("groups-updated", () => refetch(true)),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [refetch]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {

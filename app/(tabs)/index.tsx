@@ -583,7 +583,7 @@ export default function BalancesPrototypeScreen() {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => { void refetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { if (focusedRef.current) void refetch(); }),
+      DeviceEventEmitter.addListener("expense-added", () => { void refetch(); }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);
