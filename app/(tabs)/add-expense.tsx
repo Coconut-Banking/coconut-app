@@ -37,48 +37,7 @@ import { useCurrency } from "../../hooks/useCurrency";
 type Target = { type: "group" | "friend"; key: string; name: string; imageUrl?: string | null };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
 
-type ExpenseTemplate = {
-  id: string;
-  description: string;
-  amount: string;
-  category: string | null;
-  targetKey: string;
-  targetName: string;
-  targetType: "group" | "friend";
-  targetImageUrl?: string | null;
-  savedAt: number;
-};
-
-const RECENT_TEMPLATES_KEY = "coconut.recentExpenseTemplates";
-const MAX_TEMPLATES = 10;
-
-async function loadTemplates(uid: string): Promise<ExpenseTemplate[]> {
-  try {
-    const raw = await AsyncStorage.getItem(`${RECENT_TEMPLATES_KEY}.${uid}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function persistTemplate(
-  uid: string,
-  template: Omit<ExpenseTemplate, "id" | "savedAt">,
-): Promise<ExpenseTemplate[]> {
-  const existing = await loadTemplates(uid);
-  const dedupeKey = `${template.description.toLowerCase().trim()}|${template.targetKey}`;
-  const filtered = existing.filter(
-    (t) => `${t.description.toLowerCase().trim()}|${t.targetKey}` !== dedupeKey,
-  );
-  const entry: ExpenseTemplate = {
-    ...template,
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    savedAt: Date.now(),
-  };
-  const updated = [entry, ...filtered].slice(0, MAX_TEMPLATES);
-  await AsyncStorage.setItem(`${RECENT_TEMPLATES_KEY}.${uid}`, JSON.stringify(updated));
-  return updated;
-}
+type RepeatFrequency = "weekly" | "biweekly" | "monthly";
 
 type GroupMember = {
   id: string;
@@ -263,13 +222,16 @@ export default function AddExpenseScreen() {
   const [newFriendPhone, setNewFriendPhone] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
 
-  const [recentTemplates, setRecentTemplates] = useState<ExpenseTemplate[]>([]);
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatFrequency, setRepeatFrequency] = useState<RepeatFrequency>("monthly");
+  const [showRepeatPicker, setShowRepeatPicker] = useState(false);
 
   const lastPrefillNonce = useRef<string | null>(null);
   const savedRef = useRef(false);
   const touchedSplitKeysRef = useRef<Set<string>>(new Set());
   const searchInputRef = useRef<TextInput>(null);
   const descInputRef = useRef<TextInput>(null);
+  const backspacePrimed = useRef<string | null>(null);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
 
@@ -417,12 +379,6 @@ export default function AddExpenseScreen() {
       } catch { /* best effort */ }
     })();
     return () => { cancelled = true; };
-  }, [userId]);
-
-  // Load recent expense templates for quick-repeat
-  useEffect(() => {
-    if (!userId) return;
-    loadTemplates(userId).then(setRecentTemplates).catch(() => {});
   }, [userId]);
 
   // ── Derived data ──
@@ -771,6 +727,7 @@ export default function AddExpenseScreen() {
     sfx.pop();
     setQuery("");
     setError(null);
+    backspacePrimed.current = null;
 
     if (t.type === "group") {
       setSearchFocused(false);
@@ -789,7 +746,24 @@ export default function AddExpenseScreen() {
 
   const removeOneTarget = useCallback((key: string) => {
     setTargets((prev) => prev.filter((p) => p.key !== key));
+    backspacePrimed.current = null;
   }, []);
+
+  const handleSearchKeyPress = useCallback(({ nativeEvent }: { nativeEvent: { key: string } }) => {
+    if (nativeEvent.key !== "Backspace" || query.length > 0 || targets.length === 0) {
+      backspacePrimed.current = null;
+      return;
+    }
+    const lastFriend = [...targets].reverse().find((t) => t.type === "friend");
+    if (!lastFriend) return;
+    if (backspacePrimed.current === lastFriend.key) {
+      setTargets((prev) => prev.filter((p) => p.key !== lastFriend.key));
+      backspacePrimed.current = null;
+    } else {
+      backspacePrimed.current = lastFriend.key;
+      setTargets((prev) => [...prev]);
+    }
+  }, [query, targets]);
 
   const removeAllTargets = useCallback(() => {
     setTargets([]);
@@ -797,21 +771,6 @@ export default function AddExpenseScreen() {
     setGroupMembers([]);
     setCustomSplits({});
     setSplitExpanded(false);
-  }, []);
-
-  const applyTemplate = useCallback((tpl: ExpenseTemplate) => {
-    sfx.pop();
-    setDescription(tpl.description);
-    setAmount(tpl.amount);
-    setCategory(tpl.category);
-    setTargets([{
-      type: tpl.targetType,
-      key: tpl.targetKey,
-      name: tpl.targetName,
-      imageUrl: tpl.targetImageUrl,
-    }]);
-    setSearchFocused(false);
-    setError(null);
   }, []);
 
   // Reset group state when all targets are removed
@@ -890,13 +849,6 @@ export default function AddExpenseScreen() {
       demo.addExpense(total, desc, t.key, t.type);
       sfx.coin();
       toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
-      if (userId && targets.length > 0) {
-        const tgt = targets[0];
-        persistTemplate(userId, {
-          description: desc, amount: total.toFixed(2), category,
-          targetKey: tgt.key, targetName: tgt.name, targetType: tgt.type, targetImageUrl: tgt.imageUrl,
-        }).then(setRecentTemplates).catch(() => {});
-      }
       DeviceEventEmitter.emit("expense-added");
       return;
     }
@@ -928,13 +880,6 @@ export default function AddExpenseScreen() {
       if (res.ok) {
         sfx.coin();
         toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
-        if (userId && targets.length > 0) {
-          const tgt = targets[0];
-          persistTemplate(userId, {
-            description: desc, amount: total.toFixed(2), category,
-            targetKey: tgt.key, targetName: tgt.name, targetType: tgt.type, targetImageUrl: tgt.imageUrl,
-          }).then(setRecentTemplates).catch(() => {});
-        }
         invalidateApiCache("/api/groups/summary");
         invalidateApiCache(`/api/groups/${resolvedGroupId}`);
         invalidateApiCache("/api/groups/recent-activity");
@@ -1058,8 +1003,10 @@ export default function AddExpenseScreen() {
             <View style={s.withRow}>
               <Text style={s.withLabel}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
               <View style={s.withChipsWrap}>
-                {targets.map((t, idx) => (
-                  <View key={t.key} style={s.withChip}>
+                {targets.map((t, idx) => {
+                  const primed = backspacePrimed.current === t.key;
+                  return (
+                  <View key={t.key} style={[s.withChip, primed && { backgroundColor: "#FF3B3020", borderColor: "#FF3B3066" }]}>
                     {t.type === "group" && t.imageUrl ? (
                       <Image source={{ uri: t.imageUrl }} style={{ width: 20, height: 20, borderRadius: 5 }} />
                     ) : t.type === "group" ? (
@@ -1071,19 +1018,21 @@ export default function AddExpenseScreen() {
                         <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
                       </View>
                     )}
-                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: darkUI.label }}>{t.name}</Text>
+                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: primed ? "#FF3B30" : darkUI.label }}>{t.name}</Text>
                     <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 1 }}>
-                      <Ionicons name="close-circle" size={14} color={darkUI.labelMuted} />
+                      <Ionicons name="close-circle" size={14} color={primed ? "#FF3B30" : darkUI.labelMuted} />
                     </TouchableOpacity>
                   </View>
-                ))}
+                  );
+                })}
                 <TextInput
                   ref={searchInputRef}
                   style={s.inlineSearchInput}
                   value={query}
-                  onChangeText={setQuery}
+                  onChangeText={(t) => { setQuery(t); backspacePrimed.current = null; }}
+                  onKeyPress={handleSearchKeyPress}
                   onFocus={() => setSearchFocused(true)}
-                  onBlur={() => { if (!query) setSearchFocused(false); }}
+                  onBlur={() => { if (!query) { setSearchFocused(false); backspacePrimed.current = null; } }}
                   placeholder={targets.length === 0 ? "Search name or group" : "Add more…"}
                   placeholderTextColor={darkUI.labelMuted}
                   autoCorrect={false}
@@ -1867,15 +1816,28 @@ const s = StyleSheet.create({
   },
   splitChipText: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary },
 
-  // Bottom toolbar
-  bottomBar: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    paddingHorizontal: 20, paddingVertical: 10,
-    borderTopWidth: 1, borderTopColor: darkUI.sep,
+  // Repeat toggle
+  repeatRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    marginTop: 20, paddingVertical: 12, paddingHorizontal: 16,
+    backgroundColor: darkUI.card, borderRadius: radii.lg,
+    borderWidth: 1, borderColor: darkUI.stroke,
   },
-  bottomBarItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  bottomBarText: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary, maxWidth: 120 },
-  bottomBarIcon: { padding: 6 },
+  repeatRowActive: {
+    borderColor: colors.primary, backgroundColor: darkUI.bgElevated,
+  },
+  repeatLabel: {
+    flex: 1, fontSize: 14, fontFamily: font.semibold, color: darkUI.label,
+  },
+  repeatFreqChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: darkUI.bgElevated, borderRadius: 8,
+    borderWidth: 1, borderColor: darkUI.stroke,
+  },
+  repeatFreqText: {
+    fontSize: 12, fontFamily: font.bold, color: darkUI.labelSecondary,
+  },
 
   // Step 2: text field
   textField: {
