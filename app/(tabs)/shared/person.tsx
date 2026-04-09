@@ -159,20 +159,16 @@ export default function PersonScreen() {
       const totalOwed = settlements.reduce((s, se) => s + se.amount, 0);
       let anyFailed = false;
 
+      const requests: Array<{ groupId: string; payerMemberId: string; receiverMemberId: string; amount: number; currency: string }> = [];
       if (settlements.length === 1) {
         const se = settlements[0];
-        const res = await apiFetch("/api/settlements", {
-          method: "POST",
-          body: {
-            groupId: se.groupId,
-            payerMemberId: se.fromMemberId,
-            receiverMemberId: se.toMemberId,
-            amount,
-            method: "manual",
-            currency: se.currency ?? "USD",
-          },
+        requests.push({
+          groupId: se.groupId,
+          payerMemberId: se.fromMemberId,
+          receiverMemberId: se.toMemberId,
+          amount,
+          currency: se.currency ?? "USD",
         });
-        if (!res.ok) anyFailed = true;
       } else {
         let remaining = amount;
         for (const se of settlements) {
@@ -185,20 +181,25 @@ export default function PersonScreen() {
           );
           if (seAmount < 0.01) continue;
           remaining -= seAmount;
-          const res = await apiFetch("/api/settlements", {
-            method: "POST",
-            body: {
-              groupId: se.groupId,
-              payerMemberId: se.fromMemberId,
-              receiverMemberId: se.toMemberId,
-              amount: seAmount,
-              method: "manual",
-              currency: se.currency ?? "USD",
-            },
+          requests.push({
+            groupId: se.groupId,
+            payerMemberId: se.fromMemberId,
+            receiverMemberId: se.toMemberId,
+            amount: seAmount,
+            currency: se.currency ?? "USD",
           });
-          if (!res.ok) anyFailed = true;
         }
       }
+
+      const results = await Promise.all(
+        requests.map((r) =>
+          apiFetch("/api/settlements", {
+            method: "POST",
+            body: { ...r, method: "manual" },
+          }),
+        ),
+      );
+      anyFailed = results.some((res) => !res.ok);
 
       if (anyFailed) {
         Alert.alert("Error", "Some settlements could not be recorded");
