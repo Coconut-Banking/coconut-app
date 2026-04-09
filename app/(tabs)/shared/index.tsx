@@ -136,7 +136,7 @@ const FriendRow = React.memo(function FriendRow({
   myCurrency: string;
 }) {
   const { theme } = useTheme();
-  const balanceLines = useMemo(() => friendBalanceLines(friend), [friend]);
+  const balanceLines = useMemo(() => friendBalanceLines(friend, myCurrency), [friend, myCurrency]);
   const balanceLabel = useMemo(() => {
     if (balanceLines.length === 0) return "settled up";
     const pos = balanceLines.some((l) => l.amount > 0.005) && balanceLines.every((l) => l.amount >= -0.005);
@@ -203,7 +203,7 @@ const GroupRow = React.memo(function GroupRow({
   myCurrency: string;
 }) {
   const { theme } = useTheme();
-  const balanceLines = useMemo(() => groupBalanceLines(group), [group]);
+  const balanceLines = useMemo(() => groupBalanceLines(group, myCurrency), [group, myCurrency]);
   const handlePress = useCallback(() => {
     router.push({ pathname: "/(tabs)/shared/group", params: { id: group.id } });
   }, [group.id]);
@@ -411,11 +411,10 @@ export default function SharedIndex() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
-      if (!isDemoOn && focusedRef.current) {
-        invalidateApiCache("/api/groups/summary");
-        clearMemSummaryCache();
-        void refetch();
-      }
+      if (isDemoOn) return;
+      invalidateApiCache("/api/groups/summary");
+      clearMemSummaryCache();
+      void refetch();
     });
     return () => sub.remove();
   }, [isDemoOn, refetch]);

@@ -34,6 +34,7 @@ import { useDemoData } from "../../../lib/demo-context";
 import { useTheme } from "../../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
+import { useCurrency } from "../../../hooks/useCurrency";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
@@ -103,6 +104,7 @@ export default function GroupScreen() {
   const { detail: realDetail, loading, refetch } = useGroupDetail(isDemoOn ? null : (id ?? null));
   const { refetch: refetchSummary } = useGroupsSummary({ contacts: true });
   const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
+  const { currencyCode: myCurrency } = useCurrency();
   const toast = useToast();
 
   const [recordingSettlement, setRecordingSettlement] = useState(false);
@@ -370,8 +372,7 @@ export default function GroupScreen() {
         toast.show("Group icon updated");
         invalidateApiCache("/api/groups/summary");
         clearMemSummaryCache();
-        refetch(true);
-        refetchSummary();
+        await Promise.all([refetch(true), refetchSummary()]);
         DeviceEventEmitter.emit("groups-updated");
       } else {
         setLocalIconUrl(null);
@@ -382,7 +383,7 @@ export default function GroupScreen() {
     } finally {
       setUploadingIcon(false);
     }
-  }, [id, apiFetch, toast, refetch]);
+  }, [id, apiFetch, toast, refetch, refetchSummary]);
 
   const handleIconPress = useCallback(() => {
     if (isDemoOn || !id) return;
@@ -403,7 +404,7 @@ export default function GroupScreen() {
             setUploadingIcon(true);
             try {
               const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }            } finally { setUploadingIcon(false); }
+              if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); await Promise.all([refetch(true), refetchSummary()]); DeviceEventEmitter.emit("groups-updated"); }            } finally { setUploadingIcon(false); }
           }
         }
       );
@@ -415,13 +416,13 @@ export default function GroupScreen() {
           setUploadingIcon(true);
           try {
             const res = await apiFetch(`/api/groups/${id}/icon`, { method: "DELETE" });
-            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); refetch(true); refetchSummary(); DeviceEventEmitter.emit("groups-updated"); }
+            if (res.ok) { setLocalIconUrl(null); toast.show("Group icon removed"); invalidateApiCache("/api/groups/summary"); clearMemSummaryCache(); await Promise.all([refetch(true), refetchSummary()]); DeviceEventEmitter.emit("groups-updated"); }
           } finally { setUploadingIcon(false); }
         }}] : []),
         { text: "Cancel", style: "cancel" as const },
       ]);
     }
-  }, [isDemoOn, id, localIconUrl, detail?.image_url, pickAndUploadIcon, apiFetch, toast, refetch]);
+  }, [isDemoOn, id, localIconUrl, detail?.image_url, pickAndUploadIcon, apiFetch, toast, refetch, refetchSummary]);
 
   useEffect(() => {
     if (detail && id) {
@@ -797,7 +798,7 @@ export default function GroupScreen() {
             <Text style={{ fontFamily: font.bold, fontSize: 18, color: theme.text }}>
               You spent{" "}
               {detail.mySpend != null
-                ? formatSplitCurrencyAmount(detail.mySpend, detail.mySpendByCurrency?.[0]?.currency ?? "USD")
+                ? formatSplitCurrencyAmount(detail.mySpend, detail.mySpendByCurrency?.[0]?.currency ?? myCurrency)
                 : (detail.mySpendByCurrency ?? []).map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(" + ")}
             </Text>
             </View>
@@ -974,7 +975,7 @@ export default function GroupScreen() {
                     <ActivityIndicator size="small" color={theme.primary} />
                   ) : (
                     <Text style={[s.txAmount, { color: theme.text }]}>
-                      {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")}
+                      {formatSplitCurrencyAmount(a.amount, a.currency ?? myCurrency)}
                     </Text>
                   )}
                 </TouchableOpacity>
