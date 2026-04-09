@@ -38,6 +38,7 @@ const CACHE_TTL_MS: Record<string, number> = {
   "/api/splitwise/status": 120_000,
   "/api/gmail/status": 300_000,
   "/api/stripe/connect/status": 300_000,
+  "/api/subscriptions": 60_000,
 };
 
 const GROUP_DETAIL_RE = /^\/api\/groups\/[a-f0-9-]+$/;

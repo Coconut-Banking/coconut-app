@@ -51,6 +51,8 @@ let _sharedHasLoaded = false;
 let _inflightPipeline: Promise<void> | null = null;
 let _inflightPost: Promise<Response> | null = null;
 let _lastPlaidPushAt = Date.now();
+let _lastFetchAt = 0;
+const MIN_FETCH_INTERVAL_MS = 5_000;
 let _transientRetryCount = 0;
 const _subscribers = new Set<() => void>();
 function _notify() { _subscribers.forEach((fn) => fn()); }
@@ -169,10 +171,10 @@ export function useTransactions() {
   // Subscribe to shared-state changes so all hook consumers re-render together.
   useEffect(() => {
     const sync = () => {
-      setTransactions(_sharedTx);
-      setLinked(_sharedLinked);
+      setTransactions((prev) => prev === _sharedTx ? prev : _sharedTx);
+      setLinked((prev) => prev === _sharedLinked ? prev : _sharedLinked);
       linkedRef.current = _sharedLinked;
-      setStatus(_sharedStatus);
+      setStatus((prev) => prev === _sharedStatus ? prev : _sharedStatus);
       if (_sharedHasLoaded) {
         hasShownInitialLoad.current = true;
         setLoading(false);
@@ -189,6 +191,12 @@ export function useTransactions() {
       if (__DEV__) console.log("[pipeline:tx] ♻️ reusing inflight pipeline");
       return _inflightPipeline;
     }
+
+    const now = Date.now();
+    if (silent && now - _lastFetchAt < MIN_FETCH_INTERVAL_MS) {
+      return _inflightPipeline ?? Promise.resolve();
+    }
+    _lastFetchAt = now;
 
     const isFirstLoad = !_sharedHasLoaded;
     if (__DEV__) console.log("[pipeline:tx] 1. start", { silent, isFirstLoad });
