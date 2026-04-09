@@ -397,7 +397,7 @@ export default function AddExpenseScreen() {
   const selectedKeys = new Set(targets.map((t) => t.key));
   const noApiMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
   const noMatches = noApiMatches && filteredDeviceContacts.length === 0;
-  const showPicker = targets.length === 0 || (searchFocused && q.length > 0);
+  const showPicker = targets.length === 0 || searchFocused;
 
   const myMemberId = useMemo(() => {
     const byAuth = groupMembers.find((m) => m.user_id && m.user_id === userId)?.id;
@@ -695,20 +695,21 @@ export default function AddExpenseScreen() {
   const selectTarget = useCallback((t: Target) => {
     sfx.pop();
     setQuery("");
-    setSearchFocused(false);
     setError(null);
 
     if (t.type === "group") {
+      setSearchFocused(false);
       setTargets([t]);
       return;
     }
 
-    // Friends: toggle (add/remove).
+    // Friends: toggle — keep search focused so user can add more
     setTargets((prev) => {
       if (prev.some((p) => p.type === "group")) return [t];
       if (prev.some((p) => p.key === t.key)) return prev.filter((p) => p.key !== t.key);
       return [...prev, t];
     });
+    setTimeout(() => searchInputRef.current?.focus(), 50);
   }, []);
 
   const removeOneTarget = useCallback((key: string) => {
@@ -979,7 +980,7 @@ export default function AddExpenseScreen() {
                   onChangeText={setQuery}
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => { if (!query) setSearchFocused(false); }}
-                  placeholder={targets.length === 0 ? "Search name or group" : ""}
+                  placeholder={targets.length === 0 ? "Search name or group" : "Add more…"}
                   placeholderTextColor={darkUI.labelMuted}
                   autoCorrect={false}
                   maxLength={200}
@@ -1178,26 +1179,19 @@ export default function AddExpenseScreen() {
                   </View>
                   <View style={s.compactSep} />
 
-                  {/* Paid by + split chip */}
-                  {resolving ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, gap: 8 }}>
-                      <ActivityIndicator size="small" color={darkUI.labelMuted} />
-                      <Text style={s.paidSplitTxt}>Loading split…</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={s.splitChipRow}
-                      onPress={() => setShowSplitMethodPicker(true)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={s.splitChipText}>
-                        Paid by{" "}
-                        <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{payerDisplay}</Text>
-                        {" "}and{" "}
-                        <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{splitDisplay}</Text>
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                  {/* Paid by + split chip — always show defaults immediately */}
+                  <TouchableOpacity
+                    style={s.splitChipRow}
+                    onPress={() => { if (!resolving) setShowSplitMethodPicker(true); }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={s.splitChipText}>
+                      Paid by{" "}
+                      <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{payerDisplay}</Text>
+                      {" "}and{" "}
+                      <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{splitDisplay}</Text>
+                    </Text>
+                  </TouchableOpacity>
 
                   {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
                     <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
@@ -1816,7 +1810,6 @@ const s = StyleSheet.create({
     gap: 4, paddingVertical: 16, paddingHorizontal: 18, marginTop: 24,
     backgroundColor: darkUI.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: darkUI.stroke,
   },
-  paidSplitTxt: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary },
   paidSplitChip: {
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
     backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
