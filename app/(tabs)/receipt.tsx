@@ -377,7 +377,13 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.primaryButton, rs.saving && styles.buttonDisabled]}
-          onPress={rs.confirmItems}
+          onPress={async () => {
+            try {
+              await rs.confirmItems();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Failed to save changes. Please try again.");
+            }
+          }}
           disabled={rs.saving || rs.editItems.length === 0}
         >
           {rs.saving ? (
@@ -611,8 +617,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
-            rs.computeSummary();
+            try {
+              await rs.saveAssignments();
+              rs.computeSummary();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Failed to save assignments. Please try again.");
+            }
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
         >
