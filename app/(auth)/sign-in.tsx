@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSSO } from "@clerk/expo";
+import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import { useTheme } from "../../lib/theme-context";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -49,11 +50,19 @@ export default function SignInScreen() {
   const [error, setError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    WebBrowser.warmUpAsync().catch(() => {});
+    return () => { WebBrowser.coolDownAsync().catch(() => {}); };
+  }, []);
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = useCallback(async () => {
     if (Platform.OS !== "ios" && Platform.OS !== "android") return;
     setError("");
     setGoogleLoading(true);
+    try {
+      await WebBrowser.dismissBrowser();
+    } catch { /* nothing to dismiss */ }
     try {
       const result = await withTimeout(
         startSSOFlow({ strategy: "oauth_google" }),
@@ -71,6 +80,9 @@ export default function SignInScreen() {
       const err = e as { code?: string; message?: string };
       if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
       const msg = getClerkErrorMessage(e, "Google sign-in failed");
+      if (msg.toLowerCase().includes("timed out") || msg.toLowerCase().includes("another web browser")) {
+        await WebBrowser.dismissBrowser().catch(() => {});
+      }
       if (msg.toLowerCase().includes("already signed in")) {
         setIsDemoOn(false);
         return;
@@ -80,7 +92,7 @@ export default function SignInScreen() {
     } finally {
       setGoogleLoading(false);
     }
-  };
+  }, [startSSOFlow, resetSetup, setIsDemoOn]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: "#fff" }]} edges={["top", "bottom"]}>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSignUp } from "@clerk/expo/legacy";
 import { useSSO } from "@clerk/expo";
 import { useSignInWithGoogle } from "@clerk/expo/google";
+import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -62,6 +63,13 @@ export default function SignUpScreen() {
   };
   const { startSSOFlow } = useSSO();
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    WebBrowser.warmUpAsync().catch(() => {});
+    return () => { WebBrowser.coolDownAsync().catch(() => {}); };
+  }, []);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -74,6 +82,7 @@ export default function SignUpScreen() {
     if (Platform.OS !== "ios" && Platform.OS !== "android") return;
     setError("");
     setGoogleLoading(true);
+    try { await WebBrowser.dismissBrowser(); } catch { /* nothing to dismiss */ }
     try {
       const { createdSessionId, setActive: setActiveGoogle } = await startGoogleAuthenticationFlow();
       if (createdSessionId && setActiveGoogle) {
