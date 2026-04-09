@@ -325,8 +325,12 @@ export default function AddExpenseScreen() {
   // Pre-populate friend group + member caches from the summary so the resolve
   // flow hits cache instead of making sequential /api/groups/person + /members calls.
   useEffect(() => {
-    if (!realSummary?.friends) return;
-    for (const f of realSummary.friends) {
+    if (!realSummary) return;
+    const { friends: sf, groups: sg } = realSummary;
+    if (!sf || !sg) return;
+
+    // Server-provided mapping (fast path when server returns friendGroupId)
+    for (const f of sf) {
       if (f.friendGroupId && !_friendGroupCache.has(f.key)) {
         _friendGroupCache.set(f.key, f.friendGroupId);
       }
@@ -337,7 +341,21 @@ export default function AddExpenseScreen() {
         );
       }
     }
-  }, [realSummary?.friends]);
+
+    // Client-side fallback: match friends to their "friend" groups by name.
+    // Works without server changes — the summary already has both lists.
+    const friendGroups = sg.filter(
+      (g) => (g as { groupType?: string }).groupType === "friend" && g.memberCount === 2,
+    );
+    if (friendGroups.length > 0) {
+      const groupByName = new Map(friendGroups.map((g) => [g.name.trim().toLowerCase(), g.id]));
+      for (const f of sf) {
+        if (_friendGroupCache.has(f.key)) continue;
+        const gid = groupByName.get(f.displayName.trim().toLowerCase());
+        if (gid) _friendGroupCache.set(f.key, gid);
+      }
+    }
+  }, [realSummary]);
 
   // ── Fallback groups fetch (skip if summary already has groups) ──
   const summaryGroups = summary?.groups ?? [];
