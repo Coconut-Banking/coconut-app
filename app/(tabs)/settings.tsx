@@ -28,6 +28,7 @@ import { TapToPayCard } from "../../components/settings/TapToPayCard";
 import { PaymentsCard } from "../../components/settings/PaymentsCard";
 import { DevToolsCard } from "../../components/settings/DevToolsCard";
 import { ProBanner } from "../../components/settings/ProBanner";
+import { useProTier } from "../../lib/pro-tier-context";
 import {
   InviteModal,
   type UninvitedMember,
@@ -42,6 +43,7 @@ export default function SettingsScreen() {
   const { sessionId } = useAuth();
   const { signOut } = useClerk();
 
+  const { isPro, restore, purchasing: restoring } = useProTier();
   const [signingOut, setSigningOut] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [uninvitedMembers, setUninvitedMembers] = useState<
@@ -116,6 +118,31 @@ export default function SettingsScreen() {
 
         <SectionLabel title="Account" />
         <DevToolsCard />
+
+        {!isPro && (
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surfaceSecondary,
+              },
+            ]}
+            onPress={restore}
+            disabled={restoring}
+            activeOpacity={0.85}
+          >
+            {restoring ? (
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            ) : (
+              <Text
+                style={[styles.actionText, { color: theme.textSecondary }]}
+              >
+                Restore purchases
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[

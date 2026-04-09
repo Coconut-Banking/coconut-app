@@ -265,7 +265,8 @@ function RealtimeSyncWrapper() {
 
 function ProTierWrapper({ children }: { children: ReactNode }) {
   const apiFetch = useApiFetch();
-  return <ProTierProvider apiFetch={apiFetch}>{children}</ProTierProvider>;
+  const { userId } = useAuth();
+  return <ProTierProvider apiFetch={apiFetch} clerkUserId={userId}>{children}</ProTierProvider>;
 }
 
 function NavigateOnChange({ target }: { target: string | null }) {

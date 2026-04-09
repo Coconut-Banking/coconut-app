@@ -4,10 +4,11 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
+import { useProTier } from "../../lib/pro-tier-context";
 import { font, radii } from "../../lib/theme";
 
 const FEATURES = [
@@ -23,17 +24,39 @@ const ANNUAL_TOTAL = 39.99;
 
 export function ProBanner() {
   const { theme, isDark } = useTheme();
+  const { isPro, purchase, purchasing, offerings } = useProTier();
   const [plan, setPlan] = useState<"annual" | "monthly">("annual");
 
-  const accentBg = isDark ? "rgba(96, 165, 250, 0.10)" : "rgba(13, 148, 136, 0.06)";
-  const accentBorder = isDark ? "rgba(96, 165, 250, 0.25)" : "rgba(13, 148, 136, 0.20)";
+  if (isPro) {
+    return (
+      <View style={[styles.container, { backgroundColor: accentBgFor(isDark), borderColor: accentBorderFor(isDark) }]}>
+        <View style={styles.header}>
+          <View style={[styles.badge, { backgroundColor: theme.accent }]}>
+            <Ionicons name="diamond" size={10} color="#fff" />
+            <Text style={styles.badgeText}>PRO</Text>
+          </View>
+          <Text style={[styles.headline, { color: theme.text }]}>You have Coconut Pro</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const accentBg = accentBgFor(isDark);
+  const accentBorder = accentBorderFor(isDark);
   const accent = theme.accent;
   const pillActiveBg = isDark ? "rgba(96, 165, 250, 0.18)" : "rgba(13, 148, 136, 0.12)";
   const pillInactiveBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
 
-  const handleSubscribe = () => {
-    const price = plan === "annual" ? `$${ANNUAL_TOTAL}/year` : `$${MONTHLY_PRICE}/month`;
-    Alert.alert("Coming soon", `Coconut Pro (${price}) will be available soon.`);
+  const monthlyPkg = offerings.monthly;
+  const annualPkg = offerings.annual;
+  const displayMonthly = monthlyPkg?.product.priceString ?? `$${MONTHLY_PRICE.toFixed(2)}`;
+  const displayAnnualMonthly = annualPkg
+    ? `$${(annualPkg.product.price / 12).toFixed(2)}`
+    : `$${ANNUAL_MONTHLY.toFixed(2)}`;
+  const displayAnnualTotal = annualPkg?.product.priceString ?? `$${ANNUAL_TOTAL}`;
+
+  const handleSubscribe = async () => {
+    await purchase(plan);
   };
 
   return (
@@ -87,26 +110,39 @@ export function ProBanner() {
         <View>
           <View style={styles.priceRow}>
             <Text style={[styles.price, { color: theme.text }]}>
-              ${plan === "annual" ? ANNUAL_MONTHLY.toFixed(2) : MONTHLY_PRICE.toFixed(2)}
+              {plan === "annual" ? displayAnnualMonthly : displayMonthly}
             </Text>
             <Text style={[styles.pricePer, { color: theme.textTertiary }]}>/mo</Text>
           </View>
           {plan === "annual" ? (
             <Text style={[styles.priceNote, { color: theme.textQuaternary }]}>
-              ${ANNUAL_TOTAL}/year
+              {displayAnnualTotal}/year
             </Text>
           ) : null}
         </View>
         <TouchableOpacity
           style={[styles.cta, { backgroundColor: accent }]}
           onPress={handleSubscribe}
+          disabled={purchasing}
           activeOpacity={0.85}
         >
-          <Text style={styles.ctaText}>Upgrade</Text>
+          {purchasing ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.ctaText}>Upgrade</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
   );
+}
+
+function accentBgFor(isDark: boolean) {
+  return isDark ? "rgba(96, 165, 250, 0.10)" : "rgba(13, 148, 136, 0.06)";
+}
+
+function accentBorderFor(isDark: boolean) {
+  return isDark ? "rgba(96, 165, 250, 0.25)" : "rgba(13, 148, 136, 0.20)";
 }
 
 const styles = StyleSheet.create({
@@ -213,6 +249,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 24,
     borderRadius: radii.md,
+    minWidth: 100,
+    alignItems: "center",
   },
   ctaText: {
     color: "#fff",
