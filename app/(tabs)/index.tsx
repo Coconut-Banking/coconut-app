@@ -43,7 +43,7 @@ import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { useTheme } from "../../lib/theme-context";
 import { BalanceHero } from "../../components/split/BalanceHero";
-import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
+import { colors, font, radii, shadow, prototype } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { HomeSkeletonScreen } from "../../components/ui";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
@@ -764,7 +764,7 @@ export default function BalancesPrototypeScreen() {
                       </View>
                       <View style={{ alignItems: "flex-end" }}>
                         {settled ? (
-                          <Text style={[styles.friendAmt, { color: darkUI.labelMuted }]}>—</Text>
+                          <Text style={[styles.friendAmt, { color: theme.textTertiary }]}>—</Text>
                         ) : (
                           lines.map((b) => {
                             const p = b.amount > 0.005;
@@ -785,7 +785,7 @@ export default function BalancesPrototypeScreen() {
                           })
                         )}
                       </View>
-                      <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                      <Ionicons name="chevron-forward" size={14} color={theme.textTertiary} style={{ marginLeft: 6, opacity: 0.5 }} />
                     </TouchableOpacity>
                     {i < friends.length - 1 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
                   </View>
@@ -843,7 +843,7 @@ export default function BalancesPrototypeScreen() {
                         ) : (
                           <Text style={[styles.groupRowBal, styles.balMuted]}>—</Text>
                         )}
-                        <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
+                        <Ionicons name="chevron-forward" size={14} color={theme.textTertiary} style={{ marginLeft: 6, opacity: 0.5 }} />
                       </TouchableOpacity>
                     </View>
                     );

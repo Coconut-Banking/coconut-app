@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useApiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
-import { font, radii, colors, darkUI } from "../../lib/theme";
+import type { ThemeColors } from "../../lib/colors";
+import { font, radii, colors } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { MerchantEnrichmentCard } from "../../components/MerchantEnrichmentCard";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
@@ -72,6 +73,8 @@ function ReceiptDetailSheet({
   loading: boolean;
   onClose: () => void;
 }) {
+  const { theme } = useTheme();
+  const sheet = useMemo(() => createSheetStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const typeInfo = receipt.merchant_type ? MERCHANT_TYPE_ICONS[receipt.merchant_type] : null;
   const isMatched = !!receipt.transaction_id;
@@ -102,7 +105,7 @@ function ReceiptDetailSheet({
         <View style={sheet.amountCol}>
           <Text style={sheet.amount}>${Number(receipt.amount).toFixed(2)}</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12} style={sheet.closeBtn}>
-            <Ionicons name="close-circle" size={24} color={darkUI.labelMuted} />
+            <Ionicons name="close-circle" size={24} color={theme.textTertiary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -160,7 +163,7 @@ function ReceiptDetailSheet({
               <View style={sheet.itemsCard}>
                 {detail.extras.map((e, i) => (
                   <View key={i} style={sheet.lineRow}>
-                    <Text style={[sheet.lineName, { color: darkUI.labelMuted }]}>{e.name}</Text>
+                    <Text style={[sheet.lineName, { color: theme.textTertiary }]}>{e.name}</Text>
                     <Text style={sheet.lineAmt}>${e.amount.toFixed(2)}</Text>
                   </View>
                 ))}
@@ -171,19 +174,19 @@ function ReceiptDetailSheet({
             <View style={sheet.totalsCard}>
               {detail.subtotal > 0 ? (
                 <View style={sheet.lineRow}>
-                  <Text style={[sheet.lineName, { color: darkUI.labelMuted }]}>Subtotal</Text>
+                  <Text style={[sheet.lineName, { color: theme.textTertiary }]}>Subtotal</Text>
                   <Text style={sheet.lineAmt}>${detail.subtotal.toFixed(2)}</Text>
                 </View>
               ) : null}
               {detail.tax > 0 ? (
                 <View style={sheet.lineRow}>
-                  <Text style={[sheet.lineName, { color: darkUI.labelMuted }]}>Tax</Text>
+                  <Text style={[sheet.lineName, { color: theme.textTertiary }]}>Tax</Text>
                   <Text style={sheet.lineAmt}>${detail.tax.toFixed(2)}</Text>
                 </View>
               ) : null}
               {detail.tip > 0 ? (
                 <View style={sheet.lineRow}>
-                  <Text style={[sheet.lineName, { color: darkUI.labelMuted }]}>Tip</Text>
+                  <Text style={[sheet.lineName, { color: theme.textTertiary }]}>Tip</Text>
                   <Text style={sheet.lineAmt}>${detail.tip.toFixed(2)}</Text>
                 </View>
               ) : null}
@@ -195,7 +198,7 @@ function ReceiptDetailSheet({
           </>
         ) : (
           <View style={sheet.loadingWrap}>
-            <Ionicons name="receipt-outline" size={32} color={darkUI.labelMuted} />
+            <Ionicons name="receipt-outline" size={32} color={theme.textTertiary} />
             <Text style={sheet.loadingText}>No detail available for this receipt.</Text>
           </View>
         )}
@@ -444,149 +447,151 @@ const styles = StyleSheet.create({
   },
 });
 
-const sheet = StyleSheet.create({
-  container: {
-    backgroundColor: darkUI.bg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: "75%",
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: darkUI.stroke,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 16,
-  },
-  logo: { width: 48, height: 48, borderRadius: 12 },
-  merchantName: {
-    fontFamily: font.bold,
-    fontSize: 17,
-    color: darkUI.label,
-    marginBottom: 4,
-  },
-  headerMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  typeText: {
-    fontFamily: font.medium,
-    fontSize: 13,
-    color: darkUI.labelSecondary,
-  },
-  dot: {
-    fontFamily: font.regular,
-    fontSize: 13,
-    color: darkUI.labelMuted,
-  },
-  dateText: {
-    fontFamily: font.regular,
-    fontSize: 13,
-    color: darkUI.labelMuted,
-  },
-  matchedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 4,
-  },
-  matchedText: {
-    fontFamily: font.medium,
-    fontSize: 12,
-    color: "#10B981",
-  },
-  amountCol: {
-    alignItems: "flex-end",
-    gap: 8,
-  },
-  amount: {
-    fontFamily: font.black,
-    fontSize: 20,
-    color: darkUI.label,
-  },
-  closeBtn: {},
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: darkUI.stroke,
-    marginBottom: 16,
-  },
-  body: { flex: 1 },
-  loadingWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-    gap: 10,
-  },
-  loadingText: {
-    fontFamily: font.regular,
-    fontSize: 14,
-    color: darkUI.labelMuted,
-  },
-  sectionLabel: {
-    fontFamily: font.semibold,
-    fontSize: 13,
-    color: darkUI.labelSecondary,
-    marginBottom: 10,
-  },
-  itemsCard: {
-    backgroundColor: darkUI.cardElevated,
-    borderRadius: radii.md,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: darkUI.stroke,
-  },
-  totalsCard: {
-    backgroundColor: darkUI.cardElevated,
-    borderRadius: radii.md,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: darkUI.stroke,
-  },
-  lineRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 8,
-  },
-  totalRow: {
-    marginTop: 6,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: darkUI.sep,
-    marginBottom: 0,
-  },
-  lineName: {
-    flex: 1,
-    fontFamily: font.regular,
-    fontSize: 14,
-    color: darkUI.label,
-  },
-  lineAmt: {
-    fontFamily: font.medium,
-    fontSize: 14,
-    color: darkUI.label,
-  },
-  totalLabel: {
-    fontFamily: font.semibold,
-    fontSize: 15,
-    color: darkUI.label,
-  },
-  totalAmt: {
-    fontFamily: font.bold,
-    fontSize: 16,
-    color: darkUI.label,
-  },
-});
+function createSheetStyles(theme: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      backgroundColor: theme.background,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      height: "75%",
+      paddingHorizontal: 16,
+      paddingTop: 10,
+    },
+    handle: {
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.cardBorder,
+      alignSelf: "center",
+      marginBottom: 16,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      marginBottom: 16,
+    },
+    logo: { width: 48, height: 48, borderRadius: 12 },
+    merchantName: {
+      fontFamily: font.bold,
+      fontSize: 17,
+      color: theme.text,
+      marginBottom: 4,
+    },
+    headerMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    typeText: {
+      fontFamily: font.medium,
+      fontSize: 13,
+      color: theme.textSecondary,
+    },
+    dot: {
+      fontFamily: font.regular,
+      fontSize: 13,
+      color: theme.textTertiary,
+    },
+    dateText: {
+      fontFamily: font.regular,
+      fontSize: 13,
+      color: theme.textTertiary,
+    },
+    matchedBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginTop: 4,
+    },
+    matchedText: {
+      fontFamily: font.medium,
+      fontSize: 12,
+      color: "#10B981",
+    },
+    amountCol: {
+      alignItems: "flex-end",
+      gap: 8,
+    },
+    amount: {
+      fontFamily: font.black,
+      fontSize: 20,
+      color: theme.text,
+    },
+    closeBtn: {},
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: theme.cardBorder,
+      marginBottom: 16,
+    },
+    body: { flex: 1 },
+    loadingWrap: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 40,
+      gap: 10,
+    },
+    loadingText: {
+      fontFamily: font.regular,
+      fontSize: 14,
+      color: theme.textTertiary,
+    },
+    sectionLabel: {
+      fontFamily: font.semibold,
+      fontSize: 13,
+      color: theme.textSecondary,
+      marginBottom: 10,
+    },
+    itemsCard: {
+      backgroundColor: theme.surfaceTertiary,
+      borderRadius: radii.md,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.cardBorder,
+    },
+    totalsCard: {
+      backgroundColor: theme.surfaceTertiary,
+      borderRadius: radii.md,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.cardBorder,
+    },
+    lineRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: 12,
+      marginBottom: 8,
+    },
+    totalRow: {
+      marginTop: 6,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: theme.borderLight,
+      marginBottom: 0,
+    },
+    lineName: {
+      flex: 1,
+      fontFamily: font.regular,
+      fontSize: 14,
+      color: theme.text,
+    },
+    lineAmt: {
+      fontFamily: font.medium,
+      fontSize: 14,
+      color: theme.text,
+    },
+    totalLabel: {
+      fontFamily: font.semibold,
+      fontSize: 15,
+      color: theme.text,
+    },
+    totalAmt: {
+      fontFamily: font.bold,
+      fontSize: 16,
+      color: theme.text,
+    },
+  });
+}
