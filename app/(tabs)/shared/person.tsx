@@ -157,7 +157,6 @@ export default function PersonScreen() {
     try {
       const settlements = detail.settlements ?? [];
       const totalOwed = settlements.reduce((s, se) => s + se.amount, 0);
-      let anyFailed = false;
 
       const requests: Array<{ groupId: string; payerMemberId: string; receiverMemberId: string; amount: number; currency: string }> = [];
       if (settlements.length === 1) {
@@ -191,27 +190,47 @@ export default function PersonScreen() {
         }
       }
 
-      const results = await Promise.all(
-        requests.map((r) =>
-          apiFetch("/api/settlements", {
-            method: "POST",
-            body: { ...r, method: "manual" },
-          }),
-        ),
-      );
-      anyFailed = results.some((res) => !res.ok);
+      // Send sequentially to avoid race conditions where parallel POSTs
+      // both check the balance before either inserts.
+      let anySucceeded = false;
+      let anyRealFailure = false;
+      for (const r of requests) {
+        const res = await apiFetch("/api/settlements", {
+          method: "POST",
+          body: { ...r, method: "manual" },
+        });
+        if (res.ok) {
+          anySucceeded = true;
+        } else {
+          const body = await res.json().catch(() => ({} as Record<string, unknown>));
+          const errMsg = (body as { error?: string }).error ?? "";
+          if (errMsg.includes("Already settled") || errMsg.includes("Nothing left")) {
+            // Previous settlement already covered this balance — not an error
+            anySucceeded = true;
+          } else {
+            anyRealFailure = true;
+          }
+        }
+      }
 
-      if (anyFailed) {
-        Alert.alert("Error", "Some settlements could not be recorded");
+      // ALWAYS bust caches so every screen shows the latest balance
+      invalidateApiCache("/api/groups/summary");
+      invalidateApiCache("/api/groups/person");
+      invalidateApiCache("/api/groups/recent-activity");
+      clearMemSummaryCache();
+      DeviceEventEmitter.emit("groups-updated");
+
+      if (anyRealFailure && !anySucceeded) {
+        Alert.alert("Error", "Settlement could not be recorded");
       } else {
-        invalidateApiCache("/api/groups/summary");
-        invalidateApiCache("/api/groups/person");
-        invalidateApiCache("/api/groups/recent-activity");
-        clearMemSummaryCache();
-        DeviceEventEmitter.emit("groups-updated");
         goBack();
       }
     } catch {
+      invalidateApiCache("/api/groups/summary");
+      invalidateApiCache("/api/groups/person");
+      invalidateApiCache("/api/groups/recent-activity");
+      clearMemSummaryCache();
+      DeviceEventEmitter.emit("groups-updated");
       Alert.alert("Error", "Could not record settlement");
     } finally {
       setRecordingSettlement(false);
