@@ -13,6 +13,7 @@ import {
   Linking,
   Modal,
   Pressable,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Image,
@@ -232,6 +233,7 @@ export default function AddExpenseScreen() {
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [repeatFrequency, setRepeatFrequency] = useState<RepeatFrequency>("monthly");
   const [showRepeatPicker, setShowRepeatPicker] = useState(false);
+  const [repeatKeyboardUp, setRepeatKeyboardUp] = useState(false);
   const [customEvery, setCustomEvery] = useState("2");
   const [customUnit, setCustomUnit] = useState<CustomUnit>("weeks");
   const [repeatEndType, setRepeatEndType] = useState<RepeatEndType>("never");
@@ -279,6 +281,13 @@ export default function AddExpenseScreen() {
     touchedSplitKeysRef.current = new Set();
     setJustSaved(false);
   }, []);
+
+  useEffect(() => {
+    if (!showRepeatPicker) { setRepeatKeyboardUp(false); return; }
+    const showSub = Keyboard.addListener("keyboardDidShow", () => setRepeatKeyboardUp(true));
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => setRepeatKeyboardUp(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [showRepeatPicker]);
 
   // Reset form when screen gains focus without fresh prefill params
   useEffect(() => {
@@ -937,7 +946,8 @@ export default function AddExpenseScreen() {
       payerMemberId: effPayer,
       shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
     });
-    nav.back();
+    if (nav.canGoBack()) nav.back();
+    else nav.replace("/(tabs)");
 
     const _saveT0 = __DEV__ ? Date.now() : 0;
     apiFetch("/api/manual-expense", { method: "POST", body })
@@ -1368,12 +1378,8 @@ export default function AddExpenseScreen() {
                     style={[s.repeatRow, repeatEnabled && s.repeatRowActive]}
                     onPress={() => {
                       sfx.toggle();
-                      if (repeatEnabled) {
-                        setRepeatEnabled(false);
-                      } else {
-                        setRepeatEnabled(true);
-                        setShowRepeatPicker(true);
-                      }
+                      setShowRepeatPicker(true);
+                      if (!repeatEnabled) setRepeatEnabled(true);
                     }}
                     activeOpacity={0.75}
                   >
@@ -1382,26 +1388,36 @@ export default function AddExpenseScreen() {
                       size={18}
                       color={repeatEnabled ? tint : theme.textTertiary}
                     />
-                    <Text style={s.repeatLabel}>
+                    <Text style={[s.repeatLabel, !repeatEnabled && { color: theme.textSecondary }]}>
                       {repeatEnabled ? "Repeats" : "Repeat this expense"}
                     </Text>
                     {repeatEnabled && (
-                      <TouchableOpacity
-                        style={s.repeatFreqChip}
-                        onPress={() => setShowRepeatPicker(true)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={s.repeatFreqText}>
-                          {repeatFrequency === "weekly" ? "Weekly"
-                            : repeatFrequency === "biweekly" ? "Biweekly"
-                            : repeatFrequency === "monthly" ? "Monthly"
-                            : `Every ${customEvery} ${customUnit}`}
-                          {repeatEndType === "after_count" ? ` · ${repeatEndCount}×`
-                            : repeatEndType === "after_months" ? ` · ${repeatEndMonths}mo`
-                            : ""}
-                        </Text>
-                        <Ionicons name="chevron-down" size={12} color={theme.textTertiary} />
-                      </TouchableOpacity>
+                      <>
+                        <View style={s.repeatFreqChip}>
+                          <Text style={s.repeatFreqText}>
+                            {repeatFrequency === "weekly" ? "Weekly"
+                              : repeatFrequency === "biweekly" ? "Biweekly"
+                              : repeatFrequency === "monthly" ? "Monthly"
+                              : `Every ${customEvery} ${customUnit}`}
+                            {repeatEndType === "after_count" ? ` · ${repeatEndCount}×`
+                              : repeatEndType === "after_months" ? ` · ${repeatEndMonths}mo`
+                              : ""}
+                          </Text>
+                          <Ionicons name="chevron-forward" size={12} color={theme.textTertiary} />
+                        </View>
+                        <TouchableOpacity
+                          hitSlop={10}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            sfx.toggle();
+                            setRepeatEnabled(false);
+                            setRepeatFrequency("monthly");
+                            setRepeatEndType("never");
+                          }}
+                        >
+                          <Ionicons name="close-circle" size={20} color={theme.textTertiary} />
+                        </TouchableOpacity>
+                      </>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -1746,10 +1762,10 @@ export default function AddExpenseScreen() {
       </Modal>
 
       {/* ── Repeat schedule picker ── */}
-      <Modal visible={showRepeatPicker} transparent animationType="slide" onRequestClose={() => setShowRepeatPicker(false)}>
+      <Modal visible={showRepeatPicker} transparent animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setShowRepeatPicker(false); }}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-          <Pressable style={s.sheetOverlay} onPress={() => setShowRepeatPicker(false)}>
-            <Pressable style={[s.sheetCard, { maxHeight: "85%" }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={s.sheetOverlay} onPress={() => { Keyboard.dismiss(); setShowRepeatPicker(false); }}>
+            <Pressable style={[s.sheetCard, { maxHeight: "85%" }]} onPress={() => Keyboard.dismiss()}>
               <View style={s.sheetHandle} />
               <View style={s.pickerHead}>
                 <Text style={s.pickerTitle}>Repeat schedule</Text>
@@ -1794,6 +1810,7 @@ export default function AddExpenseScreen() {
                       value={customEvery}
                       onChangeText={(v) => setCustomEvery(v.replace(/[^0-9]/g, ""))}
                       keyboardType="number-pad"
+                      returnKeyType="done"
                       maxLength={3}
                       selectTextOnFocus
                     />
@@ -1841,6 +1858,7 @@ export default function AddExpenseScreen() {
                           value={repeatEndCount}
                           onChangeText={(v) => setRepeatEndCount(v.replace(/[^0-9]/g, ""))}
                           keyboardType="number-pad"
+                          returnKeyType="done"
                           maxLength={3}
                           selectTextOnFocus
                         />
@@ -1868,6 +1886,7 @@ export default function AddExpenseScreen() {
                           value={repeatEndMonths}
                           onChangeText={(v) => setRepeatEndMonths(v.replace(/[^0-9]/g, ""))}
                           keyboardType="number-pad"
+                          returnKeyType="done"
                           maxLength={3}
                           selectTextOnFocus
                         />
@@ -1884,22 +1903,25 @@ export default function AddExpenseScreen() {
 
               </ScrollView>
 
-              {/* Done / Cancel buttons */}
-              <View style={[s.footer, { flexDirection: "row", gap: 10 }]}>
-                <TouchableOpacity
-                  style={[s.primaryBtnDark, { flex: 1 }]}
-                  onPress={() => { setRepeatEnabled(true); setShowRepeatPicker(false); }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={s.primaryBtnText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={{ alignItems: "center", paddingBottom: 8 }}
-                onPress={() => { setRepeatEnabled(false); setShowRepeatPicker(false); }}
-              >
-                <Text style={{ fontFamily: font.semibold, fontSize: 14, color: theme.negative }}>Don&apos;t repeat</Text>
-              </TouchableOpacity>
+              {!repeatKeyboardUp && (
+                <>
+                  <View style={[s.footer, { flexDirection: "row", gap: 10 }]}>
+                    <TouchableOpacity
+                      style={[s.primaryBtnDark, { flex: 1 }]}
+                      onPress={() => { setRepeatEnabled(true); setShowRepeatPicker(false); }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={s.primaryBtnText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    style={{ alignItems: "center", paddingBottom: 8 }}
+                    onPress={() => { setRepeatEnabled(false); setShowRepeatPicker(false); }}
+                  >
+                    <Text style={{ fontFamily: font.semibold, fontSize: 14, color: theme.negative }}>Don&apos;t repeat</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
