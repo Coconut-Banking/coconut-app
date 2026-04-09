@@ -223,6 +223,8 @@ export default function PersonScreen() {
       if (anyRealFailure && !anySucceeded) {
         Alert.alert("Error", "Settlement could not be recorded");
       } else {
+        haptic.success();
+        sfx.coin();
         goBack();
       }
     } catch {
