@@ -182,35 +182,12 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
           retryCount.current = 0;
           const data = await res.json();
           if (__DEV__) {
-            console.log(
+            if (__DEV__) console.log(
               "[summary]",
               contacts ? "contacts" : "outstanding",
-              "friends:",
-              data.friends?.length ?? 0,
-              "groups:",
-              data.groups?.length ?? 0
+              `friends: ${data.friends?.length ?? 0}`,
+              `groups: ${data.groups?.length ?? 0}`
             );
-            // Debug: show top friend balances to diagnose inflated numbers
-            type FriendRow = { displayName: string; balances: { currency: string; amount: number }[] };
-            const topFriends = (data.friends ?? [])
-              .slice(0, 5)
-              .map((f: FriendRow) => `${f.displayName}: ${f.balances?.map((b: { currency: string; amount: number }) => `${b.currency} ${b.amount}`).join(", ") || "0"}`);
-            if (topFriends.length > 0) console.log("[summary] top balances:", topFriends.join(" | "));
-            if (data._debug) {
-              console.log("[summary] debug:", JSON.stringify(data._debug, null, 0));
-              if (data._debug.topFriendBreakdown) {
-                for (const f of data._debug.topFriendBreakdown) {
-                  console.log(`[summary] ${f.name}:`, JSON.stringify(f.contributions));
-                }
-              }
-              if (data._debug.groupPairwise) {
-                for (const gp of data._debug.groupPairwise) {
-                  console.log(`[summary] group-pw ${gp.name}: splits=${gp.splitCount} shares=${gp.shareCount} payers=${gp.payerFoundCount}/${gp.totalPayerAttempts} myMember=${gp.hasMyMember} sw=${gp.isSw} keys=${JSON.stringify(gp.memberKeys)}`);
-                }
-              }
-            }
-            const withIcons = (data.groups ?? []).filter((g: { imageUrl?: string | null }) => g.imageUrl);
-            if (withIcons.length > 0) console.log("[summary] groups with icons:", withIcons.map((g: { name: string; imageUrl: string }) => `${g.name}: ${g.imageUrl.slice(0, 60)}...`));
           }
           _memSummary.set(summaryPath, data);
           setSummary(data);

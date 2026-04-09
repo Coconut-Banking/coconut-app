@@ -686,7 +686,7 @@ export default function GroupScreen() {
         </View>
         <View style={s.center}>
           {loading ? (
-            <ActivityIndicator size="large" color={theme.primary} />
+          <ActivityIndicator size="large" color={theme.primary} />
           ) : (
             <>
               <Ionicons name="alert-circle-outline" size={48} color={theme.textTertiary} style={{ marginBottom: 12 }} />
@@ -737,15 +737,15 @@ export default function GroupScreen() {
           <TouchableOpacity onPress={handleIconPress} activeOpacity={0.7} disabled={uploadingIcon}>
             {(localIconUrl || detail.image_url) ? (
               <Image source={{ uri: localIconUrl || detail.image_url! }} style={s.groupPhoto} />
-            ) : (
-              <View style={[s.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
+          ) : (
+            <View style={[s.groupIcon, { backgroundColor: theme.surfaceSecondary }]}>
                 {uploadingIcon ? (
                   <ActivityIndicator size="small" color={theme.primary} />
                 ) : (
-                  <Ionicons name="people" size={32} color={theme.textTertiary} />
+              <Ionicons name="people" size={32} color={theme.textTertiary} />
                 )}
-              </View>
-            )}
+            </View>
+          )}
             <View style={s.groupIconBadge}>
               <Ionicons name="camera" size={12} color="#fff" />
             </View>
@@ -770,8 +770,8 @@ export default function GroupScreen() {
                 ? formatSplitCurrencyAmount(detail.mySpend, detail.mySpendByCurrency?.[0]?.currency ?? "USD")
                 : (detail.mySpendByCurrency ?? []).map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(" + ")}
             </Text>
-          </View>
-        ) : null}
+            </View>
+          ) : null}
 
         {isArchived ? (
           <View
