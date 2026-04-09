@@ -27,6 +27,7 @@ import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
+import { useCurrency } from "../../../hooks/useCurrency";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { prewarmFriendGroupCache } from "../add-expense";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
@@ -40,6 +41,7 @@ export default function PersonScreen() {
   const demo = useDemoData();
   const { detail: realDetail, loading, refetch } = usePersonDetail(isDemoOn ? null : (key ?? null));
   const detail = isDemoOn && key ? demo.personDetails[key] ?? null : realDetail;
+  const { currencyCode: myCurrency } = useCurrency();
 
   const goBack = useCallback(() => {
     if (source === "home") {
@@ -127,7 +129,7 @@ export default function PersonScreen() {
     detail.currencyBalances && detail.currencyBalances.length > 0
       ? detail.currencyBalances
       : detail.balance != null && Math.abs(detail.balance) >= EPS
-        ? [{ currency: "USD", amount: detail.balance }]
+        ? [{ currency: myCurrency, amount: detail.balance }]
         : [];
   const settled = balLines.length === 0;
   const hasPos = balLines.some((b) => b.amount > EPS);
@@ -318,7 +320,7 @@ export default function PersonScreen() {
             ]}
           >
             {settled ? (
-              <Text style={[s.balanceAmt, { color: "#8A9098" }]}>{formatSplitCurrencyAmount(0, "USD")}</Text>
+              <Text style={[s.balanceAmt, { color: "#8A9098" }]}>{formatSplitCurrencyAmount(0, myCurrency)}</Text>
             ) : (
               balLines.map((b) => {
                 const p = b.amount > EPS;
@@ -432,10 +434,10 @@ export default function PersonScreen() {
                       ]}
                     >
                       {a.effectOnBalance > 0 ? "+" : a.effectOnBalance < 0 ? "-" : ""}
-                      {formatSplitCurrencyAmount(a.effectOnBalance, a.currency ?? "USD")}
+                      {formatSplitCurrencyAmount(a.effectOnBalance, a.currency ?? myCurrency)}
                     </Text>
                     <Text style={s.txTotal}>
-                      {formatSplitCurrencyAmount(a.amount, a.currency ?? "USD")} total
+                      {formatSplitCurrencyAmount(a.amount, a.currency ?? myCurrency)} total
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -584,7 +586,7 @@ export default function PersonScreen() {
       {settleModalOpen && (detail.settlements ?? []).length > 0 ? (() => {
         const settlements = detail.settlements ?? [];
         const totalOwed = settlements.reduce((sum, se) => sum + se.amount, 0);
-        const currency = settlements[0]?.currency ?? "USD";
+        const currency = settlements[0]?.currency ?? myCurrency;
         const iOwe = balLines.some((b) => b.amount < -0.005);
         return (
           <PartialSettleModal

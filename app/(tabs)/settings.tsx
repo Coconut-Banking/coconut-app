@@ -27,6 +27,7 @@ import { ContactsCard } from "../../components/settings/ContactsCard";
 import { TapToPayCard } from "../../components/settings/TapToPayCard";
 import { PaymentsCard } from "../../components/settings/PaymentsCard";
 import { DevToolsCard } from "../../components/settings/DevToolsCard";
+import { ProBanner } from "../../components/settings/ProBanner";
 import {
   InviteModal,
   type UninvitedMember,
@@ -95,6 +96,7 @@ export default function SettingsScreen() {
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
 
         <ProfileHeader />
+        <ProBanner />
         <PreferencesCard />
 
         <SectionLabel title="Connected Accounts" />

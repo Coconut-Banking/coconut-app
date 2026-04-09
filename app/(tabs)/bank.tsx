@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsFocused } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -137,24 +138,106 @@ function pushPrefillFromSearchTx(tx: SearchTransaction) {
   });
 }
 
-function BankHeader() {
+function BankHeader({
+  accounts,
+  activeFilter,
+  showMenu,
+  onToggleMenu,
+}: {
+  accounts: { mask: string; name: string }[];
+  activeFilter: string | null;
+  showMenu: boolean;
+  onToggleMenu: () => void;
+}) {
   const { theme } = useTheme();
+  const showFilterIcon = accounts.length > 1;
+  const isFiltered = activeFilter !== null;
+
   return (
     <View style={styles.headerRow}>
       <View>
         <Text style={[styles.title, { color: theme.text }]}>Bank</Text>
         <Text style={[styles.titleSub, { color: theme.textTertiary }]}>Your linked transactions</Text>
       </View>
-      <TouchableOpacity
-        onPress={() => router.push("/(tabs)/settings")}
-        style={styles.settingsBtn}
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel="Settings"
-      >
-        <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
-      </TouchableOpacity>
+      {showFilterIcon ? (
+        <TouchableOpacity
+          onPress={onToggleMenu}
+          style={[styles.filterBtn, showMenu && { backgroundColor: theme.surfaceSecondary }]}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Filter by account"
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="options-outline"
+            size={20}
+            color={isFiltered ? colors.primary : theme.textSecondary}
+          />
+          {isFiltered ? (
+            <View style={[styles.filterDot, { backgroundColor: colors.primary }]} />
+          ) : null}
+        </TouchableOpacity>
+      ) : null}
     </View>
+  );
+}
+
+function AccountFilterMenu({
+  accounts,
+  activeFilter,
+  onSelect,
+  onClose,
+}: {
+  accounts: { mask: string; name: string }[];
+  activeFilter: string | null;
+  onSelect: (mask: string | null) => void;
+  onClose: () => void;
+}) {
+  const { theme } = useTheme();
+  const options = [{ mask: null as string | null, name: "All accounts" }, ...accounts];
+  return (
+    <>
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        onPress={onClose}
+        activeOpacity={1}
+        accessible={false}
+      />
+      <View style={[styles.filterMenu, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {options.map((opt, i) => {
+          const isActive = opt.mask === activeFilter;
+          return (
+            <TouchableOpacity
+              key={opt.mask ?? "__all"}
+              style={[
+                styles.filterMenuItem,
+                isActive && { backgroundColor: theme.surfaceSecondary },
+                i < options.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+              ]}
+              onPress={() => { onSelect(opt.mask); onClose(); }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.filterMenuIcon, { backgroundColor: isActive ? colors.primary + "22" : theme.surfaceSecondary }]}>
+                <Ionicons
+                  name={opt.mask ? "card-outline" : "layers-outline"}
+                  size={14}
+                  color={isActive ? colors.primary : theme.textTertiary}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.filterMenuLabel,
+                  { color: isActive ? theme.text : theme.textSecondary, fontFamily: isActive ? font.semibold : font.regular },
+                ]}
+              >
+                {opt.name}
+              </Text>
+              {isActive ? <Ionicons name="checkmark" size={16} color={colors.primary} style={{ marginLeft: "auto" }} /> : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </>
   );
 }
 
@@ -164,6 +247,16 @@ export default function BankTabScreen() {
   const { transactions, linked, loading, refetch, runFullSync } = useTransactions();
   const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } =
     useSearch();
+  const isFocused = useIsFocused();
+  const prevFocused = useRef(false);
+
+  useEffect(() => {
+    const wasFocused = prevFocused.current;
+    prevFocused.current = isFocused;
+    if (isFocused && !wasFocused && !isDemoOn) {
+      refetch();
+    }
+  }, [isFocused, isDemoOn, refetch]);
 
   const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
   const demoTransactions = useMemo(() => (isDemoOn ? demoChargesToTransactions() : []), [isDemoOn]);
@@ -177,6 +270,8 @@ export default function BankTabScreen() {
   const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [accountFilter, setAccountFilter] = useState<string | null>(null);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const [itemizedReceipt, setItemizedReceipt] = useState<{
     items: ReceiptItem[];
@@ -248,9 +343,21 @@ export default function BankTabScreen() {
       .slice(0, 500);
   }, [bankVisibleTransactions, demoTransactions, effectiveLinked, isDemoOn]);
 
+  const uniqueAccounts = useMemo(() => {
+    const seen = new Map<string, { mask: string; name: string }>();
+    for (const tx of allLinkedBankRows) {
+      const mask = tx.accountMask;
+      if (mask && !seen.has(mask)) {
+        seen.set(mask, { mask, name: tx.accountName || `••••${mask}` });
+      }
+    }
+    return Array.from(seen.values());
+  }, [allLinkedBankRows]);
+
   const filteredAllBankRows = useMemo(() => {
     const q = committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
+      if (accountFilter && tx.accountMask !== accountFilter) return false;
       if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
       if (dateFilterRange) {
         const txDate = new Date(tx.date || "");
@@ -273,7 +380,7 @@ export default function BankTabScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, committedSearch, dateFilterRange, datePreset]);
+  }, [allLinkedBankRows, committedSearch, dateFilterRange, datePreset, accountFilter]);
 
   const resetFiltersForModeSwitch = useCallback(() => {
     setBankSearch("");
@@ -283,6 +390,8 @@ export default function BankTabScreen() {
     setCustomDateStart(null);
     setCustomDateEnd(null);
     setShowCalendar(false);
+    setAccountFilter(null);
+    setShowAccountMenu(false);
   }, [askClear]);
 
   const onRefresh = useCallback(async () => {
@@ -307,7 +416,8 @@ export default function BankTabScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askResults]);
 
-  const showInitialLoading = !isDemoOn && loading && allLinkedBankRows.length === 0;
+  const hasNoData = allLinkedBankRows.length === 0;
+  const showInitialLoading = !isDemoOn && loading && hasNoData;
   const showConnectBank = !isDemoOn && !loading && !linked;
 
   const renderKeywordRows = () => {
@@ -486,7 +596,7 @@ export default function BankTabScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.page, showInitialLoading && styles.pageLoading]}
+          contentContainerStyle={[styles.page, showConnectBank && styles.pageLoading]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -495,13 +605,38 @@ export default function BankTabScreen() {
             )
           }
         >
-          <View style={styles.pad}>
-            <BankHeader />
+          <View style={[styles.pad, { zIndex: 10 }]}>
+            <BankHeader
+              accounts={uniqueAccounts}
+              activeFilter={accountFilter}
+              showMenu={showAccountMenu}
+              onToggleMenu={() => setShowAccountMenu((v) => !v)}
+            />
+            {showAccountMenu ? (
+              <AccountFilterMenu
+                accounts={uniqueAccounts}
+                activeFilter={accountFilter}
+                onSelect={setAccountFilter}
+                onClose={() => setShowAccountMenu(false)}
+              />
+            ) : null}
           </View>
 
           {showInitialLoading ? (
-            <View style={styles.center}>
-              <ActivityIndicator color={colors.primary} />
+            <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <View key={i}>
+                  <View style={styles.friendRow}>
+                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]} />
+                    <View style={{ flex: 1, marginLeft: 12, gap: 6 }}>
+                      <View style={[styles.skeletonLine, { width: "55%", backgroundColor: theme.surfaceSecondary }]} />
+                      <View style={[styles.skeletonLine, { width: "30%", backgroundColor: theme.surfaceSecondary }]} />
+                    </View>
+                    <View style={[styles.skeletonLine, { width: 50, backgroundColor: theme.surfaceSecondary }]} />
+                  </View>
+                  {i < 4 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                </View>
+              ))}
             </View>
           ) : showConnectBank ? (
             <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -679,21 +814,8 @@ export default function BankTabScreen() {
                       setCustomDateStart(start);
                       setCustomDateEnd(end);
                     }}
+                    onApply={() => setShowCalendar(false)}
                   />
-                  <TouchableOpacity
-                    style={[
-                      searchStyles.applyBtn,
-                      (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled,
-                    ]}
-                    onPress={() => {
-                      if (customDateStart && customDateEnd) setShowCalendar(false);
-                    }}
-                    disabled={!customDateStart || !customDateEnd}
-                  >
-                    <Text style={searchStyles.applyBtnText}>
-                      {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
-                    </Text>
-                  </TouchableOpacity>
                 </View>
               ) : null}
 
@@ -849,7 +971,53 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  settingsBtn: { padding: 4, marginTop: 2 },
+  filterBtn: {
+    padding: 8,
+    marginTop: 2,
+    borderRadius: 10,
+  },
+  filterDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.5,
+    borderColor: "#F5F3F2",
+  },
+  filterMenu: {
+    position: "absolute",
+    top: 52,
+    right: 0,
+    width: 220,
+    borderRadius: 14,
+    borderWidth: 1,
+    zIndex: 100,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  filterMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  filterMenuIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterMenuLabel: {
+    fontSize: 14,
+  },
   title: { fontSize: 32, fontFamily: font.black, color: "#1F2328", letterSpacing: -0.9 },
   titleSub: { fontSize: 13, fontFamily: font.medium, color: "#7A8088", marginTop: 2 },
   searchBox: {
@@ -940,6 +1108,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   ctaBtnText: { fontSize: 15, fontFamily: font.semibold, color: "#fff" },
+  skeletonLine: { height: 10, borderRadius: 5 },
 });
 
 const searchStyles = StyleSheet.create({
@@ -1023,21 +1192,6 @@ const searchStyles = StyleSheet.create({
     paddingBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  applyBtn: {
-    marginTop: 10,
-    backgroundColor: "#1e2021",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  applyBtnDisabled: {
-    backgroundColor: "#D8D4CF",
-  },
-  applyBtnText: {
-    fontSize: 14,
-    fontFamily: font.semibold,
-    color: "#fff",
   },
 });
 

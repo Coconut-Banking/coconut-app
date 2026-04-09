@@ -13,7 +13,7 @@ const emptySummary: GroupsSummary = {
   totalsByCurrency: [],
 };
 
-export const BalanceHero = React.memo(function BalanceHero({ summary }: { summary: GroupsSummary | null }) {
+export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCurrency = "USD" }: { summary: GroupsSummary | null; defaultCurrency?: string }) {
   const s = summary ?? emptySummary;
   const rows = s.totalsByCurrency ?? [];
   const multi = rows.length > 1;
@@ -26,7 +26,7 @@ export const BalanceHero = React.memo(function BalanceHero({ summary }: { summar
       <View style={styles.heroCard}>
         <Text style={styles.heroKicker}>Overall</Text>
         <Text style={[styles.heroAmount, { color: "#8A9098" }]}>
-          {formatSplitCurrencyAmount(0, rows.length === 1 ? rows[0].currency : "USD")}
+          {formatSplitCurrencyAmount(0, rows.length === 1 ? rows[0].currency : defaultCurrency)}
         </Text>
         <Text style={[styles.heroSub, { color: "#8A9098" }]}>All settled up</Text>
       </View>
@@ -63,7 +63,7 @@ export const BalanceHero = React.memo(function BalanceHero({ summary }: { summar
 
   const net = s.netBalance ?? 0;
   const isPos = net >= 0;
-  const singleCur = rows.length === 1 ? rows[0].currency : "USD";
+  const singleCur = rows.length === 1 ? rows[0].currency : defaultCurrency;
 
   return (
     <View style={styles.heroCard}>

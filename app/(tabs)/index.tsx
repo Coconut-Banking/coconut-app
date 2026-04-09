@@ -36,7 +36,7 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchContactsSummary } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -56,8 +56,8 @@ import {
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
+import { useCurrency } from "../../hooks/useCurrency";
 import { sfx } from "../../lib/sounds";
-import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
@@ -320,9 +320,9 @@ export default function BalancesPrototypeScreen() {
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
   usePrefetchContactsSummary(500);
-  usePrefetchActivity(500);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
+  const { currencyCode: myCurrency } = useCurrency();
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
@@ -453,6 +453,8 @@ export default function BalancesPrototypeScreen() {
         prefillDesc: tx.merchant || tx.rawDescription || "",
         prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
         prefillNonce: String(Date.now()),
+        prefillBankDate: tx.dateStr || tx.date || "",
+        prefillBankCategory: tx.category || "",
         prefillPersonKey: "",
         prefillPersonName: "",
         prefillPersonType: "",
@@ -649,7 +651,7 @@ export default function BalancesPrototypeScreen() {
           )
         }
       >
-        <BalanceHero summary={summary} />
+        <BalanceHero summary={summary} defaultCurrency={myCurrency} />
 
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -730,7 +732,7 @@ export default function BalancesPrototypeScreen() {
             <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {friends.map((f, i) => {
                 const nExp = friendExpenseCount(f.key);
-                const lines = friendBalanceLines(f);
+                const lines = friendBalanceLines(f, myCurrency);
                 const settled = lines.length === 0;
                 const pos =
                   !settled &&
@@ -803,7 +805,7 @@ export default function BalancesPrototypeScreen() {
                     <Text style={styles.inlineSectionLabelText}>Groups</Text>
                   </View>
                   {groups.map((g, i) => {
-                    const balLines = groupBalanceLines(g);
+                    const balLines = groupBalanceLines(g, myCurrency);
                     return (
                     <View key={g.id}>
                       {i > 0 ? <View style={styles.rowSep} /> : null}
@@ -1091,6 +1093,8 @@ export default function BalancesPrototypeScreen() {
                         prefillDesc: row.merchant,
                         prefillAmount: row.amount.toFixed(2),
                         prefillNonce: String(Date.now()),
+                        prefillBankDate: row.sheetDateLine ?? "",
+                        prefillBankCategory: row.category ?? "",
                         prefillPersonKey: "",
                         prefillPersonName: "",
                         prefillPersonType: "",
@@ -1192,6 +1196,8 @@ export default function BalancesPrototypeScreen() {
                           prefillDesc: row.merchant,
                           prefillAmount: row.amount.toFixed(2),
                           prefillNonce: String(Date.now()),
+                          prefillBankDate: row.sheetDateLine ?? "",
+                          prefillBankCategory: row.category ?? "",
                           prefillPersonKey: "",
                           prefillPersonName: "",
                           prefillPersonType: "",
@@ -1313,18 +1319,8 @@ export default function BalancesPrototypeScreen() {
                   startDate={customDateStart}
                   endDate={customDateEnd}
                   onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
+                  onApply={() => setShowCalendar(false)}
                 />
-                <TouchableOpacity
-                  style={[searchStyles.applyBtn, (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled]}
-                  onPress={() => {
-                    if (customDateStart && customDateEnd) setShowCalendar(false);
-                  }}
-                  disabled={!customDateStart || !customDateEnd}
-                >
-                  <Text style={searchStyles.applyBtnText}>
-                    {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
-                  </Text>
-                </TouchableOpacity>
               </View>
             ) : null}
 
@@ -1371,7 +1367,25 @@ export default function BalancesPrototypeScreen() {
                           const location = [tx.city, tx.region].filter(Boolean).join(", ");
                           return (
                             <View key={tx.id}>
-                              <View style={styles.friendRow}>
+                              <TouchableOpacity
+                                style={styles.friendRow}
+                                activeOpacity={0.75}
+                                onPress={() => {
+                                  sfx.pop();
+                                  setSelectedStrip({
+                                    stripId: tx.id,
+                                    merchant,
+                                    emoji: merchant[0] ?? "•",
+                                    amount: Math.abs(tx.amount),
+                                    cardDetailLine: tx.date,
+                                    cardDetailIsReceipt: false,
+                                    hasMailBadge: false,
+                                    sheetDateLine: tx.date,
+                                    showReceiptBox: false,
+                                    receiptId: null,
+                                  });
+                                }}
+                              >
                                 <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
                                   <MerchantLogo merchantName={merchant} size={22} category={category} backgroundColor="transparent" borderColor="transparent" />
                                 </View>
@@ -1384,7 +1398,7 @@ export default function BalancesPrototypeScreen() {
                                 <Text style={[styles.friendAmt, tx.amount > 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
                                   {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
                                 </Text>
-                              </View>
+                              </TouchableOpacity>
                               {i < askResults.transactions.length - 1 ? <View style={styles.rowSep} /> : null}
                             </View>
                           );
@@ -1964,48 +1978,5 @@ const searchStyles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  applyBtn: {
-    marginTop: 10,
-    backgroundColor: "#1e2021",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  applyBtnDisabled: {
-    backgroundColor: "#D8D4CF",
-  },
-  applyBtnText: {
-    fontSize: 14,
-    fontFamily: font.semibold,
-    color: "#fff",
-  },
 });
 
-const ttpStyles = StyleSheet.create({
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    padding: 16,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    marginBottom: 18,
-  },
-  iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    fontSize: 15,
-    fontFamily: font.semibold,
-    fontWeight: "600",
-  },
-  sub: {
-    fontSize: 13,
-    fontFamily: font.regular,
-    marginTop: 2,
-  },
-});

@@ -18,6 +18,7 @@ import { useApiFetch } from "../../../lib/api";
 import { useTransactionDetail } from "../../../hooks/useGroups";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
+import { useCurrency } from "../../../hooks/useCurrency";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 
@@ -31,6 +32,7 @@ export default function TransactionScreen() {
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   const apiFetch = useApiFetch();
   const { detail, loading, refetch } = useTransactionDetail(id ?? null);
+  const { currencyCode: myCurrency } = useCurrency();
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -174,7 +176,7 @@ export default function TransactionScreen() {
   }
 
   const totalAmount = detail.amount ?? 0;
-  const currency = detail.currency ?? "USD";
+  const currency = detail.currency ?? myCurrency;
   const isFriendGroup = detail.groupType === "friend";
 
   return (

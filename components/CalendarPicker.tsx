@@ -23,17 +23,26 @@ function toYMD(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function fmtShort(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 interface Props {
   startDate: Date | null;
   endDate: Date | null;
   onSelect: (start: Date | null, end: Date | null) => void;
+  onApply?: () => void;
 }
 
-export function CalendarPicker({ startDate, endDate, onSelect }: Props) {
-  const { theme } = useTheme();
+export function CalendarPicker({ startDate, endDate, onSelect, onApply }: Props) {
+  const { theme, isDark } = useTheme();
   const today = useMemo(() => new Date(), []);
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(
+    startDate ? startDate.getMonth() : today.getMonth()
+  );
+  const [viewYear, setViewYear] = useState(
+    startDate ? startDate.getFullYear() : today.getFullYear()
+  );
   const [selectingEnd, setSelectingEnd] = useState(false);
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -69,26 +78,31 @@ export function CalendarPicker({ startDate, endDate, onSelect }: Props) {
     }
   };
 
+  const rangeBg = isDark ? "rgba(96, 165, 250, 0.12)" : theme.primaryLight || "rgba(31, 35, 40, 0.08)";
+  const rangeText = isDark ? theme.accent : theme.primary;
+  const selectedBg = isDark ? theme.accent : theme.primary;
+  const hasRange = !!startDate && !!endDate;
+
   return (
     <View style={[s.container, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-      {/* Month navigation */}
+      {/* Month nav */}
       <View style={s.header}>
-        <TouchableOpacity onPress={prevMonth} hitSlop={12}>
-          <Ionicons name="chevron-back" size={18} color={theme.text} />
+        <TouchableOpacity onPress={prevMonth} hitSlop={14} style={[s.navBtn, { backgroundColor: theme.surfaceSecondary }]}>
+          <Ionicons name="chevron-back" size={16} color={theme.text} />
         </TouchableOpacity>
         <Text style={[s.monthLabel, { color: theme.text }]}>
           {MONTHS[viewMonth]} {viewYear}
         </Text>
-        <TouchableOpacity onPress={nextMonth} hitSlop={12}>
-          <Ionicons name="chevron-forward" size={18} color={theme.text} />
+        <TouchableOpacity onPress={nextMonth} hitSlop={14} style={[s.navBtn, { backgroundColor: theme.surfaceSecondary }]}>
+          <Ionicons name="chevron-forward" size={16} color={theme.text} />
         </TouchableOpacity>
       </View>
 
-      {/* Day headers */}
+      {/* Day-of-week headers */}
       <View style={s.row}>
         {DAYS.map((d) => (
           <View key={d} style={s.cell}>
-            <Text style={[s.dayHeader, { color: theme.textTertiary }]}>{d}</Text>
+            <Text style={[s.dayHeader, { color: theme.textMuted }]}>{d}</Text>
           </View>
         ))}
       </View>
@@ -109,87 +123,139 @@ export function CalendarPicker({ startDate, endDate, onSelect }: Props) {
               key={toYMD(day)}
               style={[
                 s.cell,
-                inRange && { backgroundColor: theme.primaryLight || theme.accentMuted },
-                isStart && { backgroundColor: theme.primary, borderTopLeftRadius: 20, borderBottomLeftRadius: 20 },
-                isEnd && { backgroundColor: theme.primary, borderTopRightRadius: 20, borderBottomRightRadius: 20 },
+                inRange && { backgroundColor: rangeBg },
+                isStart && hasRange && { borderTopLeftRadius: 18, borderBottomLeftRadius: 18 },
+                isEnd && hasRange && { borderTopRightRadius: 18, borderBottomRightRadius: 18 },
               ]}
               onPress={() => handleDayPress(day)}
-              activeOpacity={0.7}
+              activeOpacity={0.6}
             >
-              <Text
-                style={[
-                  s.dayText,
-                  { color: theme.text },
-                  selected && { color: "#FFFFFF", fontWeight: "800" },
-                  inRange && { color: theme.primary },
-                  isToday && !selected && { color: theme.primary, fontWeight: "800" },
-                ]}
-              >
-                {day.getDate()}
-              </Text>
+              <View style={[
+                s.dayCircle,
+                selected && { backgroundColor: selectedBg },
+                isToday && !selected && { borderWidth: 1.5, borderColor: rangeText },
+              ]}>
+                <Text
+                  style={[
+                    s.dayText,
+                    { color: theme.text },
+                    selected && { color: "#fff" },
+                    inRange && { color: rangeText },
+                  ]}
+                >
+                  {day.getDate()}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* Selection hint */}
-      <Text style={[s.hint, { color: theme.textTertiary }]}>
-        {!startDate
-          ? "Tap to select start date"
-          : !endDate
-            ? "Tap to select end date"
-            : `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} — ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-      </Text>
+      {/* Footer: selection summary + apply */}
+      <View style={[s.footer, { borderTopColor: theme.borderLight }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.hint, { color: theme.textTertiary }]}>
+            {!startDate
+              ? "Select start date"
+              : !endDate
+                ? "Select end date"
+                : `${fmtShort(startDate)} — ${fmtShort(endDate)}`}
+          </Text>
+        </View>
+        {onApply ? (
+          <TouchableOpacity
+            style={[s.applyBtn, { backgroundColor: selectedBg }, !hasRange && { opacity: 0.4 }]}
+            onPress={hasRange ? onApply : undefined}
+            disabled={!hasRange}
+            activeOpacity={0.8}
+          >
+            <Text style={s.applyText}>Apply</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 }
 
+const CELL_H = 36;
+
 const s = StyleSheet.create({
   container: {
-    borderRadius: 16,
+    borderRadius: radii.xl,
     borderWidth: 1,
-    padding: 14,
-    marginTop: 8,
+    overflow: "hidden",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
-    paddingHorizontal: 4,
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  navBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
   },
   monthLabel: {
     fontSize: 15,
-    fontFamily: font.bold,
-    fontWeight: "700",
+    fontFamily: font.semibold,
   },
   row: {
     flexDirection: "row",
+    paddingHorizontal: 4,
   },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    paddingHorizontal: 4,
+    paddingBottom: 4,
   },
   cell: {
     width: "14.28%",
-    aspectRatio: 1,
+    height: CELL_H,
     alignItems: "center",
     justifyContent: "center",
   },
   dayHeader: {
     fontSize: 11,
     fontFamily: font.semibold,
-    fontWeight: "600",
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  dayCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   dayText: {
     fontSize: 14,
     fontFamily: font.medium,
-    fontWeight: "500",
+  },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   hint: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: font.medium,
-    textAlign: "center",
-    marginTop: 10,
+  },
+  applyBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: radii.sm,
+  },
+  applyText: {
+    color: "#fff",
+    fontSize: 13,
+    fontFamily: font.semibold,
   },
 });

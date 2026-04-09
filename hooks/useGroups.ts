@@ -549,6 +549,12 @@ export interface RecentActivityItem {
 
 const ACTIVITY_PATH = "/api/groups/recent-activity";
 let _memActivity: RecentActivityItem[] | null = null;
+const _activityListeners = new Set<(items: RecentActivityItem[]) => void>();
+
+function _setMemActivity(items: RecentActivityItem[]) {
+  _memActivity = items;
+  _activityListeners.forEach((fn) => fn(items));
+}
 
 /** Clear the in-memory activity cache (call alongside invalidateApiCache). */
 export function clearMemActivityCache() {
@@ -580,6 +586,17 @@ async function _loadLastSeen(): Promise<string | null> {
 // Eagerly start loading the persisted value at module init
 _loadLastSeen();
 
+// Eagerly hydrate _memActivity from disk cache at module init so the
+// Activity tab can render instantly even before usePrefetchActivity completes.
+getPersistedResponse(ACTIVITY_PATH).then((cached) => {
+  if (cached && !_memActivity) {
+    try {
+      const items = JSON.parse(cached.body).activity ?? [];
+      _setMemActivity(items);
+    } catch { /* corrupt cache */ }
+  }
+});
+
 /** Mark all current activity as "seen" — call when the Activity tab is focused. */
 export function markActivitySeen() {
   if (_memActivity?.[0]) {
@@ -610,6 +627,7 @@ export function useRecentActivity(enabled = true) {
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
   const lastFetchTs = useRef(0);
+  const hydratedRef = useRef(!!mem);
 
   const fetchActivity = useCallback(async (force = false) => {
     if (!enabled) {
@@ -620,14 +638,12 @@ export function useRecentActivity(enabled = true) {
     if (!force && now - lastFetchTs.current < ACTIVITY_DEBOUNCE_MS) return;
     lastFetchTs.current = now;
     try {
-      // _loadLastSeen() is already called at module level and has a _lastSeenLoaded guard;
-      // no need to await it here on every fetch — skip the redundant async call.
       const res = await apiFetch(ACTIVITY_PATH);
       if (res.ok) {
         retryCount.current = 0;
         const data = await res.json();
         const items: RecentActivityItem[] = data.activity ?? [];
-        _memActivity = items;
+        _setMemActivity(items);
         setActivity(items);
         if (items[0] && items[0].id !== _lastSeenActivityId) {
           _setHasUnseen(true);
@@ -646,37 +662,41 @@ export function useRecentActivity(enabled = true) {
     }
   }, [apiFetch, enabled]);
 
+  // Subscribe to _memActivity changes from prefetch / disk hydration so the
+  // hook picks up data even if it arrived after this component mounted.
+  useEffect(() => {
+    const onActivity = (items: RecentActivityItem[]) => {
+      if (!hydratedRef.current) {
+        hydratedRef.current = true;
+        setActivity(items);
+        setLoading(false);
+      }
+    };
+    _activityListeners.add(onActivity);
+    // Catch the case where _memActivity was set between useState init and this effect
+    if (_memActivity && !hydratedRef.current) {
+      hydratedRef.current = true;
+      setActivity(_memActivity);
+      setLoading(false);
+    }
+    return () => { _activityListeners.delete(onActivity); };
+  }, []);
+
   useEffect(() => {
     retryCount.current = 0;
-    let cancelled = false;
 
     if (_memActivity) {
+      hydratedRef.current = true;
       setActivity(_memActivity);
       setLoading(false);
       fetchActivity();
-      return () => { cancelled = true; if (retryTimer.current) clearTimeout(retryTimer.current); };
+      return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
     }
 
-    (async () => {
-      // Show persisted data immediately while the network request runs in parallel
-      const [cached] = await Promise.all([
-        getPersistedResponse(ACTIVITY_PATH),
-        _loadLastSeen(),
-      ]);
-      if (cached && !cancelled && activity.length === 0) {
-        try {
-          const data = JSON.parse(cached.body);
-          const items = data.activity ?? [];
-          _memActivity = items;
-          setActivity(items);
-          setLoading(false);
-        } catch { /* corrupt cache */ }
-      }
-      if (!cancelled) fetchActivity();
-    })();
+    // No memory cache yet — network refresh will update via _setMemActivity
+    fetchActivity();
 
     return () => {
-      cancelled = true;
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -698,19 +718,20 @@ export function usePrefetchActivity(delayMs = 0) {
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
       if (cancelled) return;
       try {
+        const networkPromise = apiFetch(ACTIVITY_PATH);
         const [, persisted] = await Promise.all([
           _loadLastSeen(),
           getPersistedResponse(ACTIVITY_PATH),
         ]);
-        if (persisted) {
-          try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
+        if (persisted && !_memActivity) {
+          try { _setMemActivity(JSON.parse(persisted.body).activity ?? []); } catch { /* corrupt */ }
         }
         if (cancelled) return;
-        const res = await apiFetch(ACTIVITY_PATH);
+        const res = await networkPromise;
         if (res.ok) {
           const data = await res.json();
           const items: RecentActivityItem[] = data.activity ?? [];
-          _memActivity = items;
+          _setMemActivity(items);
           if (items[0] && items[0].id !== _lastSeenActivityId) {
             _setHasUnseen(true);
           }

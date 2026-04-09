@@ -123,6 +123,8 @@ export function BankAccountsCard() {
                   acc.id === a.id ? { ...acc, nickname } : acc,
                 ),
               );
+              invalidateApiCache("/api/plaid/transactions");
+              invalidateApiCache("/api/plaid/accounts");
             } catch {
               Alert.alert("Error", "Could not save nickname.");
             }

@@ -76,52 +76,84 @@ export function ProfileHeader() {
     ]);
   }, [user]);
 
+  const handleEditName = useCallback(() => {
+    if (!user) return;
+    const current = user.fullName || "";
+    const parts = current.split(" ");
+    const firstName = parts[0] || "";
+    const lastName = parts.slice(1).join(" ") || "";
+
+    Alert.prompt(
+      "Edit Name",
+      "Enter your first and last name",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Save",
+          onPress: async (value?: string) => {
+            const trimmed = (value ?? "").trim();
+            if (!trimmed || trimmed === current) return;
+            const spaceIdx = trimmed.indexOf(" ");
+            const first = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
+            const last = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : "";
+            try {
+              await user.update({ firstName: first, lastName: last || undefined });
+              await user.reload();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Could not update name");
+            }
+          },
+        },
+      ],
+      "plain-text",
+      `${firstName}${lastName ? ` ${lastName}` : ""}`,
+    );
+  }, [user]);
+
   if (!user) return null;
 
   return (
-    <TouchableOpacity
-      onPress={handleProfilePhoto}
-      activeOpacity={0.7}
-      style={styles.container}
-    >
-      <View style={styles.photoWrap}>
-        {uploadingPhoto ? (
+    <View style={styles.container}>
+      <TouchableOpacity onPress={handleProfilePhoto} activeOpacity={0.7}>
+        <View style={styles.photoWrap}>
+          {uploadingPhoto ? (
+            <View
+              style={[
+                styles.photo,
+                {
+                  backgroundColor: theme.surfaceSecondary,
+                  justifyContent: "center",
+                  alignItems: "center",
+                },
+              ]}
+            >
+              <ActivityIndicator size="small" color={theme.text} />
+            </View>
+          ) : user.imageUrl && !user.imageUrl.includes("default") ? (
+            <Image
+              source={{ uri: user.imageUrl }}
+              style={styles.photo}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={[styles.photo, { backgroundColor: theme.primary }]}>
+              <Text style={styles.initials}>
+                {(user.fullName || user.username || "U")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </Text>
+            </View>
+          )}
           <View
             style={[
-              styles.photo,
-              {
-                backgroundColor: theme.surfaceSecondary,
-                justifyContent: "center",
-                alignItems: "center",
-              },
+              styles.badge,
+              { backgroundColor: theme.surface, borderColor: theme.border },
             ]}
           >
-            <ActivityIndicator size="small" color={theme.text} />
+            <Ionicons name="camera" size={12} color={theme.textSecondary} />
           </View>
-        ) : user.imageUrl && !user.imageUrl.includes("default") ? (
-          <Image
-            source={{ uri: user.imageUrl }}
-            style={styles.photo}
-            contentFit="cover"
-          />
-        ) : (
-          <View style={[styles.photo, { backgroundColor: theme.primary }]}>
-            <Text style={styles.initials}>
-              {(user.fullName || user.username || "U")
-                .slice(0, 2)
-                .toUpperCase()}
-            </Text>
-          </View>
-        )}
-        <View
-          style={[
-            styles.badge,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <Ionicons name="camera" size={12} color={theme.textSecondary} />
         </View>
-      </View>
+      </TouchableOpacity>
       <View style={{ flex: 1, marginLeft: 14 }}>
         <Text style={[styles.name, { color: theme.text }]}>
           {user.fullName || user.username || "Account"}
@@ -133,7 +165,15 @@ export function ProfileHeader() {
           {user.primaryEmailAddress?.emailAddress ?? ""}
         </Text>
       </View>
-    </TouchableOpacity>
+      <TouchableOpacity
+        onPress={handleEditName}
+        hitSlop={12}
+        activeOpacity={0.7}
+        style={[styles.editBtn, { backgroundColor: theme.primaryLight }]}
+      >
+        <Ionicons name="pencil-outline" size={16} color={theme.textSecondary} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -167,4 +207,11 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 18, fontFamily: font.semibold },
   email: { fontSize: 14, fontFamily: font.regular, marginTop: 2 },
+  editBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

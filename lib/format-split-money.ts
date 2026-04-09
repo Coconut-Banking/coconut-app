@@ -19,10 +19,10 @@ export function formatSplitCurrencyAmount(amount: number, currency: string): str
 export function friendBalanceLines(f: {
   balances?: { currency: string; amount: number }[];
   balance?: number | null;
-}): { currency: string; amount: number }[] {
+}, defaultCurrency = "USD"): { currency: string; amount: number }[] {
   if (f.balances && f.balances.length > 0) return f.balances;
   if (f.balance != null && Math.abs(f.balance) >= 0.005) {
-    return [{ currency: "USD", amount: f.balance }];
+    return [{ currency: defaultCurrency, amount: f.balance }];
   }
   return [];
 }
@@ -30,10 +30,10 @@ export function friendBalanceLines(f: {
 export function groupBalanceLines(g: {
   myBalances?: { currency: string; amount: number }[];
   myBalance?: number | null;
-}): { currency: string; amount: number }[] {
+}, defaultCurrency = "USD"): { currency: string; amount: number }[] {
   if (g.myBalances && g.myBalances.length > 0) return g.myBalances;
   if (g.myBalance != null && Math.abs(g.myBalance) >= 0.005) {
-    return [{ currency: "USD", amount: g.myBalance }];
+    return [{ currency: defaultCurrency, amount: g.myBalance }];
   }
   return [];
 }

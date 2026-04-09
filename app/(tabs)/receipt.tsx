@@ -876,14 +876,6 @@ function SummaryStep({
   const handleTabPerson = async (person: typeof rs.personShares[0]) => {
     const key = person.name.toLowerCase();
     if (tabbedPeople.has(key)) return;
-    if (!isDemoOn && resolvedGroupId) {
-      try {
-        await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
-          method: "POST",
-          body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
-        });
-      } catch { /* still mark as tabbed locally */ }
-    }
     setTabbedPeople(prev => new Set(prev).add(key));
     sfx.pop();
     showToast(`Added $${person.totalOwed.toFixed(2)} to ${person.name}'s tab`);
@@ -893,16 +885,6 @@ function SummaryStep({
     const untabbed = rs.personShares.filter(
       (p) => !tabbedPeople.has(p.name.toLowerCase())
     );
-    if (!isDemoOn && resolvedGroupId) {
-      await Promise.all(
-        untabbed.map((person) =>
-          apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
-            method: "POST",
-            body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
-          }).catch(() => {})
-        )
-      );
-    }
     setTabbedPeople((prev) => {
       const next = new Set(prev);
       for (const p of untabbed) next.add(p.name.toLowerCase());

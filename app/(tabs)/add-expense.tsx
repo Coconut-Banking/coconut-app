@@ -992,13 +992,19 @@ export default function AddExpenseScreen() {
           ...(endDate ? { endDate } : {}),
           ...(maxOccurrences ? { maxOccurrences } : {}),
         },
-      }).then(() => {
+      }).then((res) => {
+        if (!res.ok) {
+          toast.show("Recurring schedule failed — expense was saved but won't repeat");
+          return;
+        }
         const freqLabel = repeatFrequency === "weekly" ? "weekly"
           : repeatFrequency === "biweekly" ? "biweekly"
           : repeatFrequency === "monthly" ? "monthly"
           : `every ${customEvery} ${customUnit}`;
         toast.show(`Will repeat ${freqLabel}`);
-      }).catch(() => {});
+      }).catch(() => {
+        toast.show("Recurring schedule failed — expense was saved but won't repeat");
+      });
     }
   };
 

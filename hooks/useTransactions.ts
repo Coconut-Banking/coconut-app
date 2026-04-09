@@ -117,17 +117,21 @@ export function usePrefetchTransactions(delayMs = 0) {
     const run = async () => {
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
       if (cancelled) return;
+
+      // Fire network request immediately — overlaps with disk hydration
+      // so the two ~200-500ms waits happen in parallel instead of sequentially.
+      const networkPromise = apiFetch("/api/plaid/transactions").catch(() => null);
+
       await hydrateTransactionCache();
       if (cancelled || _inflightPipeline) return;
 
       if (_sharedLinked) {
         if (__DEV__) console.log("[pipeline:tx] prefetch → fast path (already linked)");
-        const p = apiFetch("/api/plaid/transactions")
-          .then((r) => {
-            if (cancelled || !r || !r.ok) return;
-            return r.json();
-          })
-          .then((data) => {
+        const p = (async () => {
+          try {
+            const res = await networkPromise;
+            if (cancelled || !res || !res.ok) return;
+            const data = await res.json();
             if (cancelled) return;
             if (Array.isArray(data)) {
               _sharedTx = (data as unknown[]).map(_mapRawTransaction);
@@ -136,9 +140,12 @@ export function usePrefetchTransactions(delayMs = 0) {
               _sharedHasLoaded = true;
               _notify();
             }
-          })
-          .finally(() => { _inflightPipeline = null; _sharedHasLoaded = true; _notify(); })
-          .catch(() => { _inflightPipeline = null; _notify(); });
+          } finally {
+            _inflightPipeline = null;
+            _sharedHasLoaded = true;
+            _notify();
+          }
+        })();
         _inflightPipeline = p;
       }
     };

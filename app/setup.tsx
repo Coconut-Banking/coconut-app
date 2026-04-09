@@ -328,7 +328,9 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
             return;
           }
 
-          // 4. Success — let user add more or continue
+          invalidateApiCache("/api/plaid/status");
+          invalidateApiCache("/api/plaid/transactions");
+          invalidateApiCache("/api/plaid/accounts");
           setSuccess(true);
           setConnecting(false);
           setLinkedCount((c) => c + 1);
