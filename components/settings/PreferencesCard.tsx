@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,11 +21,85 @@ import {
 import { font, radii } from "../../lib/theme";
 import { settingsStyles as s } from "./styles";
 
-const APPEARANCE_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-  { value: "auto", label: "System" },
-];
+function AppearancePicker({ mode, setMode }: { mode: ThemeMode; setMode: (m: ThemeMode) => void }) {
+  const { theme, isDark } = useTheme();
+
+  const effectiveDark = mode === "dark" || (mode === "auto" && isDark);
+
+  const toggleDark = useCallback(() => {
+    setMode(effectiveDark ? "light" : "dark");
+  }, [effectiveDark, setMode]);
+
+  const toggleSystem = useCallback(() => {
+    setMode(mode === "auto" ? (isDark ? "dark" : "light") : "auto");
+  }, [mode, isDark, setMode]);
+
+  return (
+    <View style={{ gap: 10 }}>
+      {/* Dark / Light cards */}
+      <TouchableOpacity
+        style={[
+          styles.modeCard,
+          {
+            backgroundColor: effectiveDark ? theme.primaryLight : theme.surfaceSecondary,
+            borderColor: effectiveDark ? theme.accent : theme.border,
+          },
+        ]}
+        onPress={toggleDark}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.modeIcon, { backgroundColor: effectiveDark ? "rgba(96,165,250,0.15)" : theme.surfaceTertiary }]}>
+          <Ionicons name="moon" size={20} color={effectiveDark ? theme.accent : theme.textTertiary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.modeTitle, { color: theme.text }]}>Dark Mode</Text>
+          <Text style={[styles.modeSub, { color: theme.textTertiary }]}>
+            {effectiveDark ? "Enabled — Easy on the eyes" : "Off"}
+          </Text>
+        </View>
+        <View style={[styles.toggle, { backgroundColor: effectiveDark ? theme.accent : theme.surfaceTertiary, borderColor: effectiveDark ? theme.accent : theme.border }]}>
+          <View style={[styles.toggleThumb, effectiveDark ? styles.toggleThumbOn : styles.toggleThumbOff]} />
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.modeCard,
+          {
+            backgroundColor: !effectiveDark ? theme.primaryLight : theme.surfaceSecondary,
+            borderColor: !effectiveDark ? theme.accent : theme.border,
+          },
+        ]}
+        onPress={() => { if (effectiveDark) setMode("light"); }}
+        activeOpacity={effectiveDark ? 0.7 : 1}
+      >
+        <View style={[styles.modeIcon, { backgroundColor: !effectiveDark ? "rgba(96,165,250,0.15)" : theme.surfaceTertiary }]}>
+          <Ionicons name="sunny" size={20} color={!effectiveDark ? theme.accent : theme.textTertiary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.modeTitle, { color: theme.text }]}>Pure White</Text>
+          <Text style={[styles.modeSub, { color: theme.textTertiary }]}>Clean & minimal</Text>
+        </View>
+        {!effectiveDark && (
+          <Ionicons name="checkmark-circle" size={22} color={theme.accent} />
+        )}
+      </TouchableOpacity>
+
+      {/* System follow toggle */}
+      <TouchableOpacity
+        style={[styles.systemRow, { backgroundColor: theme.surfaceSecondary, borderColor: mode === "auto" ? theme.accent : theme.border }]}
+        onPress={toggleSystem}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="phone-portrait-outline" size={16} color={mode === "auto" ? theme.accent : theme.textTertiary} />
+        <Text style={[styles.systemLabel, { color: theme.text }]}>Match system</Text>
+        <View style={[styles.toggleSm, { backgroundColor: mode === "auto" ? theme.accent : theme.surfaceTertiary, borderColor: mode === "auto" ? theme.accent : theme.border }]}>
+          <View style={[styles.toggleSmThumb, mode === "auto" ? styles.toggleThumbOn : styles.toggleThumbOff]} />
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export function PreferencesCard() {
   const { theme, mode, setMode } = useTheme();
@@ -53,42 +127,10 @@ export function PreferencesCard() {
     >
       <Text style={[s.sectionTitle, { color: theme.text }]}>Preferences</Text>
 
-      <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
-        Appearance
+      <Text style={[styles.fieldLabel, { color: theme.textTertiary }]}>
+        APPEARANCE
       </Text>
-      <View style={styles.segmentRow}>
-        {APPEARANCE_OPTIONS.map((opt) => {
-          const selected = mode === opt.value;
-          return (
-            <TouchableOpacity
-              key={opt.value}
-              style={[
-                styles.segment,
-                {
-                  borderColor: selected ? theme.primary : theme.border,
-                  backgroundColor: selected
-                    ? theme.primaryLight
-                    : theme.surfaceSecondary,
-                },
-              ]}
-              onPress={() => setMode(opt.value)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  {
-                    color: selected ? theme.text : theme.textSecondary,
-                    fontFamily: selected ? font.semibold : font.medium,
-                  },
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      <AppearancePicker mode={mode} setMode={setMode} />
 
       {biometricAvailable ? (
         <View style={[styles.biometricRow, { borderTopColor: theme.border }]}>
@@ -260,16 +302,65 @@ export function PreferencesCard() {
 }
 
 const styles = StyleSheet.create({
-  fieldLabel: { fontSize: 13, fontFamily: font.medium, marginBottom: 8 },
-  segmentRow: { flexDirection: "row", gap: 8 },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
+  fieldLabel: { fontSize: 11, fontFamily: font.bold, letterSpacing: 0.8, marginBottom: 10 },
+  modeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: radii.md,
     borderWidth: 1,
-    alignItems: "center",
   },
-  segmentText: { fontSize: 14 },
+  modeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeTitle: { fontSize: 16, fontFamily: font.semibold },
+  modeSub: { fontSize: 13, fontFamily: font.regular, marginTop: 2 },
+  toggle: {
+    width: 52,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+  },
+  toggleThumbOn: { alignSelf: "flex-end" },
+  toggleThumbOff: { alignSelf: "flex-start" },
+  systemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  systemLabel: { flex: 1, fontSize: 14, fontFamily: font.medium },
+  toggleSm: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  toggleSmThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#fff",
+  },
   biometricRow: {
     flexDirection: "row",
     alignItems: "center",
