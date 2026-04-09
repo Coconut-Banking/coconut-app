@@ -1,0 +1,43 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## API / Network
+
+- **Always check `res.ok` before calling `res.json()`** — a 500 with an HTML body will cause `res.json()` to throw a SyntaxError that masks the real error. Pattern: check `.ok` first, then `res.json().catch(() => ({}))` for error body extraction only.
+  ```ts
+  // BAD
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+
+  // GOOD
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error ?? "Request failed");
+  }
+  const data = await res.json();
+  ```
+
+- **`try-finally` without `catch` silently swallows errors** — if the function uses `try { ... } finally { setLoading(false) }` with no `catch`, API errors propagate unchecked. Callers must wrap in `try-catch` or the hook must expose an error state. Found in `saveAssignments` (2026-04-07) and `confirmItems` (2026-04-09).
+
+- **Empty `catch` blocks hide failures** — `catch { // stay on screen }` leaves users with no feedback. Re-throw the error so callers can show an Alert, or set an error state in the hook. Found in `confirmItems` (2026-04-07, 2026-04-09).
+
+- **Guard flags set before async resolves** — e.g. `hasClearedSession.current = true` before `await signOut()`. Set after the promise settles.
+
+## Auth / Tokens
+
+- **Throw early on null token** — after retrying `getToken()`, if token is still null, throw with an actionable message instead of sending `Authorization: ""`. An empty auth header results in a 401 with a generic error; early-throw gives the user a clear "sign in again" message.
+  ```ts
+  if (!token) throw new Error("Session unavailable — please sign in again");
+  ```
+
+- **Never hardcode credentials as config fallbacks** — `process.env.FOO || "pk_test_..."` bundles the credential in the app binary and exposes it in source. Require the env var to be set explicitly; warn or throw on missing value at startup.
+
+## UI / State
+
+- **`computeSummary()` must not run if `saveAssignments()` failed** — these are called back-to-back in receipt.tsx. If save fails without throwing, the user advances to summary with unsaved data. Always await save and wrap both calls in `try-catch` in the `onPress` handler.
