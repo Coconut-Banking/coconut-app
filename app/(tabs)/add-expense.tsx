@@ -1092,7 +1092,7 @@ export default function AddExpenseScreen() {
                 {targets.map((t, idx) => {
                   const primed = backspacePrimed.current === t.key;
                   return (
-                  <View key={t.key} style={[s.withChip, primed && { backgroundColor: "#FF3B3020", borderColor: "#FF3B3066" }]}>
+                  <View key={t.key} style={[s.withChip, primed && { backgroundColor: `${theme.error}20`, borderColor: `${theme.error}66` }]}>
                     {t.type === "group" && t.imageUrl ? (
                       <Image source={{ uri: t.imageUrl }} style={{ width: 20, height: 20, borderRadius: 5 }} />
                     ) : t.type === "group" ? (
@@ -1100,13 +1100,13 @@ export default function AddExpenseScreen() {
                         <Ionicons name="people" size={11} color={theme.text} />
                       </View>
                     ) : (
-                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}${isDark ? "33" : "22"}`, alignItems: "center", justifyContent: "center" }}>
                         <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
                       </View>
                     )}
-                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: primed ? "#FF3B30" : theme.text }}>{t.name}</Text>
+                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: primed ? theme.error : theme.text }}>{t.name}</Text>
                     <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 1 }}>
-                      <Ionicons name="close-circle" size={14} color={primed ? "#FF3B30" : theme.textTertiary} />
+                      <Ionicons name="close-circle" size={14} color={primed ? theme.error : theme.textTertiary} />
                     </TouchableOpacity>
                   </View>
                   );
@@ -1155,7 +1155,7 @@ export default function AddExpenseScreen() {
                             onPress={() => selectTarget({ type: isGroupBackedFriend ? "group" : "friend", key: targetKey, name: f.displayName })}
                             activeOpacity={0.7}
                           >
-                            <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                            <View style={[s.friendAvatar, { backgroundColor: `${hue}${isDark ? "33" : "22"}`, borderColor: `${hue}${isDark ? "44" : "30"}` }]}>
                               <Text style={[s.friendAvatarTxt, { color: hue }]}>{f.displayName.slice(0, 2).toUpperCase()}</Text>
                             </View>
                             <Text style={[s.listRowTitle, { flex: 1 }]}>{f.displayName}</Text>
@@ -1450,7 +1450,7 @@ export default function AddExpenseScreen() {
                       return (
                         <View key={person.memberId} style={[s.oweRow, i < oweList.length - 1 && s.listRowBorder]}>
                           <View style={s.oweTop}>
-                            <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                            <View style={[s.friendAvatar, { backgroundColor: `${hue}${isDark ? "33" : "22"}`, borderColor: `${hue}${isDark ? "44" : "30"}` }]}>
                               <Text style={[s.friendAvatarTxt, { color: hue }]}>{person.initials}</Text>
                             </View>
                             <View style={{ flex: 1 }}>
@@ -1508,7 +1508,7 @@ export default function AddExpenseScreen() {
 
             <View style={s.footer}>
               <TouchableOpacity
-                style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: {theme.success} }]}
+                style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: theme.success }]}
                 onPress={async () => {
                   await save();
                   if (savedRef.current) {
@@ -1520,10 +1520,10 @@ export default function AddExpenseScreen() {
                 activeOpacity={0.85}
               >
                 {saving ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={isDark ? theme.background : "#fff"} />
                 ) : justSaved ? (
                   <>
-                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Ionicons name="checkmark-circle" size={18} color={isDark ? theme.background : "#fff"} />
                     <Text style={s.primaryBtnText}>Saved!</Text>
                   </>
                 ) : (
@@ -1562,7 +1562,7 @@ export default function AddExpenseScreen() {
                     }}
                     activeOpacity={0.7}
                   >
-                    <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                    <View style={[s.friendAvatar, { backgroundColor: `${hue}${isDark ? "33" : "22"}`, borderColor: `${hue}${isDark ? "44" : "30"}` }]}>
                       <Text style={[s.friendAvatarTxt, { color: hue }]}>{m.display_name.slice(0, 2).toUpperCase()}</Text>
                     </View>
                     <Text style={[s.listRowTitle, { flex: 1 }]}>{isMe ? "You" : m.display_name}</Text>
@@ -1649,7 +1649,7 @@ export default function AddExpenseScreen() {
                   const sh = shares.find((x) => x.key === p.key);
                   return (
                     <View key={p.key} style={[s.splitDetailRow, i < splitPeople.length - 1 && s.listRowBorder]}>
-                      <View style={[s.friendAvatar, { backgroundColor: `${hue}22`, borderColor: `${hue}30` }]}>
+                      <View style={[s.friendAvatar, { backgroundColor: `${hue}${isDark ? "33" : "22"}`, borderColor: `${hue}${isDark ? "44" : "30"}` }]}>
                         <Text style={[s.friendAvatarTxt, { color: hue }]}>{p.name.slice(0, 2).toUpperCase()}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
@@ -1719,13 +1719,13 @@ export default function AddExpenseScreen() {
                     </Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       {!isBalanced && (
-                        <Text style={{ fontSize: 12, fontFamily: font.semibold, color: "#EF4444" }}>
+                        <Text style={{ fontSize: 12, fontFamily: font.semibold, color: theme.error }}>
                           {splitMethod === "percent"
                             ? `${(100 - inputSum).toFixed(1)}% left`
                             : `${currSymbol}${(total - inputSum).toFixed(2)} left`}
                         </Text>
                       )}
-                      <Text style={[s.remainingValue, !isBalanced && { color: "#EF4444" }]}>
+                      <Text style={[s.remainingValue, !isBalanced && { color: theme.error }]}>
                         {splitMethod === "shares" && `${inputSum.toFixed(0)} shares`}
                         {splitMethod === "exact" && `${currSymbol}${inputSum.toFixed(2)} / ${currSymbol}${total.toFixed(2)}`}
                         {splitMethod === "percent" && `${inputSum.toFixed(1)}% / 100%`}
@@ -1940,7 +1940,7 @@ export default function AddExpenseScreen() {
               onPress={addNewFriend}
               disabled={!newFriendName.trim() || addingNewPerson}
             >
-              {addingNewPerson ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryBtnText}>Add & select</Text>}
+              {addingNewPerson ? <ActivityIndicator color={isDark ? theme.background : "#fff"} /> : <Text style={s.primaryBtnText}>Add & select</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -1962,7 +1962,7 @@ export default function AddExpenseScreen() {
             <Text style={s.sheetHint}>Collect payment</Text>
 
             <TouchableOpacity style={s.sheetBtn} onPress={goTapToPay} activeOpacity={0.85}>
-              <Ionicons name="phone-portrait-outline" size={20} color="#fff" />
+              <Ionicons name="phone-portrait-outline" size={20} color={isDark ? theme.background : "#fff"} />
               <Text style={s.sheetBtnTxt}>Tap to Pay</Text>
               {tapToPaySuggestion && (
                 <Text style={s.sheetBtnAmt}>${tapToPaySuggestion.amount.toFixed(2)}</Text>

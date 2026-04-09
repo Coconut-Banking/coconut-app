@@ -6,10 +6,12 @@ import { CoconutTabBar } from "../../components/navigation/CoconutTabBar";
 import { FloatingActionButtons } from "../../components/FloatingActionButtons";
 import { TapToPayHeroModal } from "../../components/TapToPayHeroModal";
 import { usePrefetchContactsSummary } from "../../hooks/useGroups";
+import { usePrefetchTransactions } from "../../hooks/useTransactions";
 
 export default function TabLayout() {
   const { theme } = useTheme();
   usePrefetchContactsSummary(500);
+  usePrefetchTransactions();
   const [StripeRoot, setStripeRoot] = useState<ComponentType<{ children: ReactNode }> | null>(null);
 
   useEffect(() => {

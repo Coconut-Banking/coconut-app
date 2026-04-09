@@ -55,6 +55,99 @@ let _transientRetryCount = 0;
 const _subscribers = new Set<() => void>();
 function _notify() { _subscribers.forEach((fn) => fn()); }
 
+function _mapRawTransaction(raw: unknown): Transaction {
+  const t = raw as Record<string, unknown>;
+  const rid = t.receipt_id ?? t.receiptId;
+  const base = { ...t } as unknown as Transaction;
+  if (rid != null && rid !== "") base.receiptId = String(rid);
+  return base;
+}
+
+// ── Eager AsyncStorage hydration ──
+// Starts immediately at module-load time so shared state is populated
+// before any component renders. All useTransactions() consumers await
+// this single promise instead of reading AsyncStorage independently.
+let _hydratePromise: Promise<void> | null = null;
+
+export function hydrateTransactionCache(): Promise<void> {
+  if (_sharedHasLoaded) return Promise.resolve();
+  if (_hydratePromise) return _hydratePromise;
+
+  _hydratePromise = (async () => {
+    const [statusCache, txCache] = await Promise.all([
+      getPersistedResponse("/api/plaid/status"),
+      getPersistedResponse("/api/plaid/transactions"),
+    ]);
+    if (_sharedHasLoaded) return;
+    if (!statusCache) return;
+    try {
+      const statusData = JSON.parse(statusCache.body);
+      if (!statusData?.linked) return;
+      _sharedLinked = true;
+      _sharedStatus = "ok";
+      if (txCache) {
+        try {
+          const txData = JSON.parse(txCache.body);
+          if (Array.isArray(txData)) {
+            _sharedTx = (txData as unknown[]).map(_mapRawTransaction);
+            _sharedHasLoaded = true;
+            _notify();
+          }
+        } catch { /* corrupt */ }
+      }
+    } catch { /* corrupt */ }
+  })();
+
+  return _hydratePromise;
+}
+
+// Kick off hydration as soon as this module is imported.
+hydrateTransactionCache();
+
+/**
+ * Prefetch hook — call from the tab layout so the transaction pipeline
+ * starts before the Bank tab is ever opened. Uses apiFetch for the
+ * authenticated network call.
+ */
+export function usePrefetchTransactions(delayMs = 0) {
+  const apiFetch = useApiFetch();
+  useEffect(() => {
+    if (_sharedHasLoaded && _sharedTx.length > 0 && _inflightPipeline) return;
+    let cancelled = false;
+    const run = async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      if (cancelled) return;
+      await hydrateTransactionCache();
+      if (cancelled || _inflightPipeline) return;
+
+      if (_sharedLinked) {
+        if (__DEV__) console.log("[pipeline:tx] prefetch → fast path (already linked)");
+        const p = apiFetch("/api/plaid/transactions")
+          .then((r) => {
+            if (cancelled || !r || !r.ok) return;
+            return r.json();
+          })
+          .then((data) => {
+            if (cancelled) return;
+            if (Array.isArray(data)) {
+              _sharedTx = (data as unknown[]).map(_mapRawTransaction);
+              _sharedLinked = true;
+              _sharedStatus = "ok";
+              _sharedHasLoaded = true;
+              _notify();
+            }
+          })
+          .finally(() => { _inflightPipeline = null; _sharedHasLoaded = true; _notify(); })
+          .catch(() => { _inflightPipeline = null; _notify(); });
+        _inflightPipeline = p;
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiFetch]);
+}
+
 export function useTransactions() {
   const apiFetch = useApiFetch();
   const [transactions, setTransactions] = useState<Transaction[]>(_sharedTx);
@@ -117,13 +210,7 @@ export function useTransactions() {
         .then((data) => {
           if (fetchCancelledRef.current) return;
           if (Array.isArray(data)) {
-            const mapped = (data as unknown[]).map((raw) => {
-              const t = raw as Record<string, unknown>;
-              const rid = t.receipt_id ?? t.receiptId;
-              const base = { ...t } as unknown as Transaction;
-              if (rid != null && rid !== "") base.receiptId = String(rid);
-              return base;
-            });
+            const mapped = (data as unknown[]).map(_mapRawTransaction);
             if (__DEV__) console.log("[pipeline:tx] 2b. output (fast path)", { count: (data as unknown[]).length });
             updateShared(mapped, true, "ok");
           }
@@ -193,13 +280,7 @@ export function useTransactions() {
         const data = await txRes.json();
         if (fetchCancelledRef.current) return;
         if (Array.isArray(data)) {
-          const mapped = (data as unknown[]).map((raw) => {
-            const t = raw as Record<string, unknown>;
-            const rid = t.receipt_id ?? t.receiptId;
-            const base = { ...t } as unknown as Transaction;
-            if (rid != null && rid !== "") base.receiptId = String(rid);
-            return base;
-          });
+          const mapped = (data as unknown[]).map(_mapRawTransaction);
           if (__DEV__) console.log("[pipeline:tx] 4. output", { count: (data as unknown[]).length });
           updateShared(mapped, true, "ok");
         }
@@ -248,52 +329,17 @@ export function useTransactions() {
     [apiFetch, fetchData],
   );
 
-  // Initial load: serve persisted data instantly, then GET (fast). POST sync on pull-to-refresh.
+  // Initial load: await the shared hydration (already started at module load),
+  // then kick off a network fetch. Skips redundant AsyncStorage reads when
+  // another consumer (e.g. Home tab) already populated shared state.
   useEffect(() => {
     fetchCancelledRef.current = false;
     let cancelled = false;
 
     (async () => {
-      const [statusCache, txCache] = await Promise.all([
-        getPersistedResponse("/api/plaid/status"),
-        getPersistedResponse("/api/plaid/transactions"),
-      ]);
-
+      await hydrateTransactionCache();
       if (cancelled) return;
-
-      if (statusCache) {
-        try {
-          const statusData = JSON.parse(statusCache.body);
-          if (statusData.linked) {
-            linkedRef.current = true;
-            setLinked(true);
-            setStatus("ok");
-            if (txCache) {
-              try {
-                const txData = JSON.parse(txCache.body);
-                if (Array.isArray(txData)) {
-                  const mapped = (txData as unknown[]).map((raw) => {
-                    const t = raw as Record<string, unknown>;
-                    const rid = t.receipt_id ?? t.receiptId;
-                    const base = { ...t } as unknown as Transaction;
-                    if (rid != null && rid !== "") base.receiptId = String(rid);
-                    return base;
-                  });
-                  _sharedTx = mapped;
-                  _sharedLinked = true;
-                  _sharedStatus = "ok";
-                  _sharedHasLoaded = true;
-                  _notify();
-                  hasShownInitialLoad.current = true;
-                  setLoading(false);
-                }
-              } catch { /* corrupt */ }
-            }
-          }
-        } catch { /* corrupt */ }
-      }
-
-      if (!cancelled) void fetchData(_sharedHasLoaded);
+      void fetchData(_sharedHasLoaded);
     })();
 
     return () => {
