@@ -388,21 +388,6 @@ export default function BalancesPrototypeScreen() {
     isSignedIn &&
     !isDemoOn;
 
-  const knownNames = useMemo(
-    () => new Set([
-      ...(summary?.friends ?? []).map((f) => f.displayName.toLowerCase()),
-      ...(summary?.groups ?? []).map((g) => g.name.toLowerCase()),
-    ]),
-    [summary?.friends, summary?.groups]
-  );
-
-  const contactSuggestions = useMemo(
-    () => contactsPerm !== "granted" || !deviceContacts.length
-      ? []
-      : deviceContacts.filter((c) => !knownNames.has(c.name.toLowerCase())).slice(0, 6),
-    [deviceContacts, contactsPerm, knownNames]
-  );
-
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
   const { transactions, linked, loading: txLoading, runFullSync } = useTransactions();
@@ -725,49 +710,6 @@ export default function BalancesPrototypeScreen() {
               contentContainerStyle={{ gap: 10, paddingRight: 8 }}
               renderItem={renderLiveBankCardItem}
             />
-          </View>
-        ) : null}
-
-        {contactSuggestions.length > 0 ? (
-          <View style={{ marginBottom: 18 }}>
-            <View style={styles.sectionRow}>
-              <SLabel>People you know</SLabel>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-            >
-              {contactSuggestions.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(tabs)/add-expense",
-                      params: {
-                        prefillContactName: c.name,
-                        prefillContactEmail: c.email ?? "",
-                        prefillContactPhone: c.phone ?? "",
-                      },
-                    })
-                  }
-                  style={[
-                    styles.contactPill,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.contactPillAvatar, { backgroundColor: "#8B5CF622" }]}>
-                    <Text style={[styles.contactPillInitials, { color: "#8B5CF6" }]}>
-                      {c.name.slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={[styles.contactPillName, { color: theme.text }]} numberOfLines={1}>
-                    {c.name.split(" ")[0]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </View>
         ) : null}
 
@@ -1933,33 +1875,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontFamily: font.semibold,
-  },
-  contactPill: {
-    flexDirection: "column",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 6,
-    minWidth: 70,
-  },
-  contactPillAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  contactPillInitials: {
-    fontSize: 14,
-    fontFamily: font.semibold,
-  },
-  contactPillName: {
-    fontSize: 12,
-    fontFamily: font.medium,
-    maxWidth: 70,
-    textAlign: "center",
   },
 });
 

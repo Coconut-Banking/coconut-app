@@ -62,6 +62,7 @@ function shouldPersist(path: string): boolean {
   for (const p of PERSIST_PATHS) {
     if (path === p || path.startsWith(p + "?")) return true;
   }
+  if (GROUP_DETAIL_RE.test(path)) return true;
   return false;
 }
 

@@ -295,6 +295,7 @@ export function useGroupDetail(id: string | null) {
   const [loading, setLoading] = useState(!cached);
   const prevId = useRef(id);
   const hasDetail = useRef(!!cached);
+  const hydratedFromDisk = useRef(false);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -338,9 +339,27 @@ export function useGroupDetail(id: string | null) {
         setDetail(null);
         hasDetail.current = false;
       }
+      hydratedFromDisk.current = false;
       prevId.current = id;
     }
-    fetchDetail(hasDetail.current);
+    if (!id) { fetchDetail(); return; }
+
+    if (!hydratedFromDisk.current) {
+      hydratedFromDisk.current = true;
+      getPersistedResponse(`/api/groups/${id}`).then((cached) => {
+        if (cached && !hasDetail.current) {
+          try {
+            const data = JSON.parse(cached.body);
+            setDetail(data);
+            hasDetail.current = true;
+            setLoading(false);
+          } catch { /* ignore corrupt cache */ }
+        }
+        fetchDetail(hasDetail.current);
+      });
+    } else {
+      fetchDetail(hasDetail.current);
+    }
   }, [fetchDetail, id]);
 
   return { detail, loading, refetch: fetchDetail };

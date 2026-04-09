@@ -30,6 +30,7 @@ import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { prewarmFriendGroupCache } from "../add-expense";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
+import { PartialSettleModal } from "../../../components/PartialSettleModal";
 
 /** Friend detail — aligned to `MobileAppPage` `FriendDetail` + existing settlement APIs */
 export default function PersonScreen() {
@@ -52,6 +53,7 @@ export default function PersonScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [settleSheetOpen, setSettleSheetOpen] = useState(false);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
@@ -144,46 +146,69 @@ export default function PersonScreen() {
       goBack();
       return;
     }
-    const summary =
-      balLines.length > 0
-        ? balLines.map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(", ")
-        : formatSplitCurrencyAmount(0, "USD");
-    Alert.alert("Mark as paid", `Record settled amounts: ${summary}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Mark paid",
-        onPress: async () => {
-          setRecordingSettlement(true);
-          try {
-            let anyFailed = false;
-            for (const se of detail.settlements ?? []) {
-              const res = await apiFetch("/api/settlements", {
-                method: "POST",
-                body: {
-                  groupId: se.groupId,
-                  payerMemberId: se.fromMemberId,
-                  receiverMemberId: se.toMemberId,
-                  amount: se.amount,
-                  method: "manual",
-                  currency: se.currency ?? "USD",
-                },
-              });
-              if (!res.ok) anyFailed = true;
-            }
-            if (anyFailed) {
-              Alert.alert("Error", "Some settlements could not be recorded");
-            } else {
-              DeviceEventEmitter.emit("groups-updated");
-              goBack();
-            }
-          } catch {
-            Alert.alert("Error", "Could not record settlement");
-          } finally {
-            setRecordingSettlement(false);
-          }
-        },
-      },
-    ]);
+    setSettleModalOpen(true);
+  };
+
+  const handleSettleConfirm = async (amount: number) => {
+    setSettleModalOpen(false);
+    setRecordingSettlement(true);
+    try {
+      const settlements = detail.settlements ?? [];
+      const totalOwed = settlements.reduce((s, se) => s + se.amount, 0);
+      let anyFailed = false;
+
+      if (settlements.length === 1) {
+        const se = settlements[0];
+        const res = await apiFetch("/api/settlements", {
+          method: "POST",
+          body: {
+            groupId: se.groupId,
+            payerMemberId: se.fromMemberId,
+            receiverMemberId: se.toMemberId,
+            amount,
+            method: "manual",
+            currency: se.currency ?? "USD",
+          },
+        });
+        if (!res.ok) anyFailed = true;
+      } else {
+        let remaining = amount;
+        for (const se of settlements) {
+          if (remaining <= 0.005) break;
+          const proportion = totalOwed > 0 ? se.amount / totalOwed : 1 / settlements.length;
+          const seAmount = Math.min(
+            Math.round(amount * proportion * 100) / 100,
+            se.amount,
+            remaining,
+          );
+          if (seAmount < 0.01) continue;
+          remaining -= seAmount;
+          const res = await apiFetch("/api/settlements", {
+            method: "POST",
+            body: {
+              groupId: se.groupId,
+              payerMemberId: se.fromMemberId,
+              receiverMemberId: se.toMemberId,
+              amount: seAmount,
+              method: "manual",
+              currency: se.currency ?? "USD",
+            },
+          });
+          if (!res.ok) anyFailed = true;
+        }
+      }
+
+      if (anyFailed) {
+        Alert.alert("Error", "Some settlements could not be recorded");
+      } else {
+        DeviceEventEmitter.emit("groups-updated");
+        goBack();
+      }
+    } catch {
+      Alert.alert("Error", "Could not record settlement");
+    } finally {
+      setRecordingSettlement(false);
+    }
   };
 
   const handleTapToPay = () => {
@@ -250,7 +275,7 @@ export default function PersonScreen() {
     }
   };
 
-  const handleConfirmP2PPayment = async () => {
+  const handleConfirmP2PPayment = () => {
     setConfirmPaymentOpen(false);
     if ((detail.settlements ?? []).length === 0) return;
     if (isDemoOn && key) {
@@ -259,34 +284,7 @@ export default function PersonScreen() {
       goBack();
       return;
     }
-    setRecordingSettlement(true);
-    try {
-      let anyFailed = false;
-      for (const se of detail.settlements ?? []) {
-        const res = await apiFetch("/api/settlements", {
-          method: "POST",
-          body: {
-            groupId: se.groupId,
-            payerMemberId: se.fromMemberId,
-            receiverMemberId: se.toMemberId,
-            amount: se.amount,
-            method: "manual",
-            currency: se.currency ?? "USD",
-          },
-        });
-        if (!res.ok) anyFailed = true;
-      }
-      if (anyFailed) {
-        Alert.alert("Error", "Some settlements could not be recorded");
-      } else {
-        DeviceEventEmitter.emit("groups-updated");
-        goBack();
-      }
-    } catch {
-      Alert.alert("Error", "Could not record settlement");
-    } finally {
-      setRecordingSettlement(false);
-    }
+    setSettleModalOpen(true);
   };
 
   return (
@@ -582,6 +580,25 @@ export default function PersonScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {settleModalOpen && (detail.settlements ?? []).length > 0 ? (() => {
+        const settlements = detail.settlements ?? [];
+        const totalOwed = settlements.reduce((sum, se) => sum + se.amount, 0);
+        const currency = settlements[0]?.currency ?? "USD";
+        const iOwe = balLines.some((b) => b.amount < -0.005);
+        return (
+          <PartialSettleModal
+            visible
+            maxAmount={totalOwed}
+            currency={currency}
+            fromName={iOwe ? "You" : detail.displayName}
+            toName={iOwe ? detail.displayName : "you"}
+            loading={recordingSettlement}
+            onConfirm={handleSettleConfirm}
+            onCancel={() => setSettleModalOpen(false)}
+          />
+        );
+      })() : null}
     </SafeAreaView>
   );
 }

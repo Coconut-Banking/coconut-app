@@ -143,59 +143,54 @@ export function useTransactions() {
       return p2;
     }
 
-    const p = apiFetch("/api/plaid/status", { signal: controller.signal })
-      .then((r) => {
+    const p = Promise.all([
+      apiFetch("/api/plaid/status", { signal: controller.signal }),
+      apiFetch("/api/plaid/transactions", { signal: controller.signal }),
+    ])
+      .then(async ([statusRes, txRes]) => {
         clearTimeout(timeout);
-        if (fetchCancelledRef.current) return null;
-        if (__DEV__) console.log("[pipeline:tx] 2. plaid/status", r.status);
-        if (r.status === 425) {
+        if (fetchCancelledRef.current) return;
+        if (__DEV__) console.log("[pipeline:tx] 2. plaid/status", statusRes.status);
+        if (statusRes.status === 425) {
           if (_transientRetryCount < 14) {
             _transientRetryCount += 1;
             if (__DEV__) console.log("[pipeline:tx] 2b. 425 retry", _transientRetryCount, "/14");
             setTimeout(() => {
               if (!fetchCancelledRef.current) fetchData(true);
             }, 600);
-            return null;
+            return;
           }
           if (__DEV__) console.log("[pipeline:tx] 2c. 425 max retries → stop");
-          return null;
+          return;
         }
         _transientRetryCount = 0;
-        if (r.status === 401) {
+        if (statusRes.status === 401) {
           updateShared(_sharedTx, false, "unauthorized");
-          return null;
+          return;
         }
-        if (r.status === 404) {
+        if (statusRes.status === 404) {
           if (__DEV__) {
             const base = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/$/, "") || "(unset EXPO_PUBLIC_API_URL)";
             console.warn(`[pipeline:tx] /api/plaid/status 404 — check API host (e.g. ${base})`);
           }
           updateShared(_sharedTx, false, "api_unreachable");
-          return null;
+          return;
         }
-        if (!r.ok) {
+        if (!statusRes.ok) {
           _sharedLinked = false; _notify();
-          return null;
+          return;
         }
-        return r.json();
-      })
-      .then((data) => {
-        if (fetchCancelledRef.current || !data) return null;
-        if (!data.linked) {
+        const statusData = await statusRes.json();
+        if (!statusData?.linked) {
           if (__DEV__) console.log("[pipeline:tx] 3. not linked → stop");
           updateShared([], false, "not_linked");
-          return null;
+          return;
         }
-        if (__DEV__) console.log("[pipeline:tx] 3. linked → GET /api/plaid/transactions");
+        if (__DEV__) console.log("[pipeline:tx] 3. linked → using parallel /api/plaid/transactions");
         _sharedLinked = true;
         linkedRef.current = true;
-        return apiFetch("/api/plaid/transactions", { signal: controller.signal });
-      })
-      .then((r) => {
-        if (fetchCancelledRef.current || !r || !r.ok) return null;
-        return r.json();
-      })
-      .then((data) => {
+        if (!txRes.ok) return;
+        const data = await txRes.json();
         if (fetchCancelledRef.current) return;
         if (Array.isArray(data)) {
           const mapped = (data as unknown[]).map((raw) => {

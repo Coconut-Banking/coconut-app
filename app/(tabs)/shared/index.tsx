@@ -693,6 +693,14 @@ export default function SharedIndex() {
   const summaryFriends = summary?.friends ?? [];
   const summaryGroups = summary?.groups ?? [];
 
+  useEffect(() => {
+    if (!summaryGroups.length || isDemoOn) return;
+    const top = summaryGroups.slice(0, 5);
+    for (const g of top) {
+      apiFetch(`/api/groups/${g.id}`).catch(() => {});
+    }
+  }, [summaryGroups.length > 0, isDemoOn]);
+
   const friends = useMemo(() => {
     const mergedFallbackGroups = [
       ...optimisticGroups,

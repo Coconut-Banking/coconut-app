@@ -139,18 +139,19 @@ function AuthSwitch() {
     (async () => {
       try {
         invalidateApiCache("/api/plaid/status");
-        const res = await apiFetch("/api/plaid/status");
+        invalidateApiCache("/api/groups/summary");
+        const [plaidRes, groupsRes] = await Promise.all([
+          apiFetch("/api/plaid/status"),
+          apiFetch("/api/groups/summary"),
+        ]);
         if (cancelled) return;
-        if (res.ok) {
-          const data = await res.json();
+        if (plaidRes.ok) {
+          const data = await plaidRes.json();
           if (data.linked) {
             markSetupComplete();
             return;
           }
         }
-        invalidateApiCache("/api/groups/summary");
-        const groupsRes = await apiFetch("/api/groups/summary");
-        if (cancelled) return;
         if (groupsRes.ok) {
           const gData = await groupsRes.json();
           if ((gData.groups?.length ?? 0) > 0 || (gData.friends?.length ?? 0) > 0) {

@@ -40,6 +40,8 @@ import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { prewarmMemberCache, prewarmRecentActivity } from "../add-expense";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
+import { GroupDetailSkeleton } from "../../../components/ui";
+import { PartialSettleModal } from "../../../components/PartialSettleModal";
 import { sfx } from "../../../lib/sounds";
 import { BASE_URL } from "../../../lib/invite";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
@@ -128,6 +130,12 @@ export default function GroupScreen() {
   const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
   const [pendingP2PSuggestion, setPendingP2PSuggestion] = useState<{ fromMemberId: string; toMemberId: string; amount: number; currency: string } | null>(null);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
+  const [settleTarget, setSettleTarget] = useState<{
+    fromMemberId: string; toMemberId: string;
+    amount: number; currency: string;
+    fromName: string; toName: string;
+    iPayThem: boolean;
+  } | null>(null);
   const [membersExpanded, setMembersExpanded] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const appStateRef = useRef(AppState.currentState);
@@ -651,22 +659,36 @@ export default function GroupScreen() {
     [isDemoOn, detail?.name],
   );
 
-  const handleConfirmGroupP2P = useCallback(async () => {
+  const handleConfirmGroupP2P = useCallback(() => {
     setConfirmPaymentOpen(false);
     const su = pendingP2PSuggestion;
-    if (!su || !id) return;
-    setPendingP2PSuggestion(null);
+    if (!su || !id || !detail) return;
+    const myMemberId = detail.members.find((m) => m.user_id === userId)?.id;
+    const fromMember = detail.members.find((m) => m.id === su.fromMemberId);
+    const toMember = detail.members.find((m) => m.id === su.toMemberId);
+    setSettleTarget({
+      ...su,
+      fromName: fromMember?.display_name ?? "?",
+      toName: toMember?.display_name ?? "?",
+      iPayThem: myMemberId === su.fromMemberId,
+    });
+  }, [pendingP2PSuggestion, id, detail, userId]);
+
+  const handleSettleConfirm = useCallback(async (amount: number) => {
+    const target = settleTarget;
+    if (!target || !id) return;
+    setSettleTarget(null);
     setRecordingSettlement(true);
     try {
       const res = await apiFetch("/api/settlements", {
         method: "POST",
         body: {
           groupId: id,
-          payerMemberId: su.fromMemberId,
-          receiverMemberId: su.toMemberId,
-          amount: su.amount,
+          payerMemberId: target.fromMemberId,
+          receiverMemberId: target.toMemberId,
+          amount,
           method: "manual",
-          currency: su.currency,
+          currency: target.currency,
         },
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -682,9 +704,10 @@ export default function GroupScreen() {
     } finally {
       setRecordingSettlement(false);
     }
-  }, [pendingP2PSuggestion, id, apiFetch, refetch, refetchSummary]);
+  }, [settleTarget, id, apiFetch, refetch, refetchSummary]);
 
   if (!detail) {
+    if (loading) return <GroupDetailSkeleton />;
     return (
       <SafeAreaView style={[s.container, { backgroundColor: theme.background }]} edges={["top"]}>
         <View style={[s.topBar, { borderBottomColor: theme.border }]}>
@@ -877,42 +900,15 @@ export default function GroupScreen() {
                         style={[s.miniBtn, { borderWidth: 1, borderColor: theme.border }]}
                         onPress={() => {
                           if (isDemoOn && id) { demo.settleGroupSuggestion(id, su.fromMemberId, su.toMemberId); return; }
-                          const who = `${fromName} → ${toName}`;
-                          Alert.alert(
-                            "Mark as paid",
-                            detail.isOwner && !theyPayMe && !iPayThem
-                              ? `Record that ${who} settled $${su.amount.toFixed(2)}? (You're the group owner.)`
-                              : `Mark $${su.amount.toFixed(2)} as paid?`,
-                            [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Mark paid",
-                              onPress: async () => {
-                                setRecordingSettlement(true);
-                                try {
-                                  const res = await apiFetch("/api/settlements", {
-                                    method: "POST",
-                                    body: {
-                                      groupId: id,
-                                      payerMemberId: su.fromMemberId,
-                                      receiverMemberId: su.toMemberId,
-                                      amount: su.amount,
-                                      method: "manual",
-                                      currency: su.currency,
-                                    },
-                                  });
-                                  const data = (await res.json().catch(() => ({}))) as { error?: string };
-                                  if (res.ok) {
-                                    refetch();
-                                    refetchSummary();
-                                    DeviceEventEmitter.emit("groups-updated");
-                                  } else {
-                                    Alert.alert("Error", data?.error ?? "Failed to record settlement");
-                                  }
-                                } finally { setRecordingSettlement(false); }
-                              },
-                            },
-                          ]);
+                          setSettleTarget({
+                            fromMemberId: su.fromMemberId,
+                            toMemberId: su.toMemberId,
+                            amount: su.amount,
+                            currency: su.currency,
+                            fromName,
+                            toName,
+                            iPayThem: Boolean(iPayThem),
+                          });
                         }}
                         disabled={recordingSettlement}
                         activeOpacity={0.7}
@@ -1442,6 +1438,19 @@ export default function GroupScreen() {
           </Pressable>
         </Pressable>
       </Modal> : null}
+
+      {settleTarget ? (
+        <PartialSettleModal
+          visible
+          maxAmount={settleTarget.amount}
+          currency={settleTarget.currency}
+          fromName={settleTarget.iPayThem ? "You" : settleTarget.fromName}
+          toName={settleTarget.iPayThem ? settleTarget.toName : "you"}
+          loading={recordingSettlement}
+          onConfirm={handleSettleConfirm}
+          onCancel={() => setSettleTarget(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

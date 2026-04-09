@@ -5,7 +5,7 @@
 import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { CommonActions, StackActions } from "@react-navigation/native";
+import { StackActions } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
 import { useEffect, useRef } from "react";
@@ -61,23 +61,19 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
     sfx.tabTap();
     const route = state.routes.find((r) => r.name === "shared");
     const nested = route?.state;
-    const nestedIdx = nested?.index ?? 0;
-    const nestedRouteName = (nested?.routes as { name: string }[] | undefined)?.[nestedIdx]?.name;
+    const isDeep = nested?.key && (nested.index ?? 0) > 0;
 
     if (current === "shared") {
-      if (nested?.key && nestedIdx > 0) {
-        navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
-      } else if (nestedRouteName && nestedRouteName !== "index") {
-        navigation.dispatch({
-          ...CommonActions.reset({ index: 0, routes: [{ name: "index" }] }),
-          target: nested?.key,
-        });
+      if (isDeep) {
+        navigation.dispatch({ ...StackActions.popToTop(), target: nested!.key });
       }
     } else {
-      if (nested?.key && nestedIdx > 0) {
-        navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
+      navigation.navigate("shared" as never);
+      if (isDeep) {
+        queueMicrotask(() => {
+          navigation.dispatch({ ...StackActions.popToTop(), target: nested!.key });
+        });
       }
-      navigation.dispatch(CommonActions.navigate({ name: "shared" }));
     }
   };
   const goAccount = () => { sfx.tabTap(); navigation.navigate("settings" as never); };

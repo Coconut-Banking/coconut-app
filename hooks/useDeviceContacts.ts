@@ -11,6 +11,7 @@ export type DeviceContact = {
 };
 
 type PermissionStatus = "undetermined" | "granted" | "denied";
+type AccessPrivileges = "all" | "limited" | "none" | null;
 
 let _Contacts: typeof import("expo-contacts") | null = null;
 let _unavailable = false;
@@ -34,15 +35,18 @@ async function getContacts() {
 }
 
 let _permStatus: PermissionStatus = "undetermined";
+let _accessPrivileges: AccessPrivileges = null;
 let _sharedContacts: DeviceContact[] = [];
 let _contactsFetched = false;
 const _permListeners = new Set<(s: PermissionStatus) => void>();
+const _accessListeners = new Set<(a: AccessPrivileges) => void>();
 const _contactsListeners = new Set<(c: DeviceContact[]) => void>();
 
-function _broadcastPerm(s: PermissionStatus) {
-  if (_permStatus === s) return;
-  _permStatus = s;
-  _permListeners.forEach((fn) => fn(s));
+function _broadcastPerm(s: PermissionStatus, a?: AccessPrivileges) {
+  const permChanged = _permStatus !== s;
+  const accessChanged = a !== undefined && _accessPrivileges !== a;
+  if (permChanged) { _permStatus = s; _permListeners.forEach((fn) => fn(s)); }
+  if (accessChanged) { _accessPrivileges = a!; _accessListeners.forEach((fn) => fn(a!)); }
 }
 
 function _broadcastContacts(c: DeviceContact[]) {
@@ -88,13 +92,12 @@ async function _loadContactsList() {
 async function _checkPermission() {
   const mod = await getContacts();
   if (!mod) return;
-  const { status } = await mod.getPermissionsAsync();
-  const mapped: PermissionStatus = status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined";
-  _broadcastPerm(mapped);
+  const result = await mod.getPermissionsAsync();
+  const mapped: PermissionStatus = result.status === "granted" ? "granted" : result.status === "denied" ? "denied" : "undetermined";
+  const access = (result as { accessPrivileges?: string }).accessPrivileges as AccessPrivileges ?? null;
+  _broadcastPerm(mapped, access);
   if (mapped === "granted" && !_contactsFetched) {
     _contactsFetched = true;
-    // Delay so the app finishes transitioning from inactive→active before
-    // hitting CNContactStore. Calling it mid-transition crashes on iOS.
     setTimeout(() => { _loadContactsList(); }, 600);
   }
 }
@@ -102,14 +105,21 @@ async function _checkPermission() {
 export function useDeviceContacts() {
   const [contacts, setContacts] = useState<DeviceContact[]>(_sharedContacts);
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>(_permStatus);
+  const [accessPrivileges, setAccessPrivileges] = useState<AccessPrivileges>(_accessPrivileges);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     _permListeners.add(setPermissionStatus);
+    _accessListeners.add(setAccessPrivileges);
     _contactsListeners.add(setContacts);
     setPermissionStatus(_permStatus);
+    setAccessPrivileges(_accessPrivileges);
     setContacts(_sharedContacts);
-    return () => { _permListeners.delete(setPermissionStatus); _contactsListeners.delete(setContacts); };
+    return () => {
+      _permListeners.delete(setPermissionStatus);
+      _accessListeners.delete(setAccessPrivileges);
+      _contactsListeners.delete(setContacts);
+    };
   }, []);
 
   useEffect(() => {
@@ -134,10 +144,8 @@ export function useDeviceContacts() {
       if (mountedRef.current) setLoading(true);
       const result = await mod.requestPermissionsAsync().catch(() => ({ status: "denied" as const }));
       const granted = result.status === "granted";
-      _broadcastPerm(granted ? "granted" : "denied");
-      // Don't call _loadContactsList here — the AppState "active" event fires
-      // when the iOS dialog dismisses and _checkPermission handles the load
-      // with a proper delay. Calling it here races with that transition.
+      const access = (result as { accessPrivileges?: string }).accessPrivileges as AccessPrivileges ?? null;
+      _broadcastPerm(granted ? "granted" : "denied", access);
       return granted;
     } catch {
       return false;
@@ -146,5 +154,17 @@ export function useDeviceContacts() {
     }
   }, []);
 
-  return { contacts, permissionStatus, requestAccess, loading };
+  const presentAccessPicker = useCallback(async () => {
+    try {
+      const mod = await getContacts();
+      if (!mod || typeof mod.presentAccessPickerAsync !== "function") return;
+      await mod.presentAccessPickerAsync();
+      _loadingContacts = false;
+      await _loadContactsList();
+    } catch {
+      /* iOS < 18 or unavailable — no-op */
+    }
+  }, []);
+
+  return { contacts, permissionStatus, accessPrivileges, requestAccess, presentAccessPicker, loading };
 }

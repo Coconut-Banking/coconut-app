@@ -26,7 +26,6 @@ type EmailReceipt = {
   merchant: string;
   amount: number;
   date: string;
-  currency: string;
   merchant_type: string | null;
   transaction_id: string | null;
   match_source: string | null;

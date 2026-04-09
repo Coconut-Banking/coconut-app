@@ -185,6 +185,48 @@ export function SharedSkeletonScreen() {
   );
 }
 
+export function GroupDetailSkeleton() {
+  const { theme } = useTheme();
+  return (
+    <View style={[sk.container, { backgroundColor: theme.background }]}>
+      <View style={sk.pad}>
+        <View style={[sk.headerRow, { marginBottom: 20 }]}>
+          <Skeleton width={28} height={28} borderRadius={8} />
+          <Skeleton width={160} height={22} style={{ marginLeft: 12 }} />
+        </View>
+        <View style={[sk.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+          <View style={{ alignItems: "center", paddingVertical: 8 }}>
+            <Skeleton width={56} height={56} borderRadius={28} />
+            <Skeleton width={120} height={18} style={{ marginTop: 12 }} />
+            <Skeleton width={80} height={14} style={{ marginTop: 6 }} />
+          </View>
+          <View style={[sk.cardRow, { marginTop: 16 }]}>
+            <View>
+              <Skeleton width={70} height={12} />
+              <Skeleton width={60} height={18} borderRadius={4} style={{ marginTop: 4 }} />
+            </View>
+            <View>
+              <Skeleton width={50} height={12} />
+              <Skeleton width={60} height={18} borderRadius={4} style={{ marginTop: 4 }} />
+            </View>
+          </View>
+        </View>
+        <Skeleton width={80} height={14} style={{ marginBottom: 12, marginTop: 8 }} />
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={[sk.row, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
+            <Skeleton width={36} height={36} borderRadius={18} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Skeleton width={110 + i * 15} height={16} />
+              <Skeleton width={70} height={12} style={{ marginTop: 4 }} />
+            </View>
+            <Skeleton width={50} height={18} borderRadius={4} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function PersonSkeletonScreen() {
   const { theme } = useTheme();
   return (
