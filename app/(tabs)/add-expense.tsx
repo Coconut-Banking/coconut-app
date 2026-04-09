@@ -37,6 +37,49 @@ import { useCurrency } from "../../hooks/useCurrency";
 type Target = { type: "group" | "friend"; key: string; name: string; imageUrl?: string | null };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
 
+type ExpenseTemplate = {
+  id: string;
+  description: string;
+  amount: string;
+  category: string | null;
+  targetKey: string;
+  targetName: string;
+  targetType: "group" | "friend";
+  targetImageUrl?: string | null;
+  savedAt: number;
+};
+
+const RECENT_TEMPLATES_KEY = "coconut.recentExpenseTemplates";
+const MAX_TEMPLATES = 10;
+
+async function loadTemplates(uid: string): Promise<ExpenseTemplate[]> {
+  try {
+    const raw = await AsyncStorage.getItem(`${RECENT_TEMPLATES_KEY}.${uid}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistTemplate(
+  uid: string,
+  template: Omit<ExpenseTemplate, "id" | "savedAt">,
+): Promise<ExpenseTemplate[]> {
+  const existing = await loadTemplates(uid);
+  const dedupeKey = `${template.description.toLowerCase().trim()}|${template.targetKey}`;
+  const filtered = existing.filter(
+    (t) => `${t.description.toLowerCase().trim()}|${t.targetKey}` !== dedupeKey,
+  );
+  const entry: ExpenseTemplate = {
+    ...template,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    savedAt: Date.now(),
+  };
+  const updated = [entry, ...filtered].slice(0, MAX_TEMPLATES);
+  await AsyncStorage.setItem(`${RECENT_TEMPLATES_KEY}.${uid}`, JSON.stringify(updated));
+  return updated;
+}
+
 type GroupMember = {
   id: string;
   user_id: string | null;
@@ -220,6 +263,8 @@ export default function AddExpenseScreen() {
   const [newFriendPhone, setNewFriendPhone] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
 
+  const [recentTemplates, setRecentTemplates] = useState<ExpenseTemplate[]>([]);
+
   const lastPrefillNonce = useRef<string | null>(null);
   const savedRef = useRef(false);
   const touchedSplitKeysRef = useRef<Set<string>>(new Set());
@@ -269,6 +314,8 @@ export default function AddExpenseScreen() {
           prefillBankDate: undefined,
           prefillBankCategory: undefined,
         } as Record<string, undefined>);
+        // Auto-open keyboard on search input
+        setTimeout(() => searchInputRef.current?.focus(), 100);
       }
     }
     prevFocused.current = isFocused;
@@ -309,6 +356,23 @@ export default function AddExpenseScreen() {
       }
     }
   }, [prefillNonce, prefillDesc, prefillAmount, prefillPersonKey, prefillPersonName, prefillPersonType, prefillContactName, prefillContactEmail, prefillContactPhone]);
+
+  // Pre-populate friend group + member caches from the summary so the resolve
+  // flow hits cache instead of making sequential /api/groups/person + /members calls.
+  useEffect(() => {
+    if (!realSummary?.friends) return;
+    for (const f of realSummary.friends) {
+      if (f.friendGroupId && !_friendGroupCache.has(f.key)) {
+        _friendGroupCache.set(f.key, f.friendGroupId);
+      }
+      if (f.friendGroupId && f.friendGroupMembers && !_memberCache.has(f.friendGroupId)) {
+        _memberCache.set(
+          f.friendGroupId,
+          f.friendGroupMembers.map((m) => ({ ...m, venmo_username: null })),
+        );
+      }
+    }
+  }, [realSummary?.friends]);
 
   // ── Fallback groups fetch (skip if summary already has groups) ──
   const summaryGroups = summary?.groups ?? [];
@@ -355,6 +419,12 @@ export default function AddExpenseScreen() {
     return () => { cancelled = true; };
   }, [userId]);
 
+  // Load recent expense templates for quick-repeat
+  useEffect(() => {
+    if (!userId) return;
+    loadTemplates(userId).then(setRecentTemplates).catch(() => {});
+  }, [userId]);
+
   // ── Derived data ──
   const summaryFriends = summary?.friends ?? [];
   const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
@@ -397,7 +467,7 @@ export default function AddExpenseScreen() {
   const selectedKeys = new Set(targets.map((t) => t.key));
   const noApiMatches = q.length > 0 && filteredFriends.length === 0 && filteredGroups.length === 0;
   const noMatches = noApiMatches && filteredDeviceContacts.length === 0;
-  const showPicker = targets.length === 0 || searchFocused;
+  const showPicker = targets.length === 0 || (searchFocused && q.length > 0);
 
   const myMemberId = useMemo(() => {
     const byAuth = groupMembers.find((m) => m.user_id && m.user_id === userId)?.id;
@@ -529,12 +599,17 @@ export default function AddExpenseScreen() {
             const data = await res.json();
             if (cancelled) return;
             if (!res.ok) { if (!cancelled) { setError("Could not load friend"); setResolving(false); } return; }
-            const sg = data.sharedGroups as { id: string; name: string; memberCount: number; groupType?: string | null }[] | undefined;
+            const sg = data.sharedGroups as { id: string; name: string; memberCount: number; groupType?: string | null; members?: GroupMember[] }[] | undefined;
 
             // Prefer a dedicated 1:1 friend group — NOT trip/household groups
             // that happen to have only 2 members
             const friendGroup = sg?.find((g) => g.groupType === "friend" && g.memberCount === 2);
             gid = friendGroup?.id ?? null;
+
+            // Cache members from the person response so we skip the /members round trip
+            if (friendGroup?.id && friendGroup.members?.length) {
+              _memberCache.set(friendGroup.id, dedupeMembers(friendGroup.members));
+            }
 
             if (!gid) {
               // No dedicated friend group exists — create one
@@ -724,6 +799,21 @@ export default function AddExpenseScreen() {
     setSplitExpanded(false);
   }, []);
 
+  const applyTemplate = useCallback((tpl: ExpenseTemplate) => {
+    sfx.pop();
+    setDescription(tpl.description);
+    setAmount(tpl.amount);
+    setCategory(tpl.category);
+    setTargets([{
+      type: tpl.targetType,
+      key: tpl.targetKey,
+      name: tpl.targetName,
+      imageUrl: tpl.targetImageUrl,
+    }]);
+    setSearchFocused(false);
+    setError(null);
+  }, []);
+
   // Reset group state when all targets are removed
   useEffect(() => {
     if (targets.length === 0) {
@@ -800,6 +890,13 @@ export default function AddExpenseScreen() {
       demo.addExpense(total, desc, t.key, t.type);
       sfx.coin();
       toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
+      if (userId && targets.length > 0) {
+        const tgt = targets[0];
+        persistTemplate(userId, {
+          description: desc, amount: total.toFixed(2), category,
+          targetKey: tgt.key, targetName: tgt.name, targetType: tgt.type, targetImageUrl: tgt.imageUrl,
+        }).then(setRecentTemplates).catch(() => {});
+      }
       DeviceEventEmitter.emit("expense-added");
       return;
     }
@@ -831,6 +928,13 @@ export default function AddExpenseScreen() {
       if (res.ok) {
         sfx.coin();
         toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
+        if (userId && targets.length > 0) {
+          const tgt = targets[0];
+          persistTemplate(userId, {
+            description: desc, amount: total.toFixed(2), category,
+            targetKey: tgt.key, targetName: tgt.name, targetType: tgt.type, targetImageUrl: tgt.imageUrl,
+          }).then(setRecentTemplates).catch(() => {});
+        }
         invalidateApiCache("/api/groups/summary");
         invalidateApiCache(`/api/groups/${resolvedGroupId}`);
         invalidateApiCache("/api/groups/recent-activity");
