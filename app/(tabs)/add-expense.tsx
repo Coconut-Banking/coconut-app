@@ -115,11 +115,23 @@ function pickDemoGroupIdForFriend(
  */
 const _memberCache = new Map<string, GroupMember[]>();
 const _friendGroupCache = new Map<string, string>();
+let _recentActivity: Array<{ merchant: string; amount: number }> | null = null;
 
 /** Clear add-expense resolution caches (call when groups/members change). */
 export function clearMemberCache() {
   _memberCache.clear();
   _friendGroupCache.clear();
+}
+
+/** Pre-warm caches from screens that already loaded this data (person, group). */
+export function prewarmFriendGroupCache(friendKey: string, groupId: string) {
+  _friendGroupCache.set(friendKey, groupId);
+}
+export function prewarmMemberCache(groupId: string, members: GroupMember[]) {
+  _memberCache.set(groupId, members);
+}
+export function prewarmRecentActivity(activity: Array<{ merchant: string; amount: number }>) {
+  _recentActivity = activity;
 }
 
 /** Deduplicate members by user_id — keeps the entry with a real name over "You". */
@@ -476,6 +488,7 @@ export default function AddExpenseScreen() {
     const signal = abortCtrl.signal;
     setError(null);
     setResolving(true);
+    const _t0 = Date.now();
 
     const load = async (attempt = 0) => {
       try {
@@ -597,6 +610,7 @@ export default function AddExpenseScreen() {
           setPayerMemberId(null);
           setPaidByMe(true);
           if (!cancelled) setResolving(false);
+          if (__DEV__) console.log(`[add-expense] resolve: ${Date.now() - _t0}ms (cache hit)`);
           return;
         }
 
@@ -620,6 +634,7 @@ export default function AddExpenseScreen() {
         setPayerMemberId(null);
         setPaidByMe(true);
         if (!cancelled) setResolving(false);
+        if (__DEV__) console.log(`[add-expense] resolve: ${Date.now() - _t0}ms (fetched)`);
       } catch (e) {
         if (cancelled || (e instanceof Error && e.name === "AbortError")) return;
         if (attempt < 1) {
@@ -748,24 +763,18 @@ export default function AddExpenseScreen() {
       return;
     }
 
-    // Duplicate check
+    // Duplicate check — cache-only, never blocks on a network call
     let warn = false;
     const descTrim = description.trim();
     if (resolvedGroupId && descTrim) {
       if (isDemoOn) {
         const act = demo.groupDetails[resolvedGroupId]?.activity ?? [];
         warn = act.some((row) => Math.abs(Number(row.amount) - total) < 0.02 && descriptionsSimilar(row.merchant, descTrim));
-      } else {
-        try {
-          const gr = await apiFetch(`/api/groups/${resolvedGroupId}`);
-          const gj = await gr.json();
-          if (gr.ok && Array.isArray(gj.activity)) {
-            warn = gj.activity.some(
-              (row: { merchant: string; amount: number }) =>
-                Math.abs(Number(row.amount) - total) < 0.02 && descriptionsSimilar(row.merchant, descTrim)
-            );
-          }
-        } catch { /* ignore */ }
+      } else if (_recentActivity) {
+        warn = _recentActivity.some(
+          (row) =>
+            Math.abs(Number(row.amount) - total) < 0.02 && descriptionsSimilar(row.merchant, descTrim)
+        );
       }
     }
     if (warn) {
@@ -797,6 +806,7 @@ export default function AddExpenseScreen() {
     setSaving(true);
     setError(null);
     savedRef.current = true;
+    const _saveT0 = Date.now();
     try {
       const body: Record<string, unknown> = {
         amount: total,
@@ -815,6 +825,7 @@ export default function AddExpenseScreen() {
         body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
       }
       const res = await apiFetch("/api/manual-expense", { method: "POST", body });
+      if (__DEV__) console.log(`[add-expense] POST: ${Date.now() - _saveT0}ms`);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         sfx.coin();
@@ -825,7 +836,14 @@ export default function AddExpenseScreen() {
         if (targets.some((t) => t.type === "friend")) invalidateApiCache("/api/groups/person");
         clearMemSummaryCache();
         clearMemActivityCache();
-        DeviceEventEmitter.emit("expense-added");
+        DeviceEventEmitter.emit("expense-added", {
+          groupId: resolvedGroupId,
+          amount: total,
+          description: desc,
+          currency: currencyCode,
+          payerMemberId: effPayer,
+          shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
+        });
       } else {
         savedRef.current = false;
         setError(data?.error || "Failed to save");
@@ -913,8 +931,8 @@ export default function AddExpenseScreen() {
                 onPress={async () => {
                   await save();
                   if (savedRef.current) {
-                    setJustSaved(true);
-                    setTimeout(() => { resetForm(); nav.replace("/(tabs)"); }, 650);
+                    resetForm();
+                    nav.back();
                   }
                 }}
                 hitSlop={12}
@@ -1345,11 +1363,8 @@ export default function AddExpenseScreen() {
                 onPress={async () => {
                   await save();
                   if (savedRef.current) {
-                    setJustSaved(true);
-                    setTimeout(() => {
-                      resetForm();
-                      nav.replace("/(tabs)");
-                    }, 650);
+                    resetForm();
+                    nav.back();
                   }
                 }}
                 disabled={saving || justSaved}

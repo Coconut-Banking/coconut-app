@@ -28,6 +28,7 @@ import { MemberAvatar } from "../../../components/MemberAvatar";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
+import { prewarmFriendGroupCache } from "../add-expense";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 /** Friend detail — aligned to `MobileAppPage` `FriendDetail` + existing settlement APIs */
@@ -68,6 +69,10 @@ export default function PersonScreen() {
   useEffect(() => {
     if (detail && key) {
       setExpensePrefillTarget({ key, name: detail.displayName, type: "friend" });
+      // Pre-warm add-expense cache so "Loading split..." resolves instantly
+      const sg = (detail as { sharedGroups?: { id: string; memberCount: number; groupType?: string | null }[] }).sharedGroups;
+      const friendGroup = sg?.find((g) => g.groupType === "friend" && g.memberCount === 2);
+      if (friendGroup) prewarmFriendGroupCache(key, friendGroup.id);
     }
     return () => setExpensePrefillTarget(null);
   }, [key, detail?.displayName]);

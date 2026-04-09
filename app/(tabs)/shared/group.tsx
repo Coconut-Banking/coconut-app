@@ -37,6 +37,7 @@ import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
+import { prewarmMemberCache, prewarmRecentActivity } from "../add-expense";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { sfx } from "../../../lib/sounds";
@@ -417,9 +418,18 @@ export default function GroupScreen() {
   useEffect(() => {
     if (detail && id) {
       setExpensePrefillTarget({ key: id, name: detail.name, type: "group" });
+      if (detail.members?.length) {
+        prewarmMemberCache(id, detail.members.map((m) => ({
+          id: m.id, user_id: m.user_id, display_name: m.display_name,
+          venmo_username: (m as { venmo_username?: string | null }).venmo_username ?? null,
+        })));
+      }
+      if (detail.activity?.length) {
+        prewarmRecentActivity(detail.activity.map((a) => ({ merchant: a.merchant, amount: a.amount })));
+      }
     }
     return () => setExpensePrefillTarget(null);
-  }, [id, detail?.name]);
+  }, [id, detail?.name, detail?.members]);
 
   useEffect(() => {
     if (isDemoOn) return;
