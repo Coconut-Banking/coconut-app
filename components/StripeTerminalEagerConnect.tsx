@@ -61,6 +61,11 @@ export function StripeTerminalEagerConnect() {
       }
       try {
         await cancelDiscovering().catch(() => {});
+
+        const locationPromise = USE_SIMULATED
+          ? null
+          : apiFetch("/api/stripe/terminal/location");
+
         const result = await discoverReaders(
           USE_SIMULATED
             ? { discoveryMethod: "internet", simulated: true }
@@ -89,7 +94,7 @@ export function StripeTerminalEagerConnect() {
           return;
         }
 
-        const locRes = await apiFetch("/api/stripe/terminal/location");
+        const locRes = await locationPromise!;
         if (!locRes.ok) {
           if (__DEV__) console.warn("[TerminalEager] location fetch failed");
           connectAttempted.current = false;

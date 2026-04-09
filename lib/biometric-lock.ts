@@ -21,9 +21,11 @@ export async function checkBiometricStatus(): Promise<{
   const localAuth = await getLocalAuth();
   if (!localAuth) return { available: false, hasHardware: false };
   try {
-    const hasHardware = await localAuth.hasHardwareAsync();
-    const available = hasHardware && (await localAuth.isEnrolledAsync());
-    return { available, hasHardware };
+    const [hasHardware, enrolled] = await Promise.all([
+      localAuth.hasHardwareAsync(),
+      localAuth.isEnrolledAsync(),
+    ]);
+    return { available: hasHardware && enrolled, hasHardware };
   } catch {
     return { available: false, hasHardware: false };
   }

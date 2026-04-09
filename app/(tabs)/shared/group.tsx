@@ -263,8 +263,7 @@ export default function GroupScreen() {
               const res = await apiFetch(`/api/split-transactions/${txId}`, { method: "DELETE" });
               if (res.ok) {
                 DeviceEventEmitter.emit("groups-updated");
-                await refetch(true);
-                await refetchSummary();
+                await Promise.all([refetch(true), refetchSummary()]);
               } else {
                 Alert.alert("Error", "Couldn't delete expense. Try again.");
               }
@@ -465,8 +464,7 @@ export default function GroupScreen() {
       return;
     }
     DeviceEventEmitter.emit("groups-updated");
-    await refetch(true);
-    await refetchSummary();
+    await Promise.all([refetch(true), refetchSummary()]);
     if (archived) goBack();
   };
 
@@ -487,8 +485,7 @@ export default function GroupScreen() {
           return;
         }
         DeviceEventEmitter.emit("groups-updated");
-        await refetch(true);
-        await refetchSummary();
+        await Promise.all([refetch(true), refetchSummary()]);
         toast.show("Group renamed");
         setShowRenameGroupModal(false);
       } catch {
@@ -567,8 +564,7 @@ export default function GroupScreen() {
                 const res = await apiFetch(`/api/groups/${id}/members/${m.id}`, { method: "DELETE" });
                 if (res.ok) {
                   DeviceEventEmitter.emit("groups-updated");
-                  await refetch(true);
-                  await refetchSummary();
+                  await Promise.all([refetch(true), refetchSummary()]);
                 } else {
                   const err = await res.json().catch(() => ({}));
                   Alert.alert("Couldn't remove member", (err as { error?: string }).error ?? "Try again.");

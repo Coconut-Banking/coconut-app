@@ -890,19 +890,24 @@ function SummaryStep({
   };
 
   const handleTabAll = async () => {
-    for (const person of rs.personShares) {
-      const key = person.name.toLowerCase();
-      if (tabbedPeople.has(key)) continue;
-      if (!isDemoOn && resolvedGroupId) {
-        try {
-          await apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
+    const untabbed = rs.personShares.filter(
+      (p) => !tabbedPeople.has(p.name.toLowerCase())
+    );
+    if (!isDemoOn && resolvedGroupId) {
+      await Promise.all(
+        untabbed.map((person) =>
+          apiFetch(`/api/groups/${resolvedGroupId}/tab`, {
             method: "POST",
             body: { personName: person.name, memberId: person.memberId, amount: person.totalOwed, description: rs.editMerchant || "Receipt split" },
-          });
-        } catch { /* continue */ }
-      }
-      setTabbedPeople(prev => new Set(prev).add(key));
+          }).catch(() => {})
+        )
+      );
     }
+    setTabbedPeople((prev) => {
+      const next = new Set(prev);
+      for (const p of untabbed) next.add(p.name.toLowerCase());
+      return next;
+    });
     sfx.coin();
     showToast(`Added to everyone's tab`);
   };

@@ -267,14 +267,16 @@ export function usePrefetchContactsSummary(delayMs = 0) {
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
       if (cancelled) return;
       try {
-        const persisted = await getPersistedResponse(path);
-        if (persisted) {
+        const [persisted, res] = await Promise.all([
+          getPersistedResponse(path),
+          apiFetch(path),
+        ]);
+        if (persisted && !_memSummary.has(path)) {
           try {
             _memSummary.set(path, JSON.parse(persisted.body));
           } catch { /* corrupt */ }
         }
         if (cancelled) return;
-        const res = await apiFetch(path);
         if (res.ok) {
           const data = await res.json();
           _memSummary.set(path, data);
@@ -697,8 +699,10 @@ export function usePrefetchActivity(delayMs = 0) {
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
       if (cancelled) return;
       try {
-        await _loadLastSeen();
-        const persisted = await getPersistedResponse(ACTIVITY_PATH);
+        const [, persisted] = await Promise.all([
+          _loadLastSeen(),
+          getPersistedResponse(ACTIVITY_PATH),
+        ]);
         if (persisted) {
           try { _memActivity = JSON.parse(persisted.body).activity ?? []; } catch { /* corrupt */ }
         }

@@ -357,8 +357,7 @@ export default function SharedIndex() {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      await refetch();
-      const res = await apiFetch("/api/groups");
+      const [, res] = await Promise.all([refetch(), apiFetch("/api/groups")]);
       if (res.ok) {
         const data = await res.json().catch(() => []);
         if (Array.isArray(data)) {
@@ -696,10 +695,8 @@ export default function SharedIndex() {
   useEffect(() => {
     if (!summaryGroups.length || isDemoOn) return;
     const top = summaryGroups.slice(0, 5);
-    for (const g of top) {
-      apiFetch(`/api/groups/${g.id}`).catch(() => {});
-    }
-  }, [summaryGroups.length > 0, isDemoOn]);
+    void Promise.all(top.map((g) => apiFetch(`/api/groups/${g.id}`).catch(() => {})));
+  }, [summaryGroups.length, isDemoOn]);
 
   const friends = useMemo(() => {
     const mergedFallbackGroups = [

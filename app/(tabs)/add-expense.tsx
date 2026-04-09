@@ -404,30 +404,40 @@ export default function AddExpenseScreen() {
 
   // ── Derived data ──
   const summaryFriends = summary?.friends ?? [];
-  const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
-  const fallbackFriendRows = mergedFallbackGroups
-    .filter((g) => (g.groupType ?? "other") !== "home")
-    .map((g) => ({ key: `grp:${g.id}`, displayName: g.name, balance: 0, balances: [] as { currency: string; amount: number }[] }));
-  const fallbackGroupRows = mergedFallbackGroups.map((g) => ({
-    id: g.id, name: g.name, memberCount: g.memberCount, imageUrl: g.imageUrl ?? null, myBalance: 0, myBalances: [], lastActivityAt: new Date().toISOString(),
-  }));
-  const mergedFallbackFriends = [
-    ...optimisticFriends,
-    ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
-  ];
-  const friends = summaryFriends.length > 0
-    ? [...summaryFriends, ...optimisticFriends.filter((o) => !summaryFriends.some((s) => s.displayName === o.displayName))]
-    : mergedFallbackFriends;
-  const groups = summaryGroups.length > 0 ? summaryGroups : fallbackGroupRows;
+
+  const { friends, groups } = useMemo(() => {
+    const mergedFallbackGroups = [...optimisticGroups, ...fallbackGroups.filter((g) => !optimisticGroups.some((o) => o.id === g.id))];
+    const fallbackFriendRows = mergedFallbackGroups
+      .filter((g) => (g.groupType ?? "other") !== "home")
+      .map((g) => ({ key: `grp:${g.id}`, displayName: g.name, balance: 0, balances: [] as { currency: string; amount: number }[] }));
+    const fallbackGroupRows = mergedFallbackGroups.map((g) => ({
+      id: g.id, name: g.name, memberCount: g.memberCount, imageUrl: g.imageUrl ?? null, myBalance: 0, myBalances: [], lastActivityAt: new Date().toISOString(),
+    }));
+    const mergedFallbackFriends = [
+      ...optimisticFriends,
+      ...fallbackFriendRows.filter((f) => !optimisticFriends.some((o) => o.displayName === f.displayName)),
+    ];
+    const fr = summaryFriends.length > 0
+      ? [...summaryFriends, ...optimisticFriends.filter((o) => !summaryFriends.some((s) => s.displayName === o.displayName))]
+      : mergedFallbackFriends;
+    const gr = summaryGroups.length > 0 ? summaryGroups : fallbackGroupRows;
+    return { friends: fr, groups: gr };
+  }, [summaryFriends, summaryGroups, optimisticGroups, optimisticFriends, fallbackGroups]);
+
   const q = query.toLowerCase().trim();
-  const filteredFriends = q ? friends.filter((f) => f.displayName.toLowerCase().includes(q)) : friends;
-  const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
-  const visibleGroups = groups.filter((g) => {
-    const groupName = g.name.trim().toLowerCase();
-    if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
-    return true;
-  });
-  const filteredGroups = q ? visibleGroups.filter((g) => g.name.toLowerCase().includes(q)) : visibleGroups;
+
+  const { filteredFriends, filteredGroups } = useMemo(() => {
+    const friendNameSet = new Set(friends.map((f) => f.displayName.trim().toLowerCase()));
+    const visibleGroups = groups.filter((g) => {
+      const groupName = g.name.trim().toLowerCase();
+      if (g.memberCount <= 2 && friendNameSet.has(groupName)) return false;
+      return true;
+    });
+    return {
+      filteredFriends: q ? friends.filter((f) => f.displayName.toLowerCase().includes(q)) : friends,
+      filteredGroups: q ? visibleGroups.filter((g) => g.name.toLowerCase().includes(q)) : visibleGroups,
+    };
+  }, [friends, groups, q]);
 
   const filteredDeviceContacts = useMemo(() => {
     if (contactsPerm !== "granted" || !q) return [];
