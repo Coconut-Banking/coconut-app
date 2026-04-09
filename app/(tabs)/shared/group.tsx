@@ -228,14 +228,15 @@ export default function GroupScreen() {
     setAddingMembers(true);
     sfx.pop();
     try {
-      let added = 0;
-      for (const friend of selectedFriends) {
-        const res = await apiFetch(`/api/groups/${id}/members`, {
-          method: "POST",
-          body: { displayName: friend.displayName } as object,
-        });
-        if (res.ok) added++;
-      }
+      const results = await Promise.all(
+        selectedFriends.map((friend) =>
+          apiFetch(`/api/groups/${id}/members`, {
+            method: "POST",
+            body: { displayName: friend.displayName } as object,
+          })
+        )
+      );
+      const added = results.filter((r) => r.ok).length;
       setShowAddMember(false);
       setSelectedFriends([]);
       await refetch(true);

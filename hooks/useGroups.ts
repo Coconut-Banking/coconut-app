@@ -229,9 +229,9 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
       };
     }
 
-    (async () => {
-      const cached = await getPersistedResponse(summaryPath);
-      if (cached && !cancelled && !summary) {
+    fetchSummary(false);
+    getPersistedResponse(summaryPath).then((cached) => {
+      if (cached && !cancelled && !_memSummary.has(summaryPath)) {
         try {
           const data = JSON.parse(cached.body);
           _memSummary.set(summaryPath, data);
@@ -239,8 +239,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
           setLoading(false);
         } catch { /* corrupt cache */ }
       }
-      if (!cancelled) fetchSummary(!cached);
-    })();
+    });
 
     return () => {
       cancelled = true;
@@ -348,6 +347,7 @@ export function useGroupDetail(id: string | null) {
 
     if (!hydratedFromDisk.current) {
       hydratedFromDisk.current = true;
+      fetchDetail(false);
       getPersistedResponse(`/api/groups/${id}`).then((cached) => {
         if (cached && !hasDetail.current) {
           try {
@@ -357,7 +357,6 @@ export function useGroupDetail(id: string | null) {
             setLoading(false);
           } catch { /* ignore corrupt cache */ }
         }
-        fetchDetail(hasDetail.current);
       });
     } else {
       fetchDetail(hasDetail.current);
