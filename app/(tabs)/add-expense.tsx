@@ -28,7 +28,9 @@ import { useGroupsSummary, clearMemSummaryCache, clearMemActivityCache } from ".
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
-import { colors, font, radii, darkUI, prototype, shadow } from "../../lib/theme";
+import { font, radii, prototype } from "../../lib/theme";
+import { useTheme } from "../../lib/theme-context";
+import type { ThemeColors } from "../../lib/colors";
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
@@ -37,7 +39,9 @@ import { useCurrency } from "../../hooks/useCurrency";
 type Target = { type: "group" | "friend"; key: string; name: string; imageUrl?: string | null };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
 
-type RepeatFrequency = "weekly" | "biweekly" | "monthly";
+type RepeatFrequency = "weekly" | "biweekly" | "monthly" | "custom";
+type RepeatEndType = "never" | "after_count" | "after_months";
+type CustomUnit = "days" | "weeks" | "months";
 
 type GroupMember = {
   id: string;
@@ -182,6 +186,9 @@ export default function AddExpenseScreen() {
   const summary = isDemoOn ? demo.summary : realSummary;
   const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
   const { currencyCode, symbol: currSymbol } = useCurrency();
+  const { theme, isDark } = useTheme();
+  const s = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const tint = isDark ? theme.accent : theme.primary;
 
   // ── State ──
   const [targets, setTargets] = useState<Target[]>([]);
@@ -193,7 +200,7 @@ export default function AddExpenseScreen() {
   const [notes, setNotes] = useState("");
   const [splitMethod, setSplitMethod] = useState<SplitMethod>("equal");
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const saving = false;
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fallbackGroups, setFallbackGroups] = useState<Array<{ id: string; name: string; memberCount: number; groupType?: string | null; imageUrl?: string | null }>>([]);
@@ -225,6 +232,11 @@ export default function AddExpenseScreen() {
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [repeatFrequency, setRepeatFrequency] = useState<RepeatFrequency>("monthly");
   const [showRepeatPicker, setShowRepeatPicker] = useState(false);
+  const [customEvery, setCustomEvery] = useState("2");
+  const [customUnit, setCustomUnit] = useState<CustomUnit>("weeks");
+  const [repeatEndType, setRepeatEndType] = useState<RepeatEndType>("never");
+  const [repeatEndCount, setRepeatEndCount] = useState("12");
+  const [repeatEndMonths, setRepeatEndMonths] = useState("6");
 
   const lastPrefillNonce = useRef<string | null>(null);
   const savedRef = useRef(false);
@@ -258,6 +270,11 @@ export default function AddExpenseScreen() {
     setRepeatEnabled(false);
     setRepeatFrequency("monthly");
     setShowRepeatPicker(false);
+    setCustomEvery("2");
+    setCustomUnit("weeks");
+    setRepeatEndType("never");
+    setRepeatEndCount("12");
+    setRepeatEndMonths("6");
     savedRef.current = false;
     touchedSplitKeysRef.current = new Set();
     setJustSaved(false);
@@ -884,72 +901,94 @@ export default function AddExpenseScreen() {
       return;
     }
 
-    setSaving(true);
-    setError(null);
     savedRef.current = true;
-    const _saveT0 = Date.now();
-    try {
-      const body: Record<string, unknown> = {
-        amount: total,
-        description: desc,
-        groupId: resolvedGroupId,
-        payerMemberId: effPayer,
-        currency: currencyCode,
-      };
-      if (category) body.category = category;
-      const notesTrim = notes.trim();
-      if (notesTrim) body.notes = notesTrim;
-      // personKey only for single-friend equal splits; multi-friend uses equal split across all group members
-      if (splitMethod === "equal" && targets.length === 1 && targets[0].type === "friend") {
-        body.personKey = targets[0].key;
-      } else if (splitMethod !== "equal") {
-        body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
+    setError(null);
+
+    const body: Record<string, unknown> = {
+      amount: total,
+      description: desc,
+      groupId: resolvedGroupId,
+      payerMemberId: effPayer,
+      currency: currencyCode,
+    };
+    if (category) body.category = category;
+    const notesTrim = notes.trim();
+    if (notesTrim) body.notes = notesTrim;
+    if (splitMethod === "equal" && targets.length === 1 && targets[0].type === "friend") {
+      body.personKey = targets[0].key;
+    } else if (splitMethod !== "equal") {
+      body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
+    }
+
+    // Optimistic: give instant feedback, fire the POST in the background
+    sfx.coin();
+    toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
+    invalidateApiCache("/api/groups/summary");
+    invalidateApiCache(`/api/groups/${resolvedGroupId}`);
+    invalidateApiCache("/api/groups/recent-activity");
+    if (targets.some((t) => t.type === "friend")) invalidateApiCache("/api/groups/person");
+    clearMemSummaryCache();
+    clearMemActivityCache();
+    DeviceEventEmitter.emit("expense-added", {
+      groupId: resolvedGroupId,
+      amount: total,
+      description: desc,
+      currency: currencyCode,
+      payerMemberId: effPayer,
+      shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
+    });
+    nav.back();
+
+    const _saveT0 = __DEV__ ? Date.now() : 0;
+    apiFetch("/api/manual-expense", { method: "POST", body })
+      .then(async (res) => {
+        if (__DEV__) console.log(`[add-expense] POST: ${Date.now() - _saveT0}ms`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          toast.show(data?.error || "Save failed — tap to retry", "error");
+        }
+      })
+      .catch(() => {
+        toast.show("Save failed — check connection", "error");
+      });
+
+    if (repeatEnabled && resolvedGroupId) {
+      const personKey = targets.length === 1 && targets[0].type === "friend" ? targets[0].key : undefined;
+      let customIntervalDays: number | undefined;
+      if (repeatFrequency === "custom") {
+        const n = parseInt(customEvery, 10) || 1;
+        customIntervalDays = customUnit === "days" ? n : customUnit === "weeks" ? n * 7 : n * 30;
       }
-      const res = await apiFetch("/api/manual-expense", { method: "POST", body });
-      if (__DEV__) console.log(`[add-expense] POST: ${Date.now() - _saveT0}ms`);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        sfx.coin();
-        toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
-        invalidateApiCache("/api/groups/summary");
-        invalidateApiCache(`/api/groups/${resolvedGroupId}`);
-        invalidateApiCache("/api/groups/recent-activity");
-        if (targets.some((t) => t.type === "friend")) invalidateApiCache("/api/groups/person");
-        clearMemSummaryCache();
-        clearMemActivityCache();
-        DeviceEventEmitter.emit("expense-added", {
+      let endDate: string | undefined;
+      let maxOccurrences: number | undefined;
+      if (repeatEndType === "after_count") {
+        maxOccurrences = parseInt(repeatEndCount, 10) || 12;
+      } else if (repeatEndType === "after_months") {
+        const mo = parseInt(repeatEndMonths, 10) || 6;
+        const d = new Date();
+        d.setMonth(d.getMonth() + mo);
+        endDate = d.toISOString().split("T")[0];
+      }
+      apiFetch("/api/recurring-expenses", {
+        method: "POST",
+        body: {
           groupId: resolvedGroupId,
+          personKey,
           amount: total,
           description: desc,
-          currency: currencyCode,
-          payerMemberId: effPayer,
-          shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
-        });
-        if (repeatEnabled && resolvedGroupId) {
-          const personKey = targets.length === 1 && targets[0].type === "friend" ? targets[0].key : undefined;
-          apiFetch("/api/recurring-expenses", {
-            method: "POST",
-            body: {
-              groupId: resolvedGroupId,
-              personKey,
-              amount: total,
-              description: desc,
-              frequency: repeatFrequency,
-              iso_currency_code: currencyCode,
-            },
-          }).then(() => {
-            toast.show(`Will repeat ${repeatFrequency}`);
-          }).catch(() => {});
-        }
-      } else {
-        savedRef.current = false;
-        setError(data?.error || "Failed to save");
-      }
-    } catch {
-      savedRef.current = false;
-      setError("Failed to save");
-    } finally {
-      setSaving(false);
+          frequency: repeatFrequency,
+          iso_currency_code: currencyCode,
+          ...(customIntervalDays ? { customIntervalDays } : {}),
+          ...(endDate ? { endDate } : {}),
+          ...(maxOccurrences ? { maxOccurrences } : {}),
+        },
+      }).then(() => {
+        const freqLabel = repeatFrequency === "weekly" ? "weekly"
+          : repeatFrequency === "biweekly" ? "biweekly"
+          : repeatFrequency === "monthly" ? "monthly"
+          : `every ${customEvery} ${customUnit}`;
+        toast.show(`Will repeat ${freqLabel}`);
+      }).catch(() => {});
     }
   };
 
@@ -994,7 +1033,7 @@ export default function AddExpenseScreen() {
   if (loading && !summary && !hasAnyData) {
     return (
       <View style={s.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={tint} />
       </View>
     );
   }
@@ -1021,7 +1060,7 @@ export default function AddExpenseScreen() {
             {/* Header: X | Title | Save */}
             <View style={s.header}>
               <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
+                <Ionicons name="close" size={22} color={theme.textSecondary} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Add an expense</Text>
               <TouchableOpacity
@@ -1037,18 +1076,18 @@ export default function AddExpenseScreen() {
                 disabled={!canSave || saving || justSaved}
               >
                 {saving ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <ActivityIndicator size="small" color={tint} />
                 ) : justSaved ? (
-                  <Ionicons name="checkmark-circle" size={22} color="#3A7D44" />
+                  <Ionicons name="checkmark-circle" size={22} color={theme.success} />
                 ) : (
-                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: canSave ? colors.primary : darkUI.labelMuted }}>Save</Text>
+                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: canSave ? tint : theme.textTertiary }}>Save</Text>
                 )}
               </TouchableOpacity>
             </View>
 
             {/* Person row: With you and: [chips] [inline search input] */}
             <View style={s.withRow}>
-              <Text style={s.withLabel}>With <Text style={{ fontFamily: font.bold, color: darkUI.label }}>you</Text> and:</Text>
+              <Text style={s.withLabel}>With <Text style={{ fontFamily: font.bold, color: theme.text }}>you</Text> and:</Text>
               <View style={s.withChipsWrap}>
                 {targets.map((t, idx) => {
                   const primed = backspacePrimed.current === t.key;
@@ -1057,17 +1096,17 @@ export default function AddExpenseScreen() {
                     {t.type === "group" && t.imageUrl ? (
                       <Image source={{ uri: t.imageUrl }} style={{ width: 20, height: 20, borderRadius: 5 }} />
                     ) : t.type === "group" ? (
-                      <View style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: darkUI.stroke, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="people" size={11} color={darkUI.label} />
+                      <View style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: theme.cardBorder, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="people" size={11} color={theme.text} />
                       </View>
                     ) : (
                       <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${ACCENT[idx % ACCENT.length]}22`, alignItems: "center", justifyContent: "center" }}>
                         <Text style={{ fontSize: 8, fontFamily: font.bold, color: ACCENT[idx % ACCENT.length] }}>{t.name.slice(0, 2).toUpperCase()}</Text>
                       </View>
                     )}
-                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: primed ? "#FF3B30" : darkUI.label }}>{t.name}</Text>
+                    <Text style={{ fontFamily: font.semibold, fontSize: 13, color: primed ? "#FF3B30" : theme.text }}>{t.name}</Text>
                     <TouchableOpacity onPress={() => removeOneTarget(t.key)} hitSlop={6} style={{ padding: 1 }}>
-                      <Ionicons name="close-circle" size={14} color={primed ? "#FF3B30" : darkUI.labelMuted} />
+                      <Ionicons name="close-circle" size={14} color={primed ? "#FF3B30" : theme.textTertiary} />
                     </TouchableOpacity>
                   </View>
                   );
@@ -1081,7 +1120,7 @@ export default function AddExpenseScreen() {
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => { if (!query) { setSearchFocused(false); backspacePrimed.current = null; } }}
                   placeholder={targets.length === 0 ? "Search name or group" : "Add more…"}
-                  placeholderTextColor={darkUI.labelMuted}
+                  placeholderTextColor={theme.textTertiary}
                   autoCorrect={false}
                   maxLength={200}
                 />
@@ -1094,7 +1133,7 @@ export default function AddExpenseScreen() {
               <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
                 {loading && !summary && (
                   <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                    <ActivityIndicator size="small" color={darkUI.labelMuted} />
+                    <ActivityIndicator size="small" color={theme.textTertiary} />
                     <Text style={[s.listRowSub, { marginTop: 8 }]}>Loading your groups…</Text>
                   </View>
                 )}
@@ -1147,14 +1186,14 @@ export default function AddExpenseScreen() {
                               <Image source={{ uri: imageUrl }} style={s.groupIconImg} />
                             ) : (
                               <View style={s.groupEmoji}>
-                                <Ionicons name="people" size={22} color={darkUI.label} />
+                                <Ionicons name="people" size={22} color={theme.text} />
                               </View>
                             )}
                             <View style={{ flex: 1 }}>
                               <Text style={s.listRowTitle}>{g.name}</Text>
                               <Text style={s.listRowSub}>{g.memberCount} people</Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={16} color={darkUI.labelMuted} />
+                            <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
                           </TouchableOpacity>
                         );
                       })}
@@ -1195,34 +1234,34 @@ export default function AddExpenseScreen() {
 
                 {contactsPerm === "undetermined" && q.length > 0 && filteredFriends.length === 0 && (
                   <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={requestContactsAccess}>
-                    <Ionicons name="people-circle-outline" size={20} color={colors.primary} />
+                    <Ionicons name="people-circle-outline" size={20} color={tint} />
                     <Text style={s.addFriendTxt}>Search your contacts</Text>
-                    <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} />
+                    <Ionicons name="chevron-forward" size={14} color={theme.textTertiary} />
                   </TouchableOpacity>
                 )}
 
                 {noMatches && (
                   <TouchableOpacity style={s.addFriendRow} onPress={() => startAddFriend()}>
-                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Ionicons name="person-add" size={18} color={tint} />
                     <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
                   </TouchableOpacity>
                 )}
                 {!noMatches && q.length > 1 && (
                   <TouchableOpacity style={[s.addFriendRow, { marginTop: 12 }]} onPress={() => startAddFriend()}>
-                    <Ionicons name="person-add" size={18} color={colors.primary} />
+                    <Ionicons name="person-add" size={18} color={tint} />
                     <Text style={s.addFriendTxt}>Add &quot;{query.trim()}&quot; as friend</Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
             ) : error ? (
               <View style={s.center}>
-                <Ionicons name="cloud-offline-outline" size={40} color={darkUI.labelMuted} />
+                <Ionicons name="cloud-offline-outline" size={40} color={theme.textTertiary} />
                 <Text style={[s.err, { marginTop: 12, marginBottom: 16 }]}>{error}</Text>
                 <TouchableOpacity style={s.primaryBtn} onPress={() => { setError(null); setRetryCount((n) => n + 1); }} activeOpacity={0.85}>
                   <Text style={s.primaryBtnText}>Try again</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={removeAllTargets} style={{ marginTop: 14 }}>
-                  <Text style={[s.listRowSub, { color: colors.primary }]}>← Back to list</Text>
+                  <Text style={[s.listRowSub, { color: tint }]}>← Back to list</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1230,7 +1269,7 @@ export default function AddExpenseScreen() {
                 <ScrollView style={{ flex: 1 }} contentContainerStyle={s.compactForm} keyboardShouldPersistTaps="handled">
                   {prefillBankDate ? (
                     <View style={s.bankContextCard}>
-                      <Ionicons name="card-outline" size={16} color={darkUI.labelSecondary} />
+                      <Ionicons name="card-outline" size={16} color={theme.textSecondary} />
                       <View style={{ flex: 1 }}>
                         <Text style={s.bankContextMerchant} numberOfLines={1}>{description || prefillDesc || "Purchase"}</Text>
                         <Text style={s.bankContextMeta}>
@@ -1244,7 +1283,7 @@ export default function AddExpenseScreen() {
                   {/* Description row with icon */}
                   <View style={s.compactRow}>
                     <View style={s.compactIcon}>
-                      <Ionicons name="receipt-outline" size={20} color={darkUI.labelMuted} />
+                      <Ionicons name="receipt-outline" size={20} color={theme.textTertiary} />
                     </View>
                     <TextInput
                       ref={descInputRef}
@@ -1253,7 +1292,7 @@ export default function AddExpenseScreen() {
                       onChangeText={(t) => { setDescription(t); setError(null); }}
                       onFocus={() => setSearchFocused(false)}
                       placeholder="Enter a description"
-                      placeholderTextColor={darkUI.labelMuted}
+                      placeholderTextColor={theme.textTertiary}
                       returnKeyType="next"
                       maxLength={500}
                     />
@@ -1263,7 +1302,7 @@ export default function AddExpenseScreen() {
                   {/* Amount row */}
                   <View style={s.compactRow}>
                     <View style={s.compactIcon}>
-                      <Text style={{ fontSize: 18, fontFamily: font.bold, color: darkUI.labelMuted }}>{currSymbol}</Text>
+                      <Text style={{ fontSize: 18, fontFamily: font.bold, color: theme.textTertiary }}>{currSymbol}</Text>
                     </View>
                     <TextInput
                       style={s.compactAmountInput}
@@ -1271,7 +1310,7 @@ export default function AddExpenseScreen() {
                       onChangeText={(t) => { setAmount(t.replace(/[^0-9.]/g, "")); setError(null); }}
                       onFocus={() => setSearchFocused(false)}
                       placeholder="0.00"
-                      placeholderTextColor={darkUI.labelMuted}
+                      placeholderTextColor={theme.textTertiary}
                       keyboardType="decimal-pad"
                       returnKeyType="done"
                       maxLength={20}
@@ -1287,9 +1326,9 @@ export default function AddExpenseScreen() {
                   >
                     <Text style={s.splitChipText}>
                       Paid by{" "}
-                      <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{payerDisplay}</Text>
+                      <Text style={{ fontFamily: font.bold, color: theme.text }}>{payerDisplay}</Text>
                       {" "}and{" "}
-                      <Text style={{ fontFamily: font.bold, color: darkUI.label }}>{splitDisplay}</Text>
+                      <Text style={{ fontFamily: font.bold, color: theme.text }}>{splitDisplay}</Text>
                     </Text>
                   </TouchableOpacity>
 
@@ -1315,7 +1354,7 @@ export default function AddExpenseScreen() {
                           onPress={() => { sfx.toggle(); setCategory(selected ? null : c.label); }}
                           activeOpacity={0.75}
                         >
-                          <Ionicons name={c.icon} size={16} color={selected ? colors.primary : darkUI.labelSecondary} />
+                          <Ionicons name={c.icon} size={16} color={selected ? tint : theme.textSecondary} />
                           <Text style={[s.categoryChipLabel, selected && s.categoryChipLabelSelected]} numberOfLines={1}>{c.label}</Text>
                         </TouchableOpacity>
                       );
@@ -1341,7 +1380,7 @@ export default function AddExpenseScreen() {
                     <Ionicons
                       name={repeatEnabled ? "repeat" : "repeat-outline"}
                       size={18}
-                      color={repeatEnabled ? colors.primary : darkUI.labelMuted}
+                      color={repeatEnabled ? tint : theme.textTertiary}
                     />
                     <Text style={s.repeatLabel}>
                       {repeatEnabled ? "Repeats" : "Repeat this expense"}
@@ -1353,9 +1392,15 @@ export default function AddExpenseScreen() {
                         activeOpacity={0.75}
                       >
                         <Text style={s.repeatFreqText}>
-                          {repeatFrequency === "weekly" ? "Weekly" : repeatFrequency === "biweekly" ? "Every 2 weeks" : "Monthly"}
+                          {repeatFrequency === "weekly" ? "Weekly"
+                            : repeatFrequency === "biweekly" ? "Biweekly"
+                            : repeatFrequency === "monthly" ? "Monthly"
+                            : `Every ${customEvery} ${customUnit}`}
+                          {repeatEndType === "after_count" ? ` · ${repeatEndCount}×`
+                            : repeatEndType === "after_months" ? ` · ${repeatEndMonths}mo`
+                            : ""}
                         </Text>
-                        <Ionicons name="chevron-down" size={12} color={darkUI.labelMuted} />
+                        <Ionicons name="chevron-down" size={12} color={theme.textTertiary} />
                       </TouchableOpacity>
                     )}
                   </TouchableOpacity>
@@ -1370,11 +1415,11 @@ export default function AddExpenseScreen() {
           <>
             <View style={s.header}>
               <TouchableOpacity onPress={() => setStep(1)} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="chevron-back" size={22} color={darkUI.labelSecondary} />
+                <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Summary</Text>
               <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="close" size={22} color={darkUI.labelSecondary} />
+                <Ionicons name="close" size={22} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -1438,7 +1483,7 @@ export default function AddExpenseScreen() {
                             }}
                             activeOpacity={0.7}
                           >
-                            <Ionicons name="phone-portrait-outline" size={14} color={darkUI.labelSecondary} />
+                            <Ionicons name="phone-portrait-outline" size={14} color={theme.textSecondary} />
                             <Text style={s.tapToPayBtnTxt}>Settle now with Tap to Pay</Text>
                           </TouchableOpacity>
                         </View>
@@ -1463,7 +1508,7 @@ export default function AddExpenseScreen() {
 
             <View style={s.footer}>
               <TouchableOpacity
-                style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: "#3A7D44" }]}
+                style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: {theme.success} }]}
                 onPress={async () => {
                   await save();
                   if (savedRef.current) {
@@ -1498,7 +1543,7 @@ export default function AddExpenseScreen() {
             <View style={s.pickerHead}>
               <Text style={s.pickerTitle}>Paid by</Text>
               <TouchableOpacity onPress={() => setShowPaidByPicker(false)} hitSlop={12}>
-                <Ionicons name="close" size={20} color={darkUI.labelMuted} />
+                <Ionicons name="close" size={20} color={theme.textTertiary} />
               </TouchableOpacity>
             </View>
             <View style={s.listCard}>
@@ -1540,7 +1585,7 @@ export default function AddExpenseScreen() {
             <View style={s.pickerHead}>
               <Text style={s.pickerTitle}>Split method</Text>
               <TouchableOpacity onPress={() => setShowSplitMethodPicker(false)} hitSlop={12}>
-                <Ionicons name="close" size={20} color={darkUI.labelMuted} />
+                <Ionicons name="close" size={20} color={theme.textTertiary} />
               </TouchableOpacity>
             </View>
             <View style={s.listCard}>
@@ -1563,7 +1608,7 @@ export default function AddExpenseScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={s.splitMethodIcon}>
-                      <Ionicons name={opt.icon} size={18} color={darkUI.labelSecondary} />
+                      <Ionicons name={opt.icon} size={18} color={theme.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.listRowTitle}>{opt.title}</Text>
@@ -1588,13 +1633,13 @@ export default function AddExpenseScreen() {
               <View style={s.sheetHandle} />
               <View style={s.pickerHead}>
                 <TouchableOpacity onPress={() => setShowSplitDetail(false)} hitSlop={12}>
-                  <Ionicons name="chevron-back" size={20} color={darkUI.labelSecondary} />
+                  <Ionicons name="chevron-back" size={20} color={theme.textSecondary} />
                 </TouchableOpacity>
                 <Text style={[s.pickerTitle, { flex: 1, textAlign: "center" }]}>
                   {splitMethod === "exact" ? "By amounts" : splitMethod === "percent" ? "By percentages" : "By shares"}
                 </Text>
                 <TouchableOpacity onPress={() => setShowSplitDetail(false)} hitSlop={12}>
-                  <Ionicons name="close" size={20} color={darkUI.labelMuted} />
+                  <Ionicons name="close" size={20} color={theme.textTertiary} />
                 </TouchableOpacity>
               </View>
               <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
@@ -1653,7 +1698,7 @@ export default function AddExpenseScreen() {
                           }}
                           keyboardType="decimal-pad"
                           placeholder={splitMethod === "shares" ? "1" : "0"}
-                          placeholderTextColor={darkUI.labelMuted}
+                          placeholderTextColor={theme.textTertiary}
                           maxLength={20}
                         />
                       </View>
@@ -1700,56 +1745,164 @@ export default function AddExpenseScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Repeat frequency picker ── */}
+      {/* ── Repeat schedule picker ── */}
       <Modal visible={showRepeatPicker} transparent animationType="slide" onRequestClose={() => setShowRepeatPicker(false)}>
-        <Pressable style={s.sheetOverlay} onPress={() => setShowRepeatPicker(false)}>
-          <Pressable style={s.sheetCard} onPress={(e) => e.stopPropagation()}>
-            <View style={s.sheetHandle} />
-            <View style={s.pickerHead}>
-              <Text style={s.pickerTitle}>Repeat frequency</Text>
-              <TouchableOpacity onPress={() => setShowRepeatPicker(false)} hitSlop={12}>
-                <Ionicons name="close" size={20} color={darkUI.labelMuted} />
-              </TouchableOpacity>
-            </View>
-            <View style={s.listCard}>
-              {([
-                { key: "weekly" as RepeatFrequency, label: "Every week", desc: "Same day each week" },
-                { key: "biweekly" as RepeatFrequency, label: "Every 2 weeks", desc: "Same day, every other week" },
-                { key: "monthly" as RepeatFrequency, label: "Every month", desc: "Same date each month" },
-              ]).map((opt, i) => {
-                const selected = repeatFrequency === opt.key;
-                return (
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+          <Pressable style={s.sheetOverlay} onPress={() => setShowRepeatPicker(false)}>
+            <Pressable style={[s.sheetCard, { maxHeight: "85%" }]} onPress={(e) => e.stopPropagation()}>
+              <View style={s.sheetHandle} />
+              <View style={s.pickerHead}>
+                <Text style={s.pickerTitle}>Repeat schedule</Text>
+                <TouchableOpacity onPress={() => setShowRepeatPicker(false)} hitSlop={12}>
+                  <Ionicons name="close" size={20} color={theme.textTertiary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+                {/* ── HOW OFTEN ── */}
+                <Text style={[s.secLabel, { marginBottom: 8 }]}>How often</Text>
+                <View style={s.listCard}>
+                  {([
+                    { key: "weekly" as RepeatFrequency, label: "Every week" },
+                    { key: "biweekly" as RepeatFrequency, label: "Every 2 weeks" },
+                    { key: "monthly" as RepeatFrequency, label: "Every month" },
+                    { key: "custom" as RepeatFrequency, label: "Custom" },
+                  ]).map((opt, i) => {
+                    const selected = repeatFrequency === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[s.listRow, i < 3 && s.listRowBorder]}
+                        onPress={() => { sfx.toggle(); setRepeatFrequency(opt.key); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={s.listRowTitle}>{opt.label}</Text>
+                        <View style={[s.radio, selected && s.radioOn]}>
+                          {selected && <View style={s.radioDot} />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Custom interval inputs */}
+                {repeatFrequency === "custom" && (
+                  <View style={s.customIntervalRow}>
+                    <Text style={s.customIntervalLabel}>Every</Text>
+                    <TextInput
+                      style={s.customIntervalInput}
+                      value={customEvery}
+                      onChangeText={(v) => setCustomEvery(v.replace(/[^0-9]/g, ""))}
+                      keyboardType="number-pad"
+                      maxLength={3}
+                      selectTextOnFocus
+                    />
+                    {(["days", "weeks", "months"] as CustomUnit[]).map((u) => (
+                      <TouchableOpacity
+                        key={u}
+                        style={[s.unitChip, customUnit === u && s.unitChipActive]}
+                        onPress={() => { sfx.toggle(); setCustomUnit(u); }}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[s.unitChipText, customUnit === u && s.unitChipTextActive]}>
+                          {u}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* ── ENDS ── */}
+                <Text style={[s.secLabel, { marginTop: 20, marginBottom: 8 }]}>Ends</Text>
+                <View style={s.listCard}>
+                  {/* Never */}
                   <TouchableOpacity
-                    key={opt.key}
-                    style={[s.listRow, i < 2 && s.listRowBorder]}
-                    onPress={() => {
-                      sfx.toggle();
-                      setRepeatFrequency(opt.key);
-                      setRepeatEnabled(true);
-                      setShowRepeatPicker(false);
-                    }}
+                    style={[s.listRow, s.listRowBorder]}
+                    onPress={() => { sfx.toggle(); setRepeatEndType("never"); }}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.listRowTitle}>{opt.label}</Text>
-                      <Text style={s.listRowSub}>{opt.desc}</Text>
-                    </View>
-                    <View style={[s.radio, selected && s.radioOn]}>
-                      {selected && <View style={s.radioDot} />}
+                    <Text style={[s.listRowTitle, { flex: 1 }]}>Never</Text>
+                    <View style={[s.radio, repeatEndType === "never" && s.radioOn]}>
+                      {repeatEndType === "never" && <View style={s.radioDot} />}
                     </View>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity
-              style={[s.listRow, { justifyContent: "center", marginTop: 12 }]}
-              onPress={() => { setRepeatEnabled(false); setShowRepeatPicker(false); }}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.listRowTitle, { color: darkUI.moneyOut }]}>Don&apos;t repeat</Text>
-            </TouchableOpacity>
+
+                  {/* After X times */}
+                  <TouchableOpacity
+                    style={[s.listRow, s.listRowBorder]}
+                    onPress={() => { sfx.toggle(); setRepeatEndType("after_count"); }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={s.listRowTitle}>After</Text>
+                      {repeatEndType === "after_count" && (
+                        <TextInput
+                          style={s.customIntervalInput}
+                          value={repeatEndCount}
+                          onChangeText={(v) => setRepeatEndCount(v.replace(/[^0-9]/g, ""))}
+                          keyboardType="number-pad"
+                          maxLength={3}
+                          selectTextOnFocus
+                        />
+                      )}
+                      <Text style={s.listRowTitle}>
+                        {repeatEndType === "after_count" ? "times" : `${repeatEndCount} times`}
+                      </Text>
+                    </View>
+                    <View style={[s.radio, repeatEndType === "after_count" && s.radioOn]}>
+                      {repeatEndType === "after_count" && <View style={s.radioDot} />}
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* After X months */}
+                  <TouchableOpacity
+                    style={s.listRow}
+                    onPress={() => { sfx.toggle(); setRepeatEndType("after_months"); }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={s.listRowTitle}>After</Text>
+                      {repeatEndType === "after_months" && (
+                        <TextInput
+                          style={s.customIntervalInput}
+                          value={repeatEndMonths}
+                          onChangeText={(v) => setRepeatEndMonths(v.replace(/[^0-9]/g, ""))}
+                          keyboardType="number-pad"
+                          maxLength={3}
+                          selectTextOnFocus
+                        />
+                      )}
+                      <Text style={s.listRowTitle}>
+                        {repeatEndType === "after_months" ? "months" : `${repeatEndMonths} months`}
+                      </Text>
+                    </View>
+                    <View style={[s.radio, repeatEndType === "after_months" && s.radioOn]}>
+                      {repeatEndType === "after_months" && <View style={s.radioDot} />}
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+              </ScrollView>
+
+              {/* Done / Cancel buttons */}
+              <View style={[s.footer, { flexDirection: "row", gap: 10 }]}>
+                <TouchableOpacity
+                  style={[s.primaryBtnDark, { flex: 1 }]}
+                  onPress={() => { setRepeatEnabled(true); setShowRepeatPicker(false); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.primaryBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={{ alignItems: "center", paddingBottom: 8 }}
+                onPress={() => { setRepeatEnabled(false); setShowRepeatPicker(false); }}
+              >
+                <Text style={{ fontFamily: font.semibold, fontSize: 14, color: theme.negative }}>Don&apos;t repeat</Text>
+              </TouchableOpacity>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Add friend modal ── */}
@@ -1759,16 +1912,16 @@ export default function AddExpenseScreen() {
             <View style={s.modalHead}>
               <Text style={s.modalTitle}>Add friend</Text>
               <TouchableOpacity onPress={() => { setShowAddFriend(false); setNewFriendPhone(""); }}>
-                <Ionicons name="close" size={22} color={darkUI.labelMuted} />
+                <Ionicons name="close" size={22} color={theme.textTertiary} />
               </TouchableOpacity>
             </View>
-            <TextInput style={s.modalIn} value={newFriendName} onChangeText={setNewFriendName} placeholder="Name" placeholderTextColor={darkUI.labelMuted} maxLength={100} />
+            <TextInput style={s.modalIn} value={newFriendName} onChangeText={setNewFriendName} placeholder="Name" placeholderTextColor={theme.textTertiary} maxLength={100} />
             <TextInput
               style={[s.modalIn, { marginTop: 10 }]}
               value={newFriendEmail}
               onChangeText={setNewFriendEmail}
               placeholder="Email (optional)"
-              placeholderTextColor={darkUI.labelMuted}
+              placeholderTextColor={theme.textTertiary}
               keyboardType="email-address"
               autoCapitalize="none"
               maxLength={254}
@@ -1778,7 +1931,7 @@ export default function AddExpenseScreen() {
               value={newFriendPhone}
               onChangeText={setNewFriendPhone}
               placeholder="Phone (optional)"
-              placeholderTextColor={darkUI.labelMuted}
+              placeholderTextColor={theme.textTertiary}
               keyboardType="phone-pad"
               maxLength={30}
             />
@@ -1799,7 +1952,7 @@ export default function AddExpenseScreen() {
           <Pressable style={s.sheetCard} onPress={(e) => e.stopPropagation()}>
             <View style={s.sheetHandle} />
             <View style={s.sheetHeader}>
-              <Ionicons name="checkmark-circle" size={36} color="#3A7D44" />
+              <Ionicons name="checkmark-circle" size={36} color={theme.success} />
               <Text style={s.sheetTitle}>Expense saved</Text>
               <Text style={s.sheetSub}>
                 ${total.toFixed(2)} · {description.trim() || "Expense"} · {targetLabel}
@@ -1822,7 +1975,7 @@ export default function AddExpenseScreen() {
               disabled={!venmoOther}
               activeOpacity={0.85}
             >
-              <Ionicons name="logo-usd" size={18} color={darkUI.label} />
+              <Ionicons name="logo-usd" size={18} color={theme.text} />
               <Text style={s.sheetBtnOutlineTxt}>{venmoOther ? "Request with Venmo" : "Venmo not linked"}</Text>
             </TouchableOpacity>
 
@@ -1831,7 +1984,7 @@ export default function AddExpenseScreen() {
               disabled
               activeOpacity={0.85}
             >
-              <Ionicons name="logo-paypal" size={18} color={darkUI.label} />
+              <Ionicons name="logo-paypal" size={18} color={theme.text} />
               <Text style={s.sheetBtnOutlineTxt}>PayPal (coming soon)</Text>
             </TouchableOpacity>
 
@@ -1845,37 +1998,38 @@ export default function AddExpenseScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: darkUI.bg },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: darkUI.bg },
+function createStyles(theme: ThemeColors, isDark: boolean) {
+return StyleSheet.create({
+  root: { flex: 1, backgroundColor: theme.background },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.background },
 
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   headerSide: { width: 44, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 17, fontFamily: font.black, color: darkUI.label, textAlign: "center" },
+  headerTitle: { flex: 1, fontSize: 17, fontFamily: font.black, color: theme.text, textAlign: "center" },
 
   body: { paddingHorizontal: 20, paddingBottom: 40 },
   footer: { paddingHorizontal: 20, paddingBottom: 34, paddingTop: 10 },
 
-  secLabel: { fontSize: 11, fontFamily: font.extrabold, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
+  secLabel: { fontSize: 11, fontFamily: font.extrabold, color: theme.textTertiary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
 
   // Search bar (step 1)
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, height: 44,
-    backgroundColor: darkUI.card, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke, marginBottom: 16,
+    backgroundColor: theme.card, borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder, marginBottom: 16,
   },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: font.regular, color: darkUI.label },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: font.regular, color: theme.text },
 
   // List card (shared)
-  listCard: { backgroundColor: darkUI.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: darkUI.stroke, overflow: "hidden" },
+  listCard: { backgroundColor: theme.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: theme.cardBorder, overflow: "hidden" },
   listRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
-  listRowBorder: { borderBottomWidth: 1, borderBottomColor: darkUI.sep },
-  listRowTitle: { fontSize: 15, fontFamily: font.semibold, color: darkUI.label },
-  listRowSub: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
+  listRowBorder: { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+  listRowTitle: { fontSize: 15, fontFamily: font.semibold, color: theme.text },
+  listRowSub: { fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, marginTop: 1 },
 
   // Group icon (step 1)
   groupEmoji: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.cardBorder,
     alignItems: "center", justifyContent: "center",
   },
   groupIconImg: {
@@ -1890,186 +2044,213 @@ const s = StyleSheet.create({
   friendAvatarTxt: { fontSize: 14, fontFamily: font.bold },
 
   // Radio button
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: darkUI.stroke, alignItems: "center", justifyContent: "center" },
-  radioOn: { borderColor: darkUI.label, backgroundColor: darkUI.label },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: theme.cardBorder, alignItems: "center", justifyContent: "center" },
+  radioOn: { borderColor: theme.text, backgroundColor: theme.text },
   radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
 
   // Add friend row
   addFriendRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16 },
-  addFriendTxt: { fontFamily: font.semibold, fontSize: 15, color: colors.primary },
+  addFriendTxt: { fontFamily: font.semibold, fontSize: 15, color: isDark ? theme.accent : theme.primary },
 
   // Unified compose: person row
   withRow: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 20, paddingVertical: 10, gap: 6 },
-  withLabel: { fontFamily: font.medium, fontSize: 14, color: darkUI.labelSecondary, lineHeight: 26 },
+  withLabel: { fontFamily: font.medium, fontSize: 14, color: theme.textSecondary, lineHeight: 26 },
   withChipsWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
   withChip: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: darkUI.bgElevated, borderRadius: 14,
+    backgroundColor: theme.surfaceSecondary, borderRadius: 14,
     paddingLeft: 8, paddingRight: 4, paddingVertical: 3,
-    borderWidth: 1, borderColor: darkUI.stroke,
+    borderWidth: 1, borderColor: theme.cardBorder,
   },
-  inlineSearchInput: { flex: 1, minWidth: 80, fontSize: 14, fontFamily: font.regular, color: darkUI.label, paddingVertical: 2 },
-  withDivider: { height: 1, backgroundColor: darkUI.sep, marginHorizontal: 20 },
+  inlineSearchInput: { flex: 1, minWidth: 80, fontSize: 14, fontFamily: font.regular, color: theme.text, paddingVertical: 2 },
+  withDivider: { height: 1, backgroundColor: theme.borderLight, marginHorizontal: 20 },
 
   // Unified compose: compact form
   compactForm: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   compactRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
   compactIcon: { width: 32, alignItems: "center", justifyContent: "center" },
-  compactDescInput: { flex: 1, fontSize: 16, fontFamily: font.semibold, color: darkUI.label },
-  compactSep: { height: 1, backgroundColor: darkUI.sep, marginLeft: 44 },
-  compactAmountInput: { flex: 1, fontSize: 28, fontFamily: font.bold, color: darkUI.label },
+  compactDescInput: { flex: 1, fontSize: 16, fontFamily: font.semibold, color: theme.text },
+  compactSep: { height: 1, backgroundColor: theme.borderLight, marginLeft: 44 },
+  compactAmountInput: { flex: 1, fontSize: 28, fontFamily: font.bold, color: theme.text },
 
   splitChipRow: {
     alignSelf: "center", marginTop: 20, paddingVertical: 10, paddingHorizontal: 16,
-    backgroundColor: darkUI.card, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.card, borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
   },
-  splitChipText: { fontSize: 13, fontFamily: font.medium, color: darkUI.labelSecondary },
+  splitChipText: { fontSize: 13, fontFamily: font.medium, color: theme.textSecondary },
 
   // Repeat toggle
   repeatRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     marginTop: 20, paddingVertical: 12, paddingHorizontal: 16,
-    backgroundColor: darkUI.card, borderRadius: radii.lg,
-    borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.card, borderRadius: radii.lg,
+    borderWidth: 1, borderColor: theme.cardBorder,
   },
   repeatRowActive: {
-    borderColor: colors.primary, backgroundColor: darkUI.bgElevated,
+    borderColor: isDark ? theme.accent : theme.primary, backgroundColor: theme.surfaceSecondary,
   },
   repeatLabel: {
-    flex: 1, fontSize: 14, fontFamily: font.semibold, color: darkUI.label,
+    flex: 1, fontSize: 14, fontFamily: font.semibold, color: theme.text,
   },
   repeatFreqChip: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 10, paddingVertical: 5,
-    backgroundColor: darkUI.bgElevated, borderRadius: 8,
-    borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.surfaceSecondary, borderRadius: 8,
+    borderWidth: 1, borderColor: theme.cardBorder,
   },
   repeatFreqText: {
-    fontSize: 12, fontFamily: font.bold, color: darkUI.labelSecondary,
+    fontSize: 12, fontFamily: font.bold, color: theme.textSecondary,
+  },
+  customIntervalRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginTop: 12, paddingHorizontal: 4,
+  },
+  customIntervalLabel: {
+    fontSize: 14, fontFamily: font.semibold, color: theme.text,
+  },
+  customIntervalInput: {
+    width: 52, fontSize: 16, fontFamily: font.bold, color: theme.text,
+    textAlign: "center", paddingVertical: 6,
+    backgroundColor: theme.surfaceSecondary, borderRadius: 8,
+    borderWidth: 1, borderColor: theme.cardBorder,
+  },
+  unitChip: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 8, borderWidth: 1, borderColor: theme.cardBorder,
+    backgroundColor: theme.card,
+  },
+  unitChipActive: {
+    borderColor: isDark ? theme.accent : theme.primary, backgroundColor: theme.surfaceSecondary,
+  },
+  unitChipText: {
+    fontSize: 13, fontFamily: font.semibold, color: theme.textTertiary,
+  },
+  unitChipTextActive: {
+    color: theme.text,
   },
 
   // Step 2: text field
   textField: {
-    backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
-    paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontFamily: font.semibold, color: darkUI.label,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.cardBorder, borderRadius: radii["2xl"],
+    paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontFamily: font.semibold, color: theme.text,
   },
   categoryChipsScroll: { marginHorizontal: -4, flexGrow: 0 },
   categoryChipsContent: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2, paddingHorizontal: 4 },
   categoryChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
-    backgroundColor: darkUI.card, flexShrink: 0,
+    borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
+    backgroundColor: theme.card, flexShrink: 0,
   },
   categoryChipSelected: {
-    borderColor: colors.primary, backgroundColor: darkUI.bgElevated,
+    borderColor: isDark ? theme.accent : theme.primary, backgroundColor: theme.surfaceSecondary,
   },
-  categoryChipLabel: { fontSize: 13, fontFamily: font.semibold, color: darkUI.labelSecondary, maxWidth: 140 },
-  categoryChipLabelSelected: { color: darkUI.label },
+  categoryChipLabel: { fontSize: 13, fontFamily: font.semibold, color: theme.textSecondary, maxWidth: 140 },
+  categoryChipLabelSelected: { color: theme.text },
   notesField: {
-    backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.cardBorder, borderRadius: radii["2xl"],
     paddingHorizontal: 16, paddingVertical: 12, minHeight: 72,
-    fontSize: 14, fontFamily: font.regular, color: darkUI.label,
+    fontSize: 14, fontFamily: font.regular, color: theme.text,
   },
   amountField: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: darkUI.card, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii["2xl"],
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.cardBorder, borderRadius: radii["2xl"],
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  amountPrefix: { fontSize: 20, fontFamily: font.bold, color: darkUI.labelSecondary },
-  amountFieldInput: { flex: 1, fontSize: 24, fontFamily: font.bold, color: darkUI.label },
+  amountPrefix: { fontSize: 20, fontFamily: font.bold, color: theme.textSecondary },
+  amountFieldInput: { flex: 1, fontSize: 24, fontFamily: font.bold, color: theme.text },
 
   // Paid by + split row (step 2)
   paidSplitRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap",
     gap: 4, paddingVertical: 16, paddingHorizontal: 18, marginTop: 24,
-    backgroundColor: darkUI.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: theme.cardBorder,
   },
   paidSplitChip: {
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
-    backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.cardBorder,
   },
-  paidSplitChipTxt: { fontSize: 13, fontFamily: font.bold, color: darkUI.label },
+  paidSplitChipTxt: { fontSize: 13, fontFamily: font.bold, color: theme.text },
 
-  eqHint: { textAlign: "center", fontFamily: font.bold, fontSize: 14, color: darkUI.labelMuted, marginTop: 8 },
+  eqHint: { textAlign: "center", fontFamily: font.bold, fontSize: 14, color: theme.textTertiary, marginTop: 8 },
 
   // Step 3: expense card
   expenseCard: {
-    backgroundColor: darkUI.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: theme.cardBorder,
     padding: 20,
   },
-  expenseCardLabel: { fontSize: 11, fontFamily: font.extrabold, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
-  expenseCardAmount: { fontSize: 32, fontFamily: font.black, color: darkUI.label, letterSpacing: -1 },
-  expenseCardDesc: { fontSize: 15, fontFamily: font.semibold, color: darkUI.label, marginTop: 4 },
-  expenseCardMeta: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 4 },
-  expenseCardNotes: { fontSize: 13, fontFamily: font.regular, color: darkUI.labelSecondary, lineHeight: 18 },
+  expenseCardLabel: { fontSize: 11, fontFamily: font.extrabold, color: theme.textTertiary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  expenseCardAmount: { fontSize: 32, fontFamily: font.black, color: theme.text, letterSpacing: -1 },
+  expenseCardDesc: { fontSize: 15, fontFamily: font.semibold, color: theme.text, marginTop: 4 },
+  expenseCardMeta: { fontSize: 13, fontFamily: font.regular, color: theme.textTertiary, marginTop: 4 },
+  expenseCardNotes: { fontSize: 13, fontFamily: font.regular, color: theme.textSecondary, lineHeight: 18 },
 
   // Step 3: owe rows
   oweRow: { paddingVertical: 12, paddingHorizontal: 8 },
   oweTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  oweAmount: { fontSize: 18, fontFamily: font.black, color: darkUI.label },
+  oweAmount: { fontSize: 18, fontFamily: font.black, color: theme.text },
   tapToPayBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     paddingVertical: 12, borderRadius: radii.lg,
-    backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.cardBorder,
   },
-  tapToPayBtnTxt: { fontSize: 13, fontFamily: font.bold, color: darkUI.labelSecondary },
+  tapToPayBtnTxt: { fontSize: 13, fontFamily: font.bold, color: theme.textSecondary },
 
   // Picker / modal headers
   pickerHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, marginBottom: 16 },
-  pickerTitle: { fontSize: 20, fontFamily: font.black, color: darkUI.label },
+  pickerTitle: { fontSize: 20, fontFamily: font.black, color: theme.text },
 
   // Split method rows
   splitMethodRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 16, paddingHorizontal: 12 },
-  splitMethodIcon: { width: 40, height: 40, borderRadius: radii.lg, backgroundColor: darkUI.bgElevated, alignItems: "center", justifyContent: "center" },
+  splitMethodIcon: { width: 40, height: 40, borderRadius: radii.lg, backgroundColor: theme.surfaceSecondary, alignItems: "center", justifyContent: "center" },
 
   // Split detail
   splitDetailRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 12 },
   splitDetailInputWrap: {
-    width: 80, backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke,
+    width: 80, backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.cardBorder,
     borderRadius: radii.lg, paddingHorizontal: 12,
   },
-  splitDetailInput: { fontSize: 16, fontFamily: font.bold, color: darkUI.label, paddingVertical: 8, textAlign: "right" },
+  splitDetailInput: { fontSize: 16, fontFamily: font.bold, color: theme.text, paddingVertical: 8, textAlign: "right" },
   remainingRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     marginTop: 16, marginHorizontal: 4, paddingVertical: 16, paddingHorizontal: 16,
-    backgroundColor: darkUI.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: theme.cardBorder,
   },
-  remainingLabel: { fontSize: 13, fontFamily: font.extrabold, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.8 },
-  remainingValue: { fontSize: 18, fontFamily: font.black, color: darkUI.label },
+  remainingLabel: { fontSize: 13, fontFamily: font.extrabold, color: theme.textTertiary, textTransform: "uppercase", letterSpacing: 0.8 },
+  remainingValue: { fontSize: 18, fontFamily: font.black, color: theme.text },
 
   // Dup warning
   dupBanner: { flexDirection: "row", flexWrap: "wrap", gap: 10, backgroundColor: "rgba(251,191,36,0.12)", borderWidth: 1, borderColor: "rgba(251,191,36,0.4)", borderRadius: radii.lg, padding: 12, marginTop: 16 },
-  dupText: { flex: 1, fontSize: 13, fontFamily: font.regular, color: darkUI.labelSecondary, lineHeight: 18 },
+  dupText: { flex: 1, fontSize: 13, fontFamily: font.regular, color: theme.textSecondary, lineHeight: 18 },
   dupSaveAnyway: { marginTop: 6, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8, backgroundColor: prototype.amber },
   dupSaveAnywayTxt: { fontSize: 13, fontFamily: font.bold, color: "#fff" },
 
   bankContextCard: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: darkUI.bgElevated, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
+    backgroundColor: theme.surfaceSecondary, borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
     paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16,
   },
-  bankContextMerchant: { fontSize: 14, fontFamily: font.bold, color: darkUI.label },
-  bankContextMeta: { fontSize: 12, fontFamily: font.regular, color: darkUI.labelMuted, marginTop: 1 },
-  bankContextAmt: { fontSize: 16, fontFamily: font.black, color: darkUI.label },
+  bankContextMerchant: { fontSize: 14, fontFamily: font.bold, color: theme.text },
+  bankContextMeta: { fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, marginTop: 1 },
+  bankContextAmt: { fontSize: 16, fontFamily: font.black, color: theme.text },
 
-  err: { fontFamily: font.medium, fontSize: 13, color: darkUI.moneyOut, marginTop: 8, textAlign: "center" },
+  err: { fontFamily: font.medium, fontSize: 13, color: theme.negative, marginTop: 8, textAlign: "center" },
 
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: colors.primary, paddingVertical: 16, borderRadius: radii.lg,
+    backgroundColor: isDark ? theme.text : theme.primary, paddingVertical: 16, borderRadius: radii.lg,
   },
   primaryBtnDark: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: darkUI.label, paddingVertical: 16, borderRadius: radii.lg,
+    backgroundColor: theme.text, paddingVertical: 16, borderRadius: radii.lg,
   },
-  primaryBtnText: { fontFamily: font.bold, fontSize: 16, color: "#fff" },
+  primaryBtnText: { fontFamily: font.bold, fontSize: 16, color: isDark ? theme.background : "#fff" },
 
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", paddingHorizontal: 24, zIndex: 20 },
-  modalCard: { backgroundColor: darkUI.card, borderRadius: radii["2xl"], padding: 20, borderWidth: 1, borderColor: darkUI.stroke },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.overlay, justifyContent: "center", paddingHorizontal: 24, zIndex: 20 },
+  modalCard: { backgroundColor: theme.card, borderRadius: radii["2xl"], padding: 20, borderWidth: 1, borderColor: theme.cardBorder },
   modalHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  modalTitle: { fontFamily: font.bold, fontSize: 18, color: darkUI.label },
-  modalIn: { backgroundColor: darkUI.bgElevated, borderWidth: 1, borderColor: darkUI.stroke, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontFamily: font.regular, color: darkUI.label },
+  modalTitle: { fontFamily: font.bold, fontSize: 18, color: theme.text },
+  modalIn: { backgroundColor: theme.surfaceSecondary, borderWidth: 1, borderColor: theme.cardBorder, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontFamily: font.regular, color: theme.text },
 
   inviteBtn: {
     paddingHorizontal: 12,
@@ -2086,25 +2267,26 @@ const s = StyleSheet.create({
   },
 
   // Settlement sheet
-  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  sheetCard: { backgroundColor: darkUI.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40 },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: darkUI.sep, alignSelf: "center", marginTop: 10, marginBottom: 16 },
+  sheetOverlay: { flex: 1, backgroundColor: theme.overlay, justifyContent: "flex-end" },
+  sheetCard: { backgroundColor: theme.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40 },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: theme.borderLight, alignSelf: "center", marginTop: 10, marginBottom: 16 },
   sheetHeader: { alignItems: "center", marginBottom: 20 },
-  sheetTitle: { fontFamily: font.black, fontSize: 22, color: darkUI.label, marginTop: 10 },
-  sheetSub: { fontFamily: font.regular, fontSize: 14, color: darkUI.labelSecondary, marginTop: 6, textAlign: "center" },
-  sheetHint: { fontFamily: font.extrabold, fontSize: 11, color: darkUI.labelMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
+  sheetTitle: { fontFamily: font.black, fontSize: 22, color: theme.text, marginTop: 10 },
+  sheetSub: { fontFamily: font.regular, fontSize: 14, color: theme.textSecondary, marginTop: 6, textAlign: "center" },
+  sheetHint: { fontFamily: font.extrabold, fontSize: 11, color: theme.textTertiary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
   sheetBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: colors.primary, paddingVertical: 16, borderRadius: radii.lg, marginBottom: 10,
+    backgroundColor: isDark ? theme.text : theme.primary, paddingVertical: 16, borderRadius: radii.lg, marginBottom: 10,
   },
-  sheetBtnTxt: { fontFamily: font.bold, fontSize: 16, color: "#fff" },
-  sheetBtnAmt: { fontFamily: font.regular, fontSize: 14, color: "rgba(255,255,255,0.7)" },
+  sheetBtnTxt: { fontFamily: font.bold, fontSize: 16, color: isDark ? theme.background : "#fff" },
+  sheetBtnAmt: { fontFamily: font.regular, fontSize: 14, color: isDark ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.7)" },
   sheetBtnOutline: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    paddingVertical: 14, borderRadius: radii.lg, borderWidth: 1, borderColor: darkUI.stroke,
-    backgroundColor: darkUI.card, marginBottom: 10,
+    paddingVertical: 14, borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
+    backgroundColor: theme.card, marginBottom: 10,
   },
-  sheetBtnOutlineTxt: { fontFamily: font.bold, fontSize: 15, color: darkUI.label },
+  sheetBtnOutlineTxt: { fontFamily: font.bold, fontSize: 15, color: theme.text },
   sheetDone: { alignItems: "center", marginTop: 8, paddingVertical: 12 },
-  sheetDoneTxt: { fontFamily: font.semibold, fontSize: 15, color: darkUI.labelSecondary },
+  sheetDoneTxt: { fontFamily: font.semibold, fontSize: 15, color: theme.textSecondary },
 });
+}
