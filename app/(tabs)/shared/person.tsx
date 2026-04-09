@@ -17,8 +17,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
-import { useApiFetch } from "../../../lib/api";
-import { usePersonDetail } from "../../../hooks/useGroups";
+import { useApiFetch, invalidateApiCache } from "../../../lib/api";
+import { usePersonDetail, clearMemSummaryCache } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
@@ -204,6 +204,10 @@ export default function PersonScreen() {
       if (anyFailed) {
         Alert.alert("Error", "Some settlements could not be recorded");
       } else {
+        invalidateApiCache("/api/groups/summary");
+        invalidateApiCache("/api/groups/person");
+        invalidateApiCache("/api/groups/recent-activity");
+        clearMemSummaryCache();
         DeviceEventEmitter.emit("groups-updated");
         goBack();
       }

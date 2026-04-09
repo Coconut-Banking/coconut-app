@@ -30,13 +30,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
-import { useApiFetch } from "../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
 import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchContactsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -587,8 +587,16 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => { void refetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { void refetch(); }),
+      DeviceEventEmitter.addListener("groups-updated", () => {
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
+        void refetch();
+      }),
+      DeviceEventEmitter.addListener("expense-added", () => {
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
+        void refetch();
+      }),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [isDemoOn, refetch]);
