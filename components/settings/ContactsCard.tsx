@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, Platform, Linking } from "react-native";
+import { View, Text, TouchableOpacity, Platform, Linking, Alert } from "react-native";
+import { useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
@@ -14,6 +15,20 @@ export function ContactsCard() {
     presentAccessPicker,
     loading,
   } = useDeviceContacts();
+
+  const handleAddMoreContacts = useCallback(async () => {
+    const result = await presentAccessPicker();
+    if (result === "unavailable") {
+      Alert.alert(
+        "Update Contact Access",
+        "To give Coconut access to more contacts, open Settings and change Contacts access to \"Full Access\".",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  }, [presentAccessPicker]);
 
   if (Platform.OS === "web") return null;
 
@@ -61,7 +76,7 @@ export function ContactsCard() {
           {accessPrivileges === "limited" ? (
             <TouchableOpacity
               style={s.linkRow}
-              onPress={presentAccessPicker}
+              onPress={handleAddMoreContacts}
             >
               <Ionicons name="person-add-outline" size={16} color={theme.text} />
               <Text style={[s.linkInline, { color: theme.accent }]}>

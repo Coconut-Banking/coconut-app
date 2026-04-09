@@ -154,15 +154,16 @@ export function useDeviceContacts() {
     }
   }, []);
 
-  const presentAccessPicker = useCallback(async () => {
+  const presentAccessPicker = useCallback(async (): Promise<"picker" | "settings" | "unavailable"> => {
     try {
       const mod = await getContacts();
-      if (!mod || typeof mod.presentAccessPickerAsync !== "function") return;
+      if (!mod || typeof mod.presentAccessPickerAsync !== "function") return "unavailable";
       await mod.presentAccessPickerAsync();
       _loadingContacts = false;
       await _loadContactsList();
+      return "picker";
     } catch {
-      /* iOS < 18 or unavailable — no-op */
+      return "unavailable";
     }
   }, []);
 
