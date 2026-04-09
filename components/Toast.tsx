@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback, useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { Text, StyleSheet, Animated, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { font } from "../lib/theme";
@@ -41,26 +41,39 @@ const ICON_COLOR: Record<ToastVariant, string> = {
   info: "#93C5FD",
 };
 
-const AUTO_DISMISS_MS = 2800;
+const AUTO_DISMISS_MS = 3200;
 
 function ToastBanner({ toast }: { toast: ToastState }) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const translateY = useRef(new Animated.Value(-140)).current;
+  const scale = useRef(new Animated.Value(0.85)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 8, tension: 80 }),
-      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 65,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 100,
+      }),
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
     ]).start();
-  }, [translateY, opacity]);
+  }, [translateY, scale, opacity]);
 
   const dismiss = useCallback(() => {
     Animated.parallel([
-      Animated.timing(translateY, { toValue: -120, duration: 250, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: -140, duration: 280, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 0.9, duration: 280, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
     ]).start();
-  }, [translateY, opacity]);
+  }, [translateY, scale, opacity]);
 
   useEffect(() => {
     const timer = setTimeout(dismiss, AUTO_DISMISS_MS);
@@ -72,15 +85,15 @@ function ToastBanner({ toast }: { toast: ToastState }) {
       style={[
         s.banner,
         {
-          top: insets.top + 8,
+          top: insets.top + 10,
           backgroundColor: BG_MAP[toast.variant],
-          transform: [{ translateY }],
+          transform: [{ translateY }, { scale }],
           opacity,
         },
       ]}
       pointerEvents="none"
     >
-      <Ionicons name={ICON_MAP[toast.variant]} size={20} color={ICON_COLOR[toast.variant]} />
+      <Ionicons name={ICON_MAP[toast.variant]} size={24} color={ICON_COLOR[toast.variant]} />
       <Text style={s.text} numberOfLines={2}>{toast.message}</Text>
     </Animated.View>
   );
@@ -93,10 +106,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const show = useCallback((message: string, variant: ToastVariant = "success") => {
     keyRef.current += 1;
     setToast({ message, variant, key: keyRef.current });
-    if (variant === "success") sfx.success();
+    if (variant === "success") sfx.coin();
     else if (variant === "error") sfx.error();
     else sfx.pop();
-    setTimeout(() => setToast(null), AUTO_DISMISS_MS + 400);
+    setTimeout(() => setToast(null), AUTO_DISMISS_MS + 500);
   }, []);
 
   return (
@@ -110,25 +123,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 const s = StyleSheet.create({
   banner: {
     position: "absolute",
-    left: 16,
-    right: 16,
+    left: 14,
+    right: 14,
     zIndex: 9999,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderRadius: 16,
     ...Platform.select({
-      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12 },
-      android: { elevation: 8 },
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 16 },
+      android: { elevation: 12 },
     }),
   },
   text: {
     flex: 1,
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15.5,
     fontFamily: font.semibold,
-    lineHeight: 19,
+    lineHeight: 21,
+    letterSpacing: 0.1,
   },
 });
