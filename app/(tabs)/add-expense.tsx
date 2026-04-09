@@ -1074,13 +1074,7 @@ export default function AddExpenseScreen() {
               </TouchableOpacity>
               <Text style={s.headerTitle}>Add an expense</Text>
               <TouchableOpacity
-                onPress={async () => {
-                  await save();
-                  if (savedRef.current) {
-                    resetForm();
-                    nav.back();
-                  }
-                }}
+                onPress={() => save()}
                 hitSlop={12}
                 style={s.headerSide}
                 disabled={!canSave || saving || justSaved}
@@ -1525,13 +1519,7 @@ export default function AddExpenseScreen() {
             <View style={s.footer}>
               <TouchableOpacity
                 style={[s.primaryBtnDark, (saving || justSaved) && { opacity: justSaved ? 1 : 0.6 }, justSaved && { backgroundColor: theme.success }]}
-                onPress={async () => {
-                  await save();
-                  if (savedRef.current) {
-                    resetForm();
-                    nav.back();
-                  }
-                }}
+                onPress={() => save()}
                 disabled={saving || justSaved}
                 activeOpacity={0.85}
               >
