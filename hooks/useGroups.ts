@@ -24,6 +24,9 @@ export interface FriendBalance {
   balances: Array<{ currency: string; amount: number }>;
   lastActivityAt?: string | null;
   image_url?: string | null;
+  /** Pre-resolved friend group ID (2-person "friend" type group). Eliminates /api/groups/person round trip. */
+  friendGroupId?: string;
+  friendGroupMembers?: Array<{ id: string; user_id: string | null; display_name: string }>;
 }
 
 export interface CurrencyTotalsRow {
@@ -283,12 +286,15 @@ export function usePrefetchContactsSummary(delayMs = 0) {
   }, [apiFetch, delayMs]);
 }
 
+const _memGroupDetail = new Map<string, GroupDetail>();
+
 export function useGroupDetail(id: string | null) {
   const apiFetch = useApiFetch();
-  const [detail, setDetail] = useState<GroupDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = id ? _memGroupDetail.get(id) ?? null : null;
+  const [detail, setDetail] = useState<GroupDetail | null>(cached);
+  const [loading, setLoading] = useState(!cached);
   const prevId = useRef(id);
-  const hasDetail = useRef(false);
+  const hasDetail = useRef(!!cached);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -308,6 +314,7 @@ export function useGroupDetail(id: string | null) {
         }
         if (res.ok) {
           const data = await res.json();
+          _memGroupDetail.set(id, data);
           setDetail(data);
           hasDetail.current = true;
         } else if (!hasDetail.current) {
@@ -322,11 +329,18 @@ export function useGroupDetail(id: string | null) {
 
   useEffect(() => {
     if (prevId.current !== id) {
-      setDetail(null);
-      hasDetail.current = false;
+      const mem = id ? _memGroupDetail.get(id) ?? null : null;
+      if (mem) {
+        setDetail(mem);
+        hasDetail.current = true;
+        setLoading(false);
+      } else {
+        setDetail(null);
+        hasDetail.current = false;
+      }
       prevId.current = id;
     }
-    fetchDetail();
+    fetchDetail(hasDetail.current);
   }, [fetchDetail, id]);
 
   return { detail, loading, refetch: fetchDetail };
@@ -336,12 +350,15 @@ const PERSON_POLL_BASE_MS = 30_000;
 const PERSON_POLL_MID_MS = 60_000;
 const PERSON_POLL_SLOW_MS = 120_000;
 
+const _memPersonDetail = new Map<string, PersonDetail>();
+
 export function usePersonDetail(key: string | null) {
   const apiFetch = useApiFetch();
-  const [detail, setDetail] = useState<PersonDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = key ? _memPersonDetail.get(key) ?? null : null;
+  const [detail, setDetail] = useState<PersonDetail | null>(cached);
+  const [loading, setLoading] = useState(!cached);
   const prevKey = useRef(key);
-  const hasDetail = useRef(false);
+  const hasDetail = useRef(!!cached);
   const pollCount = useRef(0);
 
   const fetchDetail = useCallback(
@@ -359,6 +376,7 @@ export function usePersonDetail(key: string | null) {
         );
         if (res.ok) {
           const data = await res.json();
+          _memPersonDetail.set(key, data);
           setDetail(data);
           hasDetail.current = true;
         } else if (!hasDetail.current) {
@@ -373,7 +391,7 @@ export function usePersonDetail(key: string | null) {
 
   const refetch = useCallback(
     (silent = false) => {
-      pollCount.current = 0; // reset adaptive interval on user interaction
+      pollCount.current = 0;
       return fetchDetail(silent);
     },
     [fetchDetail]
@@ -381,12 +399,19 @@ export function usePersonDetail(key: string | null) {
 
   useEffect(() => {
     if (prevKey.current !== key) {
-      setDetail(null);
-      hasDetail.current = false;
+      const mem = key ? _memPersonDetail.get(key) ?? null : null;
+      if (mem) {
+        setDetail(mem);
+        hasDetail.current = true;
+        setLoading(false);
+      } else {
+        setDetail(null);
+        hasDetail.current = false;
+      }
       prevKey.current = key;
       pollCount.current = 0;
     }
-    fetchDetail();
+    fetchDetail(hasDetail.current);
   }, [fetchDetail, key]);
 
   useEffect(() => {
@@ -433,12 +458,15 @@ export interface TransactionDetail {
   receiptUrl: string | null;
 }
 
+const _memTxDetail = new Map<string, TransactionDetail>();
+
 export function useTransactionDetail(id: string | null) {
   const apiFetch = useApiFetch();
-  const [detail, setDetail] = useState<TransactionDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = id ? _memTxDetail.get(id) ?? null : null;
+  const [detail, setDetail] = useState<TransactionDetail | null>(cached);
+  const [loading, setLoading] = useState(!cached);
   const prevId = useRef(id);
-  const hasDetail = useRef(false);
+  const hasDetail = useRef(!!cached);
 
   const fetchDetail = useCallback(
     async (silent = false) => {
@@ -452,7 +480,9 @@ export function useTransactionDetail(id: string | null) {
       try {
         const res = await apiFetch(`/api/groups/transaction?id=${encodeURIComponent(id)}`);
         if (res.ok) {
-          setDetail(await res.json());
+          const data = await res.json();
+          _memTxDetail.set(id, data);
+          setDetail(data);
           hasDetail.current = true;
         } else if (!silent) {
           setDetail(null);
@@ -467,11 +497,18 @@ export function useTransactionDetail(id: string | null) {
 
   useEffect(() => {
     if (prevId.current !== id) {
-      setDetail(null);
-      hasDetail.current = false;
+      const mem = id ? _memTxDetail.get(id) ?? null : null;
+      if (mem) {
+        setDetail(mem);
+        hasDetail.current = true;
+        setLoading(false);
+      } else {
+        setDetail(null);
+        hasDetail.current = false;
+      }
       prevId.current = id;
     }
-    fetchDetail();
+    fetchDetail(hasDetail.current);
   }, [fetchDetail, id]);
 
   return { detail, loading, refetch: fetchDetail };

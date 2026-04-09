@@ -255,6 +255,9 @@ export default function AddExpenseScreen() {
     setNotes("");
     setShowSettlement(false);
     setRetryCount(0);
+    setRepeatEnabled(false);
+    setRepeatFrequency("monthly");
+    setShowRepeatPicker(false);
     savedRef.current = false;
     touchedSplitKeysRef.current = new Set();
     setJustSaved(false);
@@ -894,6 +897,22 @@ export default function AddExpenseScreen() {
           payerMemberId: effPayer,
           shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
         });
+        if (repeatEnabled && resolvedGroupId) {
+          const personKey = targets.length === 1 && targets[0].type === "friend" ? targets[0].key : undefined;
+          apiFetch("/api/recurring-expenses", {
+            method: "POST",
+            body: {
+              groupId: resolvedGroupId,
+              personKey,
+              amount: total,
+              description: desc,
+              frequency: repeatFrequency,
+              iso_currency_code: currencyCode,
+            },
+          }).then(() => {
+            toast.show(`Will repeat ${repeatFrequency}`);
+          }).catch(() => {});
+        }
       } else {
         savedRef.current = false;
         setError(data?.error || "Failed to save");
@@ -1276,31 +1295,41 @@ export default function AddExpenseScreen() {
                   </ScrollView>
                 </ScrollView>
 
-                {/* Bottom toolbar */}
-                <View style={s.bottomBar}>
-                  <View style={s.bottomBarItem}>
-                    <Ionicons name="calendar-outline" size={16} color={darkUI.labelSecondary} />
-                    <Text style={s.bottomBarText}>Today</Text>
-                  </View>
-                  <View style={s.bottomBarItem}>
-                    <Ionicons name="people-outline" size={16} color={darkUI.labelSecondary} />
-                    <Text style={s.bottomBarText} numberOfLines={1}>
-                      {targets.length > 0 && targets[0].type === "group" ? targets[0].name : "No group"}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }} />
-                  <TouchableOpacity style={s.bottomBarIcon} activeOpacity={0.7}>
-                    <Ionicons name="camera-outline" size={20} color={darkUI.labelSecondary} />
-                  </TouchableOpacity>
+                {/* Repeat toggle */}
+                <View style={{ paddingHorizontal: 20, paddingBottom: 16 }}>
                   <TouchableOpacity
-                    style={s.bottomBarIcon}
-                    activeOpacity={0.7}
+                    style={[s.repeatRow, repeatEnabled && s.repeatRowActive]}
                     onPress={() => {
-                      const notesEl = descInputRef.current;
-                      if (notesEl) notesEl.focus();
+                      sfx.toggle();
+                      if (repeatEnabled) {
+                        setRepeatEnabled(false);
+                      } else {
+                        setRepeatEnabled(true);
+                        setShowRepeatPicker(true);
+                      }
                     }}
+                    activeOpacity={0.75}
                   >
-                    <Ionicons name="create-outline" size={20} color={darkUI.labelSecondary} />
+                    <Ionicons
+                      name={repeatEnabled ? "repeat" : "repeat-outline"}
+                      size={18}
+                      color={repeatEnabled ? colors.primary : darkUI.labelMuted}
+                    />
+                    <Text style={s.repeatLabel}>
+                      {repeatEnabled ? "Repeats" : "Repeat this expense"}
+                    </Text>
+                    {repeatEnabled && (
+                      <TouchableOpacity
+                        style={s.repeatFreqChip}
+                        onPress={() => setShowRepeatPicker(true)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={s.repeatFreqText}>
+                          {repeatFrequency === "weekly" ? "Weekly" : repeatFrequency === "biweekly" ? "Every 2 weeks" : "Monthly"}
+                        </Text>
+                        <Ionicons name="chevron-down" size={12} color={darkUI.labelMuted} />
+                      </TouchableOpacity>
+                    )}
                   </TouchableOpacity>
                 </View>
               </>
@@ -1641,6 +1670,58 @@ export default function AddExpenseScreen() {
           </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Repeat frequency picker ── */}
+      <Modal visible={showRepeatPicker} transparent animationType="slide" onRequestClose={() => setShowRepeatPicker(false)}>
+        <Pressable style={s.sheetOverlay} onPress={() => setShowRepeatPicker(false)}>
+          <Pressable style={s.sheetCard} onPress={(e) => e.stopPropagation()}>
+            <View style={s.sheetHandle} />
+            <View style={s.pickerHead}>
+              <Text style={s.pickerTitle}>Repeat frequency</Text>
+              <TouchableOpacity onPress={() => setShowRepeatPicker(false)} hitSlop={12}>
+                <Ionicons name="close" size={20} color={darkUI.labelMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={s.listCard}>
+              {([
+                { key: "weekly" as RepeatFrequency, label: "Every week", desc: "Same day each week" },
+                { key: "biweekly" as RepeatFrequency, label: "Every 2 weeks", desc: "Same day, every other week" },
+                { key: "monthly" as RepeatFrequency, label: "Every month", desc: "Same date each month" },
+              ]).map((opt, i) => {
+                const selected = repeatFrequency === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[s.listRow, i < 2 && s.listRowBorder]}
+                    onPress={() => {
+                      sfx.toggle();
+                      setRepeatFrequency(opt.key);
+                      setRepeatEnabled(true);
+                      setShowRepeatPicker(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.listRowTitle}>{opt.label}</Text>
+                      <Text style={s.listRowSub}>{opt.desc}</Text>
+                    </View>
+                    <View style={[s.radio, selected && s.radioOn]}>
+                      {selected && <View style={s.radioDot} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              style={[s.listRow, { justifyContent: "center", marginTop: 12 }]}
+              onPress={() => { setRepeatEnabled(false); setShowRepeatPicker(false); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.listRowTitle, { color: darkUI.moneyOut }]}>Don&apos;t repeat</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* ── Add friend modal ── */}
