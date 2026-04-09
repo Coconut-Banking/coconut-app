@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "coconut-app",
+    "name": "Coconut",
     "slug": "coconut-app",
     "version": "1.0.0",
+    "scheme": "coconut",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +13,25 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.coconut.app",
+      "buildNumber": "2",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["venmo", "cashapp", "paypal", "paypalme"],
+        "NSCameraUsageDescription": "Coconut uses your camera to take group photos and scan receipts.",
+        "NSPhotoLibraryUsageDescription": "Coconut uses your photo library to select group photos and receipts.",
+        "NSContactsUsageDescription": "Coconut uses your contacts to help you quickly add friends to split expenses with.",
+        "NSFaceIDUsageDescription": "Coconut uses Face ID to securely unlock the app and protect your financial data.",
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to supported card readers.",
+        "NSBluetoothPeripheralUsageDescription": "Bluetooth access is required in order to connect to supported bluetooth card readers.",
+        "NSLocalNetworkUsageDescription": "This app uses the local WiFi network to connect to supported card readers.",
+        "NSLocationWhenInUseUsageDescription": "Location access is required to accept payments."
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"],
+        "aps-environment": "production"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +44,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "newArchEnabled": true
+          }
+        }
+      ]
+    ]
   }
 }

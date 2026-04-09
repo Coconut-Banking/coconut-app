@@ -1,0 +1,84 @@
+---
+description: How to build and run coconut-app on a physical iPhone locally (corporate network workarounds included)
+alwaysApply: false
+---
+
+# Running coconut-app on a Physical iPhone
+
+## Environment constraints
+- Corporate network (Databricks) blocks `registry.npmjs.org` and `repo1.maven.org` via `/etc/hosts`
+- Use `--registry https://registry.npmmirror.com` for all `npm install` commands
+- Hermes prebuilt binaries must be downloaded manually (see below)
+- Device-to-device LAN is blocked — use `--tunnel` for Metro
+
+## Device IDs
+- **xcodebuild destination**: `id=00008150-000C5C8E3601401C`
+- **devicectl UDID**: `E7DF27D8-000A-51D5-A001-42797CBAB155`
+- **Bundle ID (dev build)**: `com.coconut.app.aaran`
+
+## Step 1 — Fix app.config.js before every build
+The `"react-native-reanimated"` expo plugin crashes the build on Node 20. Remove it before building (it's already applied to the native layer):
+```js
+// In app.config.js plugins array — remove this line:
+"react-native-reanimated",
+```
+
+## Step 2 — Build the native app
+```bash
+cd ~/coconut-app/ios
+RCT_HERMES_V1_ENABLED=1 xcodebuild \
+  -workspace Coconut.xcworkspace \
+  -scheme Coconut \
+  -configuration Debug \
+  -destination 'id=00008150-000C5C8E3601401C' \
+  build
+```
+Incremental builds finish in ~15-30s. First build takes longer.
+
+If `pod install` is needed (new deps), Hermes tarballs must be pre-downloaded:
+```bash
+# Get IP for blocked maven host
+MAVEN_IP=$(nslookup repo1.maven.org 8.8.8.8 | grep Address | tail -1 | awk '{print $2}')
+curl --resolve "repo1.maven.org:443:$MAVEN_IP" -L \
+  "https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.78.1/react-native-artifacts-0.78.1-hermes-framework-dSYM-debug.tar.gz" \
+  -o /tmp/hermes-debug.tar.gz
+# Then:
+HERMES_ENGINE_TARBALL_PATH=/tmp/hermes-debug.tar.gz pod install
+```
+
+## Step 3 — Install on device
+```bash
+xcrun devicectl device install app \
+  --device 00008150-000C5C8E3601401C \
+  ~/Library/Developer/Xcode/DerivedData/Coconut-*/Build/Products/Debug-iphoneos/Coconut.app
+```
+
+## Step 4 — Launch on device
+```bash
+xcrun devicectl device process launch \
+  --device 00008150-000C5C8E3601401C \
+  com.coconut.app.aaran
+```
+
+## Step 5 — Start Metro with tunnel (required — LAN is blocked)
+```bash
+# Install ngrok if needed (once):
+npm install -g @expo/ngrok@^4.1.0 --registry https://registry.npmmirror.com
+
+cd ~/coconut-app
+npx expo start --tunnel --clear
+```
+Get the tunnel URL:
+```bash
+curl -s http://localhost:4040/api/tunnels | python3 -c \
+  "import sys,json; [print(t['public_url']) for t in json.load(sys.stdin)['tunnels'] if 'http://' in t['public_url']]"
+```
+Enter the URL manually in the app's "No development servers found" screen.
+
+## Trusting the dev certificate (once per install)
+Settings → General → VPN & Device Management → your Apple ID → Trust
+
+## Key files
+- `.env` — contains all `EXPO_PUBLIC_*` vars, `EXPO_PUBLIC_API_URL=https://coconut-app.dev`
+- `ios/Podfile.properties.json` — `expo.jsEngine` must be `"hermes"`
+- Hermes tarballs cached at `/tmp/hermes-debug.tar.gz` and `/tmp/hermes-release.tar.gz`
