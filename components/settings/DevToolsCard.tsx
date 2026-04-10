@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { useApiFetch } from "../../lib/api";
 import { useSetup } from "../../lib/setup-context";
+import { resetSetupStep } from "../../app/setup";
 import { settingsStyles as s } from "./styles";
 
 export function DevToolsCard() {
@@ -268,6 +269,7 @@ export function DevToolsCard() {
                   {
                     text: "Re-run setup",
                     onPress: () => {
+                      resetSetupStep();
                       resetSetup();
                       router.replace("/setup");
                     },

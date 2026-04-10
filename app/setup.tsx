@@ -77,6 +77,11 @@ const STEPS: Step[] = ["bank", "splitwise", "stripe-connect", "email"];
 // Survives unmount/remount so hot reload preserves the current step.
 let _savedSetupStep = 0;
 
+/** Call this before navigating to /setup to force it to start at step 0. */
+export function resetSetupStep() {
+  _savedSetupStep = 0;
+}
+
 export default function SetupScreen() {
   const { theme } = useTheme();
   const { markSetupComplete } = useSetup();
