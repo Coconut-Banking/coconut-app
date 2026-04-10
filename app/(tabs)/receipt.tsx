@@ -617,8 +617,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
-            rs.computeSummary();
+            try {
+              await rs.saveAssignments();
+              rs.computeSummary();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Failed to save assignments");
+            }
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
         >
