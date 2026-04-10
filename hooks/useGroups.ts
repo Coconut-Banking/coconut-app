@@ -212,6 +212,15 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
     [apiFetch, summaryPath, contacts]
   );
 
+  // Clears local state immediately then refetches — use after mutations (e.g. settlements)
+  // so the UI doesn't show stale balances while the background fetch completes.
+  const forceRefetch = useCallback(() => {
+    _memSummary.delete(summaryPath);
+    setSummary(null);
+    setLoading(true);
+    void fetchSummary(false);
+  }, [fetchSummary, summaryPath]);
+
   useEffect(() => {
     retryCount.current = 0;
     let cancelled = false;
@@ -248,7 +257,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSummary]);
 
-  return { summary, loading, refetch: fetchSummary };
+  return { summary, loading, refetch: fetchSummary, forceRefetch };
 }
 
 /**
