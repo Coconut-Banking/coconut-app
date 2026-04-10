@@ -9,15 +9,20 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { useUser } from "@clerk/expo";
+import { useUser, useAuth } from "@clerk/expo";
+import { useRouter } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { useApiFetch } from "../../lib/api";
+import { useSetup } from "../../lib/setup-context";
 import { settingsStyles as s } from "./styles";
 
 export function DevToolsCard() {
   const { theme } = useTheme();
   const { user } = useUser();
+  const { signOut } = useAuth();
+  const router = useRouter();
   const apiFetch = useApiFetch();
+  const { resetSetup } = useSetup();
   const [devToolsOpen, setDevToolsOpen] = useState(false);
 
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -245,6 +250,67 @@ export function DevToolsCard() {
               {rematchResult}
             </Text>
           ) : null}
+
+          <TouchableOpacity
+            style={[
+              s.disconnectBtn,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surfaceSecondary,
+              },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "Re-run onboarding?",
+                "This will take you back to the start of the setup flow. Your data stays intact.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Re-run setup",
+                    onPress: () => {
+                      resetSetup();
+                      router.replace("/setup");
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[s.disconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+              Re-run onboarding
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              s.disconnectBtn,
+              {
+                borderColor: theme.warning,
+                backgroundColor: theme.surfaceSecondary,
+              },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "Sign out & restart?",
+                "Signs you out completely and resets the onboarding flow so you can test the full new user experience.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Sign out & restart",
+                    style: "destructive",
+                    onPress: async () => {
+                      resetSetup();
+                      await signOut();
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[s.disconnectBtnText, { color: theme.warning, fontSize: 14 }]}>
+              Sign out &amp; restart as new user
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[
