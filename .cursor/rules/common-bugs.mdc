@@ -7,29 +7,30 @@ globs:
 
 # Common Bug Patterns
 
-## API Response Handling
+## Async / API Error Handling
 
-- **Always check `res.ok` before calling `res.json()`** — error responses may return HTML or plain text bodies. Calling `.json()` first throws `SyntaxError: Unexpected token '<'`, which surfaces as a confusing error message. Pattern: `if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error ?? "fallback"); } const data = await res.json();`
+- Always capture the `Response` from `apiFetch()` — calling `await apiFetch(...)` without assigning the result silently discards HTTP errors (4xx/5xx), because `fetch()` does NOT throw on non-ok responses.
+- Always check `res.ok` before proceeding after an API call. If the server returns a 500 HTML error page, calling `.json()` first will throw a `SyntaxError` instead of a meaningful error.
+- Never use an empty `catch {}` or `catch { // stay on step }` — always set an error state so the user knows the operation failed. Silent failure is data loss waiting to happen.
+- When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
 
-- **Never ignore the return value of `apiFetch`** — `apiFetch` returns a `Response` and never throws. If you `await apiFetch(...)` without capturing the result and checking `res.ok`, errors are silently swallowed. Always: `const res = await apiFetch(...); if (!res.ok) { ... throw ... }`
+- Always check `res.ok` before calling `res.json()`. Use `await res.json().catch(() => ({}))` when reading error details from a non-ok response to handle non-JSON bodies safely.
+- `try { } finally { }` without a `catch` block does NOT swallow errors — they propagate — but it also doesn't handle them. Any async action that can fail user-visibly must have an explicit `catch` that sets an error state.
+- Never gate navigation/step-advance on an awaited async call without checking success: `await save(); advance()` silently advances even if `save()` throws (and is caught elsewhere). Capture a success boolean instead.
 
-- **Call `setLoading(false)` unconditionally in `finally`** — never gate it on a flag or success condition, or loading state will stick forever on error paths.
+## Config and Credentials
 
-## Error Propagation
-
-- **Never use empty `catch` blocks for user-facing async actions** — `catch { /* stay on screen */ }` gives users zero feedback and makes debugging impossible. Either re-throw (`throw e`) so the caller can `Alert.alert`, or set an error state and display it in the UI.
-
-- **Re-throw from try-finally hooks so callers can react** — hooks that wrap API calls in `try/finally` without `catch` (or with a silent catch) prevent callers from knowing the call failed. If the hook's caller needs to take action on failure (e.g. don't navigate), the hook must throw.
+- Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
+- Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
 
 ## Payment Amounts
 
 - **Stripe expects amounts in cents (integer)** — always convert user-entered dollar amounts with `Math.round(dollars * 100)` before sending to any Stripe API. Sending `25.0` instead of `2500` charges $0.25 instead of $25.00.
 
-## Auth / Security
+## Timeout Protection for Auth
 
-- **Never use hardcoded credentials as config fallbacks** — `process.env.VAR ?? "hardcoded-key"` embeds secrets in the bundle. Always fail loudly if required env vars are missing.
-
-- **Empty Authorization header is worse than no header** — `token ? \`Bearer ${token}\` : ""` sends an empty `Authorization` header which some backends treat as a malformed auth attempt. Throw early or omit the header entirely when there is no token.
+- All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
+- The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
 
 ## Audit History
 - 2026-04-03: First audit
