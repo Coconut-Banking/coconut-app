@@ -30,6 +30,7 @@ export function PaymentsCard() {
     onboardingComplete: boolean;
     chargesEnabled: boolean;
     payoutsEnabled: boolean;
+    requiresVerification?: boolean;
   } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectActionLoading, setConnectActionLoading] = useState(false);
@@ -133,7 +134,7 @@ export function PaymentsCard() {
 
       {connectLoading && connectStatus === null ? (
         <ActivityIndicator style={{ marginTop: 14 }} color={theme.text} />
-      ) : connectStatus?.onboardingComplete ? (
+      ) : connectStatus?.onboardingComplete && !connectStatus?.requiresVerification ? (
         <View
           style={[
             s.resultBox,
@@ -153,6 +154,43 @@ export function PaymentsCard() {
           <Text style={[s.resultDetail, { color: theme.textQuaternary }]}>
             Tap to Pay funds will be deposited directly to your bank account.
           </Text>
+        </View>
+      ) : connectStatus?.requiresVerification ? (
+        <View style={{ gap: 12, marginTop: 4 }}>
+          <View
+            style={[
+              s.resultBox,
+              {
+                backgroundColor: theme.surfaceTertiary,
+                borderColor: theme.warning,
+              },
+            ]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="warning-outline" size={20} color={theme.warning} />
+              <Text style={[s.resultTitle, { color: theme.text }]}>
+                Identity verification required
+              </Text>
+            </View>
+            <Text style={[s.resultDetail, { color: theme.textQuaternary }]}>
+              Stripe needs to verify your identity before funds can be paid out to your bank.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              s.primaryBtn,
+              { backgroundColor: theme.primary },
+              connectActionLoading && s.disabled,
+            ]}
+            onPress={startConnectOnboarding}
+            disabled={connectActionLoading}
+          >
+            {connectActionLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={s.primaryBtnText}>Verify identity</Text>
+            )}
+          </TouchableOpacity>
         </View>
       ) : connectStatus?.hasAccount ? (
         <View style={{ gap: 12, marginTop: 4 }}>

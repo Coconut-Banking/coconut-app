@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import type { GroupsSummary } from "../../hooks/useGroups";
 import { font, shadow, prototype } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
+import { useTheme } from "../../lib/theme-context";
 
 const emptySummary: GroupsSummary = {
   groups: [],
@@ -14,6 +15,7 @@ const emptySummary: GroupsSummary = {
 };
 
 export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCurrency = "USD" }: { summary: GroupsSummary | null; defaultCurrency?: string }) {
+  const { theme } = useTheme();
   const s = summary ?? emptySummary;
   const rows = s.totalsByCurrency ?? [];
   const multi = rows.length > 1;
@@ -23,20 +25,20 @@ export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCur
 
   if (allSettled) {
     return (
-      <View style={styles.heroCard}>
-        <Text style={styles.heroKicker}>Overall</Text>
-        <Text style={[styles.heroAmount, { color: "#8A9098" }]}>
+      <View style={[styles.heroCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Text style={[styles.heroKicker, { color: theme.textTertiary }]}>Overall</Text>
+        <Text style={[styles.heroAmount, { color: theme.textTertiary }]}>
           {formatSplitCurrencyAmount(0, rows.length === 1 ? rows[0].currency : defaultCurrency)}
         </Text>
-        <Text style={[styles.heroSub, { color: "#8A9098" }]}>All settled up</Text>
+        <Text style={[styles.heroSub, { color: theme.textTertiary }]}>All settled up</Text>
       </View>
     );
   }
 
   if (multi) {
     return (
-      <View style={styles.heroCard}>
-        <Text style={styles.heroKicker}>Overall</Text>
+      <View style={[styles.heroCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Text style={[styles.heroKicker, { color: theme.textTertiary }]}>Overall</Text>
         <View style={styles.multiLines}>
           {nonZeroRows.map((row) => {
             const isPos = row.net > 0;
@@ -66,7 +68,7 @@ export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCur
   const singleCur = rows.length === 1 ? rows[0].currency : defaultCurrency;
 
   return (
-    <View style={styles.heroCard}>
+    <View style={[styles.heroCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       <View
         style={[
           styles.heroGlow,
@@ -78,13 +80,13 @@ export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCur
         ]}
         pointerEvents="none"
       />
-      <Text style={styles.heroKicker}>
+      <Text style={[styles.heroKicker, { color: theme.textTertiary }]}>
         {isPos ? "You're owed" : "You owe"}
       </Text>
       <Text style={[styles.heroAmount, isPos ? styles.heroAmtIn : styles.heroAmtOut]}>
         {isPos ? "+" : "−"}{formatSplitCurrencyAmount(net, singleCur)}
       </Text>
-      <Text style={styles.heroSub}>
+      <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
         {isPos ? "overall" : "overall"}
       </Text>
     </View>
@@ -93,14 +95,12 @@ export const BalanceHero = React.memo(function BalanceHero({ summary, defaultCur
 
 const styles = StyleSheet.create({
   heroCard: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 22,
     paddingBottom: 18,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#E3DBD8",
     overflow: "hidden",
     position: "relative",
     ...shadow.md,
@@ -116,7 +116,6 @@ const styles = StyleSheet.create({
   heroKicker: {
     fontSize: 11,
     fontFamily: font.semibold,
-    color: "#8A9098",
     textTransform: "uppercase",
     letterSpacing: 1.2,
     marginBottom: 6,
@@ -124,7 +123,6 @@ const styles = StyleSheet.create({
   heroSub: {
     fontSize: 14,
     fontFamily: font.medium,
-    color: "#4B5563",
   },
   heroAmount: {
     fontSize: 44,

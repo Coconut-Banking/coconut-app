@@ -193,9 +193,12 @@ export default function SetupScreen() {
         >
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={goNext} style={styles.navBtn} hitSlop={12}>
-          <Text style={[styles.navSkip, { color: theme.textTertiary }]}>Skip</Text>
-        </TouchableOpacity>
+        {step !== "stripe-connect" && (
+          <TouchableOpacity onPress={goNext} style={styles.navBtn} hitSlop={12}>
+            <Text style={[styles.navSkip, { color: theme.textTertiary }]}>Skip</Text>
+          </TouchableOpacity>
+        )}
+        {step === "stripe-connect" && <View style={styles.navBtn} />}
       </View>
 
       {step === "bank" && <BankStep onDone={goNext} onSkip={goNext} />}
@@ -940,17 +943,13 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
 
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.stepContainer}>
-      <TouchableOpacity onPress={onContinue} style={styles.skipBtn} hitSlop={12}>
-        <Text style={[styles.skipText, { color: theme.textTertiary }]}>Skip for now</Text>
-      </TouchableOpacity>
-
       <View style={styles.illustrationWrap}>
-        <View style={[styles.phoneFrame, { backgroundColor: theme.primary, borderColor: theme.primary }]}>
+        <View style={[styles.phoneFrame, { backgroundColor: theme.primary, borderColor: theme.primary, height: 160, width: 110 }]}>
           <View style={[styles.phoneScreen, { backgroundColor: theme.background }]}>
             <Text style={[styles.phoneLabel, { color: theme.textTertiary }]}>Received</Text>
-            <Text style={[styles.phoneAmount, { color: theme.text }]}>$24.50</Text>
-            <View style={[styles.phoneNfc, { backgroundColor: theme.primary }]}>
-              <Ionicons name="arrow-down" size={22} color="#fff" />
+            <Text style={[styles.phoneAmount, { color: theme.text, fontSize: 24, marginBottom: 10 }]}>$24.50</Text>
+            <View style={[styles.phoneNfc, { backgroundColor: theme.primary, width: 36, height: 36, borderRadius: 18 }]}>
+              <Ionicons name="arrow-down" size={18} color="#fff" />
             </View>
           </View>
         </View>

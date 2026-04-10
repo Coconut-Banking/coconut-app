@@ -36,14 +36,14 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
+import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { useTheme } from "../../lib/theme-context";
 import { BalanceHero } from "../../components/split/BalanceHero";
-import { colors, font, radii, shadow, prototype } from "../../lib/theme";
+import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { HomeSkeletonScreen } from "../../components/ui";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
@@ -56,8 +56,8 @@ import {
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { CalendarPicker } from "../../components/CalendarPicker";
 import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
-import { useCurrency } from "../../hooks/useCurrency";
 import { sfx } from "../../lib/sounds";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
@@ -239,21 +239,21 @@ const LiveBankCardItem = React.memo(function LiveBankCardItem({
         {item.merchant}
       </Text>
       <Text
-        style={item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint}
+        style={[item.cardDetailIsReceipt ? styles.bankEmailLine : styles.bankHint, { color: item.cardDetailIsReceipt ? undefined : theme.textTertiary }]}
         numberOfLines={1}
       >
         {item.cardDetailLine}
       </Text>
-      <Text style={styles.bankAmt}>${item.amount.toFixed(2)}</Text>
+      <Text style={[styles.bankAmt, { color: theme.text }]}>${item.amount.toFixed(2)}</Text>
       <TouchableOpacity
-        style={styles.bankCta}
+        style={[styles.bankCta, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
         onPress={(e) => {
           e.stopPropagation();
           onSplit(item);
         }}
         activeOpacity={0.75}
       >
-        <Text style={styles.bankCtaText}>Split this</Text>
+        <Text style={[styles.bankCtaText, { color: theme.text }]}>Split this</Text>
       </TouchableOpacity>
     </Pressable>
   );
@@ -319,9 +319,10 @@ export default function BalancesPrototypeScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
+  usePrefetchContactsSummary(500);
+  usePrefetchActivity(500);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
-  const { currencyCode: myCurrency } = useCurrency();
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
@@ -386,6 +387,21 @@ export default function BalancesPrototypeScreen() {
     contactsPerm !== "granted" &&
     isSignedIn &&
     !isDemoOn;
+
+  const knownNames = useMemo(
+    () => new Set([
+      ...(summary?.friends ?? []).map((f) => f.displayName.toLowerCase()),
+      ...(summary?.groups ?? []).map((g) => g.name.toLowerCase()),
+    ]),
+    [summary?.friends, summary?.groups]
+  );
+
+  const contactSuggestions = useMemo(
+    () => contactsPerm !== "granted" || !deviceContacts.length
+      ? []
+      : deviceContacts.filter((c) => !knownNames.has(c.name.toLowerCase())).slice(0, 6),
+    [deviceContacts, contactsPerm, knownNames]
+  );
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
@@ -452,8 +468,6 @@ export default function BalancesPrototypeScreen() {
         prefillDesc: tx.merchant || tx.rawDescription || "",
         prefillAmount: Math.abs(Number(tx.amount)).toFixed(2),
         prefillNonce: String(Date.now()),
-        prefillBankDate: tx.dateStr || tx.date || "",
-        prefillBankCategory: tx.category || "",
         prefillPersonKey: "",
         prefillPersonName: "",
         prefillPersonType: "",
@@ -658,7 +672,7 @@ export default function BalancesPrototypeScreen() {
           )
         }
       >
-        <BalanceHero summary={summary} defaultCurrency={myCurrency} />
+        <BalanceHero summary={summary} />
 
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -722,6 +736,49 @@ export default function BalancesPrototypeScreen() {
           </View>
         ) : null}
 
+        {contactSuggestions.length > 0 ? (
+          <View style={{ marginBottom: 18 }}>
+            <View style={styles.sectionRow}>
+              <SLabel>People you know</SLabel>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
+            >
+              {contactSuggestions.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/add-expense",
+                      params: {
+                        prefillContactName: c.name,
+                        prefillContactEmail: c.email ?? "",
+                        prefillContactPhone: c.phone ?? "",
+                      },
+                    })
+                  }
+                  style={[
+                    styles.contactPill,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.contactPillAvatar, { backgroundColor: "#8B5CF622" }]}>
+                    <Text style={[styles.contactPillInitials, { color: "#8B5CF6" }]}>
+                      {c.name.slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.contactPillName, { color: theme.text }]} numberOfLines={1}>
+                    {c.name.split(" ")[0]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <View style={{ marginBottom: 12 }}>
           <View style={styles.sectionRow}>
             <SLabel>Friends</SLabel>
@@ -739,7 +796,7 @@ export default function BalancesPrototypeScreen() {
             <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {friends.map((f, i) => {
                 const nExp = friendExpenseCount(f.key);
-                const lines = friendBalanceLines(f, myCurrency);
+                const lines = friendBalanceLines(f);
                 const settled = lines.length === 0;
                 const pos =
                   !settled &&
@@ -773,7 +830,7 @@ export default function BalancesPrototypeScreen() {
                       </View>
                       <View style={{ alignItems: "flex-end" }}>
                         {settled ? (
-                          <Text style={[styles.friendAmt, { color: theme.textTertiary }]}>—</Text>
+                          <Text style={[styles.friendAmt, { color: darkUI.labelMuted }]}>—</Text>
                         ) : (
                           lines.map((b) => {
                             const p = b.amount > 0.005;
@@ -794,7 +851,7 @@ export default function BalancesPrototypeScreen() {
                           })
                         )}
                       </View>
-                      <Ionicons name="chevron-forward" size={14} color={theme.textTertiary} style={{ marginLeft: 6, opacity: 0.5 }} />
+                      <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
                     </TouchableOpacity>
                     {i < friends.length - 1 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
                   </View>
@@ -812,7 +869,7 @@ export default function BalancesPrototypeScreen() {
                     <Text style={styles.inlineSectionLabelText}>Groups</Text>
                   </View>
                   {groups.map((g, i) => {
-                    const balLines = groupBalanceLines(g, myCurrency);
+                    const balLines = groupBalanceLines(g);
                     return (
                     <View key={g.id}>
                       {i > 0 ? <View style={styles.rowSep} /> : null}
@@ -852,7 +909,7 @@ export default function BalancesPrototypeScreen() {
                         ) : (
                           <Text style={[styles.groupRowBal, styles.balMuted]}>—</Text>
                         )}
-                        <Ionicons name="chevron-forward" size={14} color={theme.textTertiary} style={{ marginLeft: 6, opacity: 0.5 }} />
+                        <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
                       </TouchableOpacity>
                     </View>
                     );
@@ -1100,8 +1157,6 @@ export default function BalancesPrototypeScreen() {
                         prefillDesc: row.merchant,
                         prefillAmount: row.amount.toFixed(2),
                         prefillNonce: String(Date.now()),
-                        prefillBankDate: row.sheetDateLine ?? "",
-                        prefillBankCategory: row.category ?? "",
                         prefillPersonKey: "",
                         prefillPersonName: "",
                         prefillPersonType: "",
@@ -1203,8 +1258,6 @@ export default function BalancesPrototypeScreen() {
                           prefillDesc: row.merchant,
                           prefillAmount: row.amount.toFixed(2),
                           prefillNonce: String(Date.now()),
-                          prefillBankDate: row.sheetDateLine ?? "",
-                          prefillBankCategory: row.category ?? "",
                           prefillPersonKey: "",
                           prefillPersonName: "",
                           prefillPersonType: "",
@@ -1326,8 +1379,18 @@ export default function BalancesPrototypeScreen() {
                   startDate={customDateStart}
                   endDate={customDateEnd}
                   onSelect={(start, end) => { setCustomDateStart(start); setCustomDateEnd(end); }}
-                  onApply={() => setShowCalendar(false)}
                 />
+                <TouchableOpacity
+                  style={[searchStyles.applyBtn, (!customDateStart || !customDateEnd) && searchStyles.applyBtnDisabled]}
+                  onPress={() => {
+                    if (customDateStart && customDateEnd) setShowCalendar(false);
+                  }}
+                  disabled={!customDateStart || !customDateEnd}
+                >
+                  <Text style={searchStyles.applyBtnText}>
+                    {customDateStart && customDateEnd ? "Apply range" : "Select start & end date"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : null}
 
@@ -1374,25 +1437,7 @@ export default function BalancesPrototypeScreen() {
                           const location = [tx.city, tx.region].filter(Boolean).join(", ");
                           return (
                             <View key={tx.id}>
-                              <TouchableOpacity
-                                style={styles.friendRow}
-                                activeOpacity={0.75}
-                                onPress={() => {
-                                  sfx.pop();
-                                  setSelectedStrip({
-                                    stripId: tx.id,
-                                    merchant,
-                                    emoji: merchant[0] ?? "•",
-                                    amount: Math.abs(tx.amount),
-                                    cardDetailLine: tx.date,
-                                    cardDetailIsReceipt: false,
-                                    hasMailBadge: false,
-                                    sheetDateLine: tx.date,
-                                    showReceiptBox: false,
-                                    receiptId: null,
-                                  });
-                                }}
-                              >
+                              <View style={styles.friendRow}>
                                 <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
                                   <MerchantLogo merchantName={merchant} size={22} category={category} backgroundColor="transparent" borderColor="transparent" />
                                 </View>
@@ -1405,7 +1450,7 @@ export default function BalancesPrototypeScreen() {
                                 <Text style={[styles.friendAmt, tx.amount > 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
                                   {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
                                 </Text>
-                              </TouchableOpacity>
+                              </View>
                               {i < askResults.transactions.length - 1 ? <View style={styles.rowSep} /> : null}
                             </View>
                           );
@@ -1897,6 +1942,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: font.semibold,
   },
+  contactPill: {
+    flexDirection: "column",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    minWidth: 70,
+  },
+  contactPillAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactPillInitials: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+  },
+  contactPillName: {
+    fontSize: 12,
+    fontFamily: font.medium,
+    maxWidth: 70,
+    textAlign: "center",
+  },
 });
 
 const searchStyles = StyleSheet.create({
@@ -1985,5 +2057,48 @@ const searchStyles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  applyBtn: {
+    marginTop: 10,
+    backgroundColor: "#1e2021",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyBtnDisabled: {
+    backgroundColor: "#D8D4CF",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: font.semibold,
+    color: "#fff",
+  },
 });
 
+const ttpStyles = StyleSheet.create({
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    marginBottom: 18,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 15,
+    fontFamily: font.semibold,
+    fontWeight: "600",
+  },
+  sub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    marginTop: 2,
+  },
+});
