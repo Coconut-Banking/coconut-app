@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
@@ -31,6 +32,8 @@ import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { useApiFetch } from "../../lib/api";
 import type { ReceiptItem } from "../../lib/receipt-split";
+
+const EMPTY_TX_LIST: Transaction[] = [];
 
 function normalizeMerchant(tx: Transaction) {
   return (tx.merchant || tx.rawDescription || "purchase").trim().toLowerCase();
@@ -420,71 +423,80 @@ export default function BankTabScreen() {
   const showInitialLoading = !isDemoOn && loading && hasNoData;
   const showConnectBank = !isDemoOn && !loading && !linked;
 
-  const renderKeywordRows = () => {
-    if (filteredAllBankRows.length === 0) {
+  const flatListData = useMemo(() => {
+    if (showInitialLoading || showConnectBank || searchMode !== "keyword") return EMPTY_TX_LIST;
+    return filteredAllBankRows;
+  }, [showInitialLoading, showConnectBank, searchMode, filteredAllBankRows]);
+
+  const bankRowKeyExtractor = useCallback(
+    (item: Transaction, index: number) => item.id || String(index),
+    [],
+  );
+
+  const renderBankRow = useCallback(
+    ({ item: tx, index }: { item: Transaction; index: number }) => {
+      const isFirst = index === 0;
+      const isLast = index === flatListData.length - 1;
       return (
-        <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Ionicons name="card-outline" size={32} color={theme.textTertiary} />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>No charges found</Text>
-          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-            Try another search or date filter.
-          </Text>
+        <View
+          style={[
+            flatListCardStyles.row,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+            isFirst && flatListCardStyles.firstRow,
+            isLast && flatListCardStyles.lastRow,
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.friendRow}
+            activeOpacity={0.75}
+            onPress={() => {
+              sfx.pop();
+              setSelectedStrip(txToSheetRow(tx));
+            }}
+          >
+            <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
+              <MerchantLogo
+                merchantName={tx.merchant || tx.rawDescription || "Purchase"}
+                size={22}
+                logoUrl={tx.logoUrl}
+                category={tx.category}
+                backgroundColor="transparent"
+                borderColor="transparent"
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
+                {tx.merchant || tx.rawDescription || "Purchase"}
+              </Text>
+              <Text style={[styles.friendMeta, { color: theme.textTertiary }]} numberOfLines={1}>
+                {tx.dateStr || tx.date || "—"}
+                {tx.alreadySplit ? " · split" : ""}
+              </Text>
+            </View>
+            <Text style={[styles.friendAmt, styles.balAmtOut]}>
+              ${Math.abs(Number(tx.amount)).toFixed(2)}
+            </Text>
+            {!tx.alreadySplit ? (
+              <TouchableOpacity
+                style={styles.bankSplitPill}
+                hitSlop={8}
+                onPress={() => {
+                  sfx.toggle();
+                  pushPrefillFromKeywordRow(tx);
+                }}
+              >
+                <Text style={styles.bankSplitPillText}>Split</Text>
+              </TouchableOpacity>
+            ) : null}
+          </TouchableOpacity>
+          {!isLast ? (
+            <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} />
+          ) : null}
         </View>
       );
-    }
-    return (
-      <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        {filteredAllBankRows.map((tx, i) => (
-          <View key={tx.id}>
-            <TouchableOpacity
-              style={styles.friendRow}
-              activeOpacity={0.75}
-              onPress={() => {
-                sfx.pop();
-                setSelectedStrip(txToSheetRow(tx));
-              }}
-            >
-              <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                <MerchantLogo
-                  merchantName={tx.merchant || tx.rawDescription || "Purchase"}
-                  size={22}
-                  logoUrl={tx.logoUrl}
-                  category={tx.category}
-                  backgroundColor="transparent"
-                  borderColor="transparent"
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
-                  {tx.merchant || tx.rawDescription || "Purchase"}
-                </Text>
-                <Text style={[styles.friendMeta, { color: theme.textTertiary }]} numberOfLines={1}>
-                  {tx.dateStr || tx.date || "—"}
-                  {tx.alreadySplit ? " · split" : ""}
-                </Text>
-              </View>
-              <Text style={[styles.friendAmt, styles.balAmtOut]}>${Math.abs(Number(tx.amount)).toFixed(2)}</Text>
-              {!tx.alreadySplit ? (
-                <TouchableOpacity
-                  style={styles.bankSplitPill}
-                  hitSlop={8}
-                  onPress={() => {
-                    sfx.toggle();
-                    pushPrefillFromKeywordRow(tx);
-                  }}
-                >
-                  <Text style={styles.bankSplitPillText}>Split</Text>
-                </TouchableOpacity>
-              ) : null}
-            </TouchableOpacity>
-            {i < filteredAllBankRows.length - 1 ? (
-              <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} />
-            ) : null}
-          </View>
-        ))}
-      </View>
-    );
-  };
+    },
+    [flatListData.length, theme],
+  );
 
   const renderAskSection = () => (
     <>
@@ -594,17 +606,36 @@ export default function BankTabScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView
+        <FlatList
+          data={flatListData}
+          keyExtractor={bankRowKeyExtractor}
+          renderItem={renderBankRow}
           style={styles.scroll}
           contentContainerStyle={[styles.page, showConnectBank && styles.pageLoading]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          extraData={flatListData.length}
           refreshControl={
             isDemoOn ? undefined : (
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
             )
           }
-        >
+          ListEmptyComponent={
+            searchMode === "keyword" && !showInitialLoading && !showConnectBank ? (
+              <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="card-outline" size={32} color={theme.textTertiary} />
+                <Text style={[styles.emptyTitle, { color: theme.text }]}>No charges found</Text>
+                <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
+                  Try another search or date filter.
+                </Text>
+              </View>
+            ) : undefined
+          }
+          ListHeaderComponent={
+            <>
           <View style={[styles.pad, { zIndex: 10 }]}>
             <BankHeader
               accounts={uniqueAccounts}
@@ -834,10 +865,12 @@ export default function BankTabScreen() {
                 ) : null}
               </View>
 
-              {searchMode === "natural" ? renderAskSection() : renderKeywordRows()}
+              {searchMode === "natural" ? renderAskSection() : null}
             </>
           )}
-        </ScrollView>
+            </>
+          }
+        />
       </KeyboardAvoidingView>
 
       {selectedStrip ? <Modal visible={true} transparent animationType="slide" onRequestClose={() => setSelectedStrip(null)}>
@@ -1317,5 +1350,25 @@ const sheetStyles = StyleSheet.create({
   metaBadgeText: {
     fontSize: 12,
     fontFamily: font.medium,
+  },
+});
+
+const flatListCardStyles = StyleSheet.create({
+  row: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+  },
+  firstRow: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: "hidden",
+  },
+  lastRow: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    overflow: "hidden",
+    marginBottom: 8,
   },
 });

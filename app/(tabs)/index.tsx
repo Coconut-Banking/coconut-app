@@ -36,7 +36,7 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
+import { useGroupsSummary, clearMemSummaryCache } from "../../hooks/useGroups";
 import { MemberAvatar } from "../../components/MemberAvatar";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -319,7 +319,6 @@ export default function BalancesPrototypeScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
-  usePrefetchContactsSummary(500);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
   const { currencyCode: myCurrency } = useCurrency();

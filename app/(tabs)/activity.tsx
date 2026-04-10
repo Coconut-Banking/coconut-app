@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
@@ -208,10 +208,64 @@ export default function ActivityTabScreen() {
     [filter, search, filteredActivity.length, activeFilterOption.label]
   );
 
+  const keyExtractor = useCallback((item: RecentActivityItem) => item.id, []);
+
+  const activityCount = filteredActivity.length;
+  const renderActivityItem = useCallback(
+    ({ item, index }: { item: RecentActivityItem; index: number }) => {
+      const isFirst = index === 0;
+      const isLast = index === activityCount - 1;
+      return (
+        <View
+          style={[
+            styles.cardItem,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+            isFirst && styles.cardItemFirst,
+            isLast && styles.cardItemLast,
+          ]}
+        >
+          <ActivityRow it={item} showSep={!isLast} />
+        </View>
+      );
+    },
+    [activityCount, theme.surface, theme.border]
+  );
+
+  const listEmptyComponent = useMemo(() => {
+    if (showInitialLoading) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      );
+    }
+    if (!activity.length) {
+      return (
+        <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="time-outline" size={32} color={theme.textTertiary} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>No activity</Text>
+          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>Expenses and settlements show up here as they happen.</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Ionicons name="search-outline" size={32} color={theme.textTertiary} />
+        <Text style={[styles.emptyTitle, { color: theme.text }]}>No matches</Text>
+        <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
+          {filter !== "all" ? `No "${activeFilterOption.label.toLowerCase()}" items yet.` : "Try another name, merchant, or amount."}
+        </Text>
+      </View>
+    );
+  }, [showInitialLoading, activity.length, theme.surface, theme.border, theme.textTertiary, theme.text, filter, activeFilterOption.label]);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView
+      <FlatList
+        data={filteredActivity}
+        keyExtractor={keyExtractor}
+        renderItem={renderActivityItem}
         style={styles.scroll}
         contentContainerStyle={[styles.page, showInitialLoading && styles.pageLoading]}
         showsVerticalScrollIndicator={false}
@@ -221,80 +275,59 @@ export default function ActivityTabScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           )
         }
-      >
-        <View style={styles.pad}>
-          <ActivityHeader
-            filter={filter}
-            showMenu={showFilterMenu}
-            onToggleMenu={onToggleFilterMenu}
-          />
-          {showFilterMenu ? (
-            <FilterMenu
-              filter={filter}
-              onSelect={setFilter}
-              onClose={onCloseFilterMenu}
-            />
-          ) : null}
-        </View>
-
-        {showInitialLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : (
+        ListHeaderComponent={
           <>
-
-        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Ionicons name="search" size={18} color={theme.textTertiary} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search people, merchants, amounts…"
-            placeholderTextColor={theme.textTertiary}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            autoCapitalize="none"
-            autoCorrect={false}
-            maxLength={200}
-          />
-          {search.length > 0 ? (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={10} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color="#8A9098" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        <View style={styles.sectionLabelRow}>
-          <Text style={styles.sLabel}>{sectionLabel}</Text>
-          {(search.trim() || filter !== "all") && activity.length > 0 ? (
-            <Text style={styles.sLabelMeta}>{activity.length} total</Text>
-          ) : null}
-        </View>
-        {!activity.length ? (
-          <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="time-outline" size={32} color={theme.textTertiary} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>No activity</Text>
-            <Text style={[styles.emptySub, { color: theme.textTertiary }]}>Expenses and settlements show up here as they happen.</Text>
-          </View>
-        ) : !filteredActivity.length ? (
-          <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Ionicons name="search-outline" size={32} color={theme.textTertiary} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>No matches</Text>
-            <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-              {filter !== "all" ? `No "${activeFilterOption.label.toLowerCase()}" items yet.` : "Try another name, merchant, or amount."}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {filteredActivity.map((it, i) => (
-              <ActivityRow key={it.id} it={it} showSep={i < filteredActivity.length - 1} />
-            ))}
-          </View>
-        )}
-        </>
-        )}
-      </ScrollView>
+            <View style={styles.pad}>
+              <ActivityHeader
+                filter={filter}
+                showMenu={showFilterMenu}
+                onToggleMenu={onToggleFilterMenu}
+              />
+              {showFilterMenu ? (
+                <FilterMenu
+                  filter={filter}
+                  onSelect={setFilter}
+                  onClose={onCloseFilterMenu}
+                />
+              ) : null}
+            </View>
+            {!showInitialLoading && (
+              <>
+                <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Ionicons name="search" size={18} color={theme.textTertiary} />
+                  <TextInput
+                    style={[styles.searchInput, { color: theme.text }]}
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder="Search people, merchants, amounts…"
+                    placeholderTextColor={theme.textTertiary}
+                    returnKeyType="search"
+                    clearButtonMode="while-editing"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={200}
+                  />
+                  {search.length > 0 ? (
+                    <TouchableOpacity onPress={() => setSearch("")} hitSlop={10} accessibilityLabel="Clear search">
+                      <Ionicons name="close-circle" size={18} color="#8A9098" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <View style={styles.sectionLabelRow}>
+                  <Text style={styles.sLabel}>{sectionLabel}</Text>
+                  {(search.trim() || filter !== "all") && activity.length > 0 ? (
+                    <Text style={styles.sLabelMeta}>{activity.length} total</Text>
+                  ) : null}
+                </View>
+              </>
+            )}
+          </>
+        }
+        ListEmptyComponent={listEmptyComponent}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+      />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -486,6 +519,23 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#E3DBD8",
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  cardItem: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+  },
+  cardItemFirst: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    overflow: "hidden",
+  },
+  cardItemLast: {
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    borderBottomWidth: 1,
     overflow: "hidden",
     marginBottom: 8,
   },
