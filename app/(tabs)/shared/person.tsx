@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
-import { usePersonDetail, clearMemSummaryCache } from "../../../hooks/useGroups";
+import { usePersonDetail, applyOptimisticSettlementUpdate } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
@@ -194,6 +194,7 @@ export default function PersonScreen() {
       // both check the balance before either inserts.
       let anySucceeded = false;
       let anyRealFailure = false;
+      const successfulRequests: typeof requests = [];
       for (const r of requests) {
         const res = await apiFetch("/api/settlements", {
           method: "POST",
@@ -201,6 +202,7 @@ export default function PersonScreen() {
         });
         if (res.ok) {
           anySucceeded = true;
+          successfulRequests.push(r);
         } else {
           const body = await res.json().catch(() => ({} as Record<string, unknown>));
           const errMsg = (body as { error?: string }).error ?? "";
@@ -213,12 +215,20 @@ export default function PersonScreen() {
         }
       }
 
+      if (successfulRequests.length > 0) {
+        applyOptimisticSettlementUpdate({
+          requests: successfulRequests,
+          personKey: key ?? null,
+          counterpartyName: detail.displayName,
+        });
+      }
+
       // ALWAYS bust caches so every screen shows the latest balance
       invalidateApiCache("/api/groups/summary");
       invalidateApiCache("/api/groups/person");
       invalidateApiCache("/api/groups/recent-activity");
-      clearMemSummaryCache();
       DeviceEventEmitter.emit("groups-updated");
+      void refetch(true);
 
       if (anyRealFailure && !anySucceeded) {
         Alert.alert("Error", "Settlement could not be recorded");
@@ -231,7 +241,6 @@ export default function PersonScreen() {
       invalidateApiCache("/api/groups/summary");
       invalidateApiCache("/api/groups/person");
       invalidateApiCache("/api/groups/recent-activity");
-      clearMemSummaryCache();
       DeviceEventEmitter.emit("groups-updated");
       Alert.alert("Error", "Could not record settlement");
     } finally {

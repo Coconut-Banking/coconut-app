@@ -318,7 +318,7 @@ export default function BalancesPrototypeScreen() {
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: apiSummary, loading: summaryLoading, refetch, forceRefetch } = useGroupsSummary();
+  const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
   usePrefetchContactsSummary(500);
   usePrefetchActivity(500);
 
@@ -600,11 +600,17 @@ export default function BalancesPrototypeScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => { forceRefetch(); }),
-      DeviceEventEmitter.addListener("expense-added", () => { void refetch(); }),
+      DeviceEventEmitter.addListener("groups-updated", () => {
+        void refetch();
+      }),
+      DeviceEventEmitter.addListener("expense-added", () => {
+        invalidateApiCache("/api/groups/summary");
+        clearMemSummaryCache();
+        void refetch();
+      }),
     ];
     return () => subs.forEach((s) => s.remove());
-  }, [isDemoOn, refetch, forceRefetch]);
+  }, [isDemoOn, refetch]);
 
   useEffect(() => {
     if (isDemoOn) return;

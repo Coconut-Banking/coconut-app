@@ -412,8 +412,6 @@ export default function SharedIndex() {
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("groups-updated", () => {
       if (isDemoOn) return;
-      invalidateApiCache("/api/groups/summary");
-      clearMemSummaryCache();
       void refetch();
     });
     return () => sub.remove();

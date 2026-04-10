@@ -28,7 +28,7 @@ import { useAuth } from "@clerk/expo";
 import * as ImagePicker from "expo-image-picker";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
 import { clearMemSummaryCache } from "../../../hooks/useGroups";
-import { useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
+import { applyOptimisticSettlementUpdate, useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { useTheme } from "../../../lib/theme-context";
@@ -41,7 +41,7 @@ import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { prewarmMemberCache, prewarmRecentActivity } from "../add-expense";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
-import { GroupDetailSkeleton } from "../../../components/ui";
+import { GroupDetailSkeleton, haptic } from "../../../components/ui";
 import { PartialSettleModal } from "../../../components/PartialSettleModal";
 import { sfx } from "../../../lib/sounds";
 import { BASE_URL } from "../../../lib/invite";
@@ -691,9 +691,24 @@ export default function GroupScreen() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (res.ok) {
-        refetch();
-        refetchSummary();
+        applyOptimisticSettlementUpdate({
+          requests: [{
+            groupId: id,
+            payerMemberId: target.fromMemberId,
+            receiverMemberId: target.toMemberId,
+            amount,
+            currency: target.currency,
+          }],
+          counterpartyName: target.iPayThem ? target.toName : target.fromName,
+        });
+        invalidateApiCache(`/api/groups/${id}`);
+        invalidateApiCache("/api/groups/summary");
+        invalidateApiCache("/api/groups/recent-activity");
         DeviceEventEmitter.emit("groups-updated");
+        haptic.success();
+        sfx.coin();
+        void refetch(true);
+        void refetchSummary();
       } else {
         Alert.alert("Error", data?.error ?? "Failed to record settlement");
       }

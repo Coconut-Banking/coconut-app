@@ -2,6 +2,15 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useApiFetch, getPersistedResponse, invalidateApiCache } from "../lib/api";
+import {
+  applySettlementToFriendBalance,
+  applySettlementToGroupDetail,
+  applySettlementToGroupSummary,
+  applySettlementToPersonDetail,
+  buildOptimisticSettlementActivity,
+  rebuildSummary,
+  type OptimisticSettlementRequest,
+} from "../lib/optimistic-settlement";
 
 export interface GroupSummary {
   id: string;
@@ -52,6 +61,16 @@ export interface GroupsSummary {
  * already fetched doesn't wait on AsyncStorage.
  */
 const _memSummary = new Map<string, GroupsSummary>();
+const _summaryListeners = new Map<string, Set<(summary: GroupsSummary | null) => void>>();
+
+function _emitSummary(path: string, summary: GroupsSummary | null) {
+  _summaryListeners.get(path)?.forEach((fn) => fn(summary));
+}
+
+function _setMemSummary(path: string, summary: GroupsSummary) {
+  _memSummary.set(path, summary);
+  _emitSummary(path, summary);
+}
 
 /** Clear the in-memory summary cache (call alongside invalidateApiCache). */
 export function clearMemSummaryCache() {
@@ -192,7 +211,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
               `groups: ${data.groups?.length ?? 0}`
             );
           }
-          _memSummary.set(summaryPath, data);
+          _setMemSummary(summaryPath, data);
           setSummary(data);
         } else if (res.status === 429 || res.status === 503 || res.status >= 500) {
           if (retryCount.current < 5) {
@@ -243,7 +262,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
       if (cached && !cancelled && !_memSummary.has(summaryPath)) {
         try {
           const data = JSON.parse(cached.body);
-          _memSummary.set(summaryPath, data);
+          _setMemSummary(summaryPath, data);
           setSummary(data);
           setLoading(false);
         } catch { /* corrupt cache */ }
@@ -256,6 +275,20 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSummary]);
+
+  useEffect(() => {
+    const listeners = _summaryListeners.get(summaryPath) ?? new Set<(summary: GroupsSummary | null) => void>();
+    const onSummary = (next: GroupsSummary | null) => {
+      setSummary(next);
+      setLoading(false);
+    };
+    listeners.add(onSummary);
+    _summaryListeners.set(summaryPath, listeners);
+    return () => {
+      listeners.delete(onSummary);
+      if (listeners.size === 0) _summaryListeners.delete(summaryPath);
+    };
+  }, [summaryPath]);
 
   return { summary, loading, refetch: fetchSummary, forceRefetch };
 }
@@ -281,13 +314,13 @@ export function usePrefetchContactsSummary(delayMs = 0) {
         ]);
         if (persisted && !_memSummary.has(path)) {
           try {
-            _memSummary.set(path, JSON.parse(persisted.body));
+            _setMemSummary(path, JSON.parse(persisted.body));
           } catch { /* corrupt */ }
         }
         if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
-          _memSummary.set(path, data);
+          _setMemSummary(path, data);
         }
       } catch { /* best-effort */ }
     };
@@ -297,6 +330,16 @@ export function usePrefetchContactsSummary(delayMs = 0) {
 }
 
 const _memGroupDetail = new Map<string, GroupDetail>();
+const _groupDetailListeners = new Map<string, Set<(detail: GroupDetail | null) => void>>();
+
+function _emitGroupDetail(id: string, detail: GroupDetail | null) {
+  _groupDetailListeners.get(id)?.forEach((fn) => fn(detail));
+}
+
+function _setMemGroupDetail(id: string, detail: GroupDetail) {
+  _memGroupDetail.set(id, detail);
+  _emitGroupDetail(id, detail);
+}
 
 export function useGroupDetail(id: string | null) {
   const apiFetch = useApiFetch();
@@ -325,7 +368,7 @@ export function useGroupDetail(id: string | null) {
         }
         if (res.ok) {
           const data = await res.json();
-          _memGroupDetail.set(id, data);
+          _setMemGroupDetail(id, data);
           setDetail(data);
           hasDetail.current = true;
         } else if (!hasDetail.current) {
@@ -372,6 +415,22 @@ export function useGroupDetail(id: string | null) {
     }
   }, [fetchDetail, id]);
 
+  useEffect(() => {
+    if (!id) return;
+    const listeners = _groupDetailListeners.get(id) ?? new Set<(detail: GroupDetail | null) => void>();
+    const onDetail = (next: GroupDetail | null) => {
+      setDetail(next);
+      setLoading(false);
+      hasDetail.current = !!next;
+    };
+    listeners.add(onDetail);
+    _groupDetailListeners.set(id, listeners);
+    return () => {
+      listeners.delete(onDetail);
+      if (listeners.size === 0) _groupDetailListeners.delete(id);
+    };
+  }, [id]);
+
   return { detail, loading, refetch: fetchDetail };
 }
 
@@ -380,6 +439,16 @@ const PERSON_POLL_MID_MS = 60_000;
 const PERSON_POLL_SLOW_MS = 120_000;
 
 const _memPersonDetail = new Map<string, PersonDetail>();
+const _personDetailListeners = new Map<string, Set<(detail: PersonDetail | null) => void>>();
+
+function _emitPersonDetail(key: string, detail: PersonDetail | null) {
+  _personDetailListeners.get(key)?.forEach((fn) => fn(detail));
+}
+
+function _setMemPersonDetail(key: string, detail: PersonDetail) {
+  _memPersonDetail.set(key, detail);
+  _emitPersonDetail(key, detail);
+}
 
 export function usePersonDetail(key: string | null) {
   const apiFetch = useApiFetch();
@@ -405,7 +474,7 @@ export function usePersonDetail(key: string | null) {
         );
         if (res.ok) {
           const data = await res.json();
-          _memPersonDetail.set(key, data);
+          _setMemPersonDetail(key, data);
           setDetail(data);
           hasDetail.current = true;
         } else if (!hasDetail.current) {
@@ -466,6 +535,22 @@ export function usePersonDetail(key: string | null) {
     });
     return () => { clearTimeout(timer); appStateSub.remove(); };
   }, [key, fetchDetail]);
+
+  useEffect(() => {
+    if (!key) return;
+    const listeners = _personDetailListeners.get(key) ?? new Set<(detail: PersonDetail | null) => void>();
+    const onDetail = (next: PersonDetail | null) => {
+      setDetail(next);
+      setLoading(false);
+      hasDetail.current = !!next;
+    };
+    listeners.add(onDetail);
+    _personDetailListeners.set(key, listeners);
+    return () => {
+      listeners.delete(onDetail);
+      if (listeners.size === 0) _personDetailListeners.delete(key);
+    };
+  }, [key]);
 
   return { detail, loading, refetch };
 }
@@ -675,11 +760,9 @@ export function useRecentActivity(enabled = true) {
   // hook picks up data even if it arrived after this component mounted.
   useEffect(() => {
     const onActivity = (items: RecentActivityItem[]) => {
-      if (!hydratedRef.current) {
-        hydratedRef.current = true;
-        setActivity(items);
-        setLoading(false);
-      }
+      hydratedRef.current = true;
+      setActivity(items);
+      setLoading(false);
     };
     _activityListeners.add(onActivity);
     // Catch the case where _memActivity was set between useState init and this effect
@@ -750,4 +833,52 @@ export function usePrefetchActivity(delayMs = 0) {
     void run();
     return () => { cancelled = true; };
   }, [apiFetch, delayMs]);
+}
+
+export function applyOptimisticSettlementUpdate(args: {
+  requests: OptimisticSettlementRequest[];
+  personKey?: string | null;
+  counterpartyName: string;
+}) {
+  const { requests, personKey, counterpartyName } = args;
+  if (requests.length === 0) return;
+
+  if (personKey) {
+    const cachedPerson = _memPersonDetail.get(personKey);
+    if (cachedPerson) {
+      _setMemPersonDetail(personKey, applySettlementToPersonDetail(cachedPerson, requests));
+    }
+  }
+
+  for (const [path, summary] of _memSummary.entries()) {
+    let next = summary;
+    if (personKey) {
+      next = {
+        ...next,
+        friends: next.friends.map((friend) =>
+          friend.key === personKey ? applySettlementToFriendBalance(friend, requests) : friend,
+        ),
+      };
+    }
+    next = {
+      ...next,
+      groups: next.groups.map((group) => applySettlementToGroupSummary(group, requests)),
+    };
+    _setMemSummary(path, rebuildSummary(next, path.includes("contacts=1")));
+  }
+
+  const groupNameById = new Map<string, string>();
+  for (const request of requests) {
+    const cachedGroup = _memGroupDetail.get(request.groupId);
+    if (cachedGroup) {
+      groupNameById.set(request.groupId, cachedGroup.name);
+      _setMemGroupDetail(request.groupId, applySettlementToGroupDetail(cachedGroup, [request]));
+    }
+  }
+
+  const optimisticActivity = buildOptimisticSettlementActivity(requests, counterpartyName, groupNameById);
+  _setMemActivity([...optimisticActivity, ...(_memActivity ?? [])]);
+  if (optimisticActivity[0] && optimisticActivity[0].id !== _lastSeenActivityId) {
+    _setHasUnseen(true);
+  }
 }
