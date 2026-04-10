@@ -377,7 +377,13 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.primaryButton, rs.saving && styles.buttonDisabled]}
-          onPress={rs.confirmItems}
+          onPress={async () => {
+            try {
+              await rs.confirmItems();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Save failed");
+            }
+          }}
           disabled={rs.saving || rs.editItems.length === 0}
         >
           {rs.saving ? (

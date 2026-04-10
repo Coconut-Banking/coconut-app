@@ -156,8 +156,11 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             merchant_name: editMerchant,
           },
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error((errData.error as string) ?? "Save failed");
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Save failed");
 
         const serverItems = (data.receipt_items ?? [])
           .sort(
@@ -190,8 +193,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        throw e;
       } finally {
         setSaving(false);
       }
