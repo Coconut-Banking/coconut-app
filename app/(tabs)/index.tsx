@@ -30,7 +30,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
-import { useApiFetch } from "../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
 import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
