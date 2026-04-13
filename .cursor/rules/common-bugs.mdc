@@ -23,7 +23,18 @@ globs:
 - Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
 - Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
 
+## Payment Amounts
+
+- **Stripe expects amounts in cents (integer)** — always convert user-entered dollar amounts with `Math.round(dollars * 100)` before sending to any Stripe API. Sending `25.0` instead of `2500` charges $0.25 instead of $25.00.
+
 ## Timeout Protection for Auth
 
 - All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
 - The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
+
+## Audit History
+- 2026-04-03: First audit
+- 2026-04-05: `.json()` before `.ok` pattern first appeared
+- 2026-04-07: Silent catch blocks, async guard flags
+- 2026-04-09: Hardcoded credentials fallback, empty Authorization header
+- 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
