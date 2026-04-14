@@ -808,16 +808,7 @@ export default function GroupScreen() {
           </Text>
         </View>
 
-        {(detail.mySpend != null && detail.mySpend > 0) || (detail.mySpendByCurrency && detail.mySpendByCurrency.length > 0) ? (
-          <View style={{ marginTop: 8, marginBottom: 12 }}>
-            <Text style={{ fontFamily: font.bold, fontSize: 18, color: theme.text }}>
-              You spent{" "}
-              {detail.mySpend != null
-                ? formatSplitCurrencyAmount(detail.mySpend, detail.mySpendByCurrency?.[0]?.currency ?? myCurrency)
-                : (detail.mySpendByCurrency ?? []).map((b) => formatSplitCurrencyAmount(b.amount, b.currency)).join(" + ")}
-            </Text>
-            </View>
-          ) : null}
+        {/* "You spent" temporarily removed — will add back later */}
 
         {isArchived ? (
           <View
