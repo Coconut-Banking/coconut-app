@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -53,8 +53,14 @@ export default function TapToPayEducationScreen() {
 
   const done = useCallback(async () => {
     await markTapToPayEducationCompleted();
-    router.push("/(tabs)/add-expense");
-  }, [router]);
+    if (params.fromTerms === "1") {
+      // Came from T&C acceptance mid-payment — go back to where they were
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)");
+    } else {
+      router.push("/(tabs)/add-expense");
+    }
+  }, [router, params.fromTerms]);
 
   const back = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -115,14 +121,10 @@ export default function TapToPayEducationScreen() {
           activeOpacity={0.9}
         >
           <Ionicons name="phone-portrait-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.ctaText}>Add an expense to collect</Text>
-        </TouchableOpacity>
-
-        {Platform.OS !== "web" ? (
-          <Text style={[styles.note, { color: theme.textQuaternary }]}>
-            Requires a dev or production build with Stripe Terminal.
+          <Text style={styles.ctaText}>
+            {params.fromTerms === "1" ? "Got it — I'm ready" : "Add an expense to collect"}
           </Text>
-        ) : null}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -205,5 +207,4 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
   },
   ctaText: { color: "#fff", fontSize: 17, fontFamily: font.semibold },
-  note: { marginTop: 10, fontSize: 12, fontFamily: font.regular, textAlign: "center" },
 });

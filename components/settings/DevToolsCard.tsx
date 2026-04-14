@@ -262,6 +262,43 @@ export function DevToolsCard() {
             ]}
             onPress={() => {
               Alert.alert(
+                "Reset Tap to Pay intro?",
+                "Clears the 'seen' flag so the full-screen intro modal shows again on next app launch. Use this for recording the Existing User Flow demo video.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Reset",
+                    onPress: async () => {
+                      try {
+                        await AsyncStorage.multiRemove([
+                          "coconut_ttp_hero_modal_seen_v1",
+                          "coconut_ttp_education_completed_v1",
+                        ]);
+                        Alert.alert("Done", "Tap to Pay intro will show on next launch.");
+                      } catch {
+                        Alert.alert("Error", "Could not clear flags.");
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[s.disconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+              Reset Tap to Pay intro modal
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              s.disconnectBtn,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surfaceSecondary,
+              },
+            ]}
+            onPress={() => {
+              Alert.alert(
                 "Re-run onboarding?",
                 "This will take you back to the start of the setup flow. Your data stays intact.",
                 [

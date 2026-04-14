@@ -484,8 +484,17 @@ function PayScreenInner() {
   const shareReceipt = useCallback(
     async (outcome: "approved" | "declined" | "timeout", amt: number) => {
       const status =
-        outcome === "approved" ? "Approved" : outcome === "declined" ? "Declined" : "Timed out";
-      const message = `Tap to Pay receipt: $${amt.toFixed(2)} — ${status}`;
+        outcome === "approved" ? "Approved ✓" : outcome === "declined" ? "Declined ✗" : "Timed out";
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      const message = [
+        "— Coconut Tap to Pay Receipt —",
+        `Date: ${dateStr} at ${timeStr}`,
+        `Amount: $${amt.toFixed(2)}`,
+        `Status: ${status}`,
+        "Payment processed by Stripe Terminal",
+      ].join("\n");
       try {
         await Share.share({ message, title: "Payment receipt" });
       } catch {
@@ -937,20 +946,20 @@ function PayScreenInner() {
               </Text>
             ) : null}
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: theme.primary, marginTop: 20, minWidth: 200 }]}
+              style={[styles.shareButton, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border, borderWidth: 1, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 24, marginTop: 12, minWidth: 200, justifyContent: "center" }]}
+              onPress={() => shareReceipt("approved", lastOutcomeAmount)}
+            >
+              <Ionicons name="share-outline" size={18} color={theme.primary} />
+              <Text style={[styles.shareButtonText, { color: theme.primary }]}>Send receipt</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: theme.primary, minWidth: 200 }]}
               onPress={() => {
                 setPaymentOutcome(null);
                 handleClose();
               }}
             >
               <Text style={styles.buttonText}>Done</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.shareButton}
-              onPress={() => shareReceipt("approved", lastOutcomeAmount)}
-            >
-              <Ionicons name="share-outline" size={18} color={theme.primary} />
-              <Text style={[styles.shareButtonText, { color: theme.primary }]}>Share receipt</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -12,7 +12,8 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { font, radii, colors as palette } from "../lib/theme";
+import { font, radii } from "../lib/theme";
+import { useTheme } from "../lib/theme-context";
 import { hasSeenTapToPayHeroModal, markTapToPayHeroModalSeen } from "../lib/tap-to-pay-onboarding";
 
 /**
@@ -23,6 +24,7 @@ export function TapToPayHeroModal() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const { theme } = useTheme();
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -62,31 +64,31 @@ export function TapToPayHeroModal() {
 
   return (
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={dismiss}>
-      <View style={[styles.root, { paddingTop: insets.top, minHeight: height }]}>
+      <View style={[styles.root, { paddingTop: insets.top, minHeight: height, backgroundColor: theme.background }]}>
         <Pressable style={styles.closeHit} onPress={dismiss} accessibilityLabel="Close">
-          <Ionicons name="close" size={28} color={palette.textSecondary} />
+          <Ionicons name="close" size={28} color={theme.textTertiary} />
         </Pressable>
 
         <View style={styles.hero}>
-          <View style={styles.iconWrap}>
-            <Ionicons name="phone-portrait-outline" size={44} color={palette.primary} />
+          <View style={[styles.iconWrap, { backgroundColor: theme.surfaceSecondary }]}>
+            <Ionicons name="phone-portrait-outline" size={44} color={theme.primary} />
           </View>
-          <Text style={styles.title}>Tap to Pay on iPhone</Text>
-          <Text style={styles.body}>
+          <Text style={[styles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
+          <Text style={[styles.body, { color: theme.textSecondary }]}>
             Accept contactless cards and digital wallets on your iPhone—no extra hardware. Set up payments in
             Settings, then collect when you add an expense or settle up with someone.
           </Text>
         </View>
 
         <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={openAddExpense} activeOpacity={0.9}>
+          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={openAddExpense} activeOpacity={0.9}>
             <Text style={styles.primaryBtnText}>Add an expense</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={openEducation} activeOpacity={0.85}>
-            <Text style={styles.secondaryBtnText}>How it works</Text>
+          <TouchableOpacity style={[styles.secondaryBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={openEducation} activeOpacity={0.85}>
+            <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>How it works</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={dismiss} style={styles.tertiaryWrap} hitSlop={12}>
-            <Text style={styles.tertiary}>Maybe later</Text>
+            <Text style={[styles.tertiary, { color: theme.textTertiary }]}>Maybe later</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -97,7 +99,6 @@ export function TapToPayHeroModal() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#F4F6F3",
     paddingHorizontal: 24,
   },
   closeHit: {
@@ -114,7 +115,6 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 24,
-    backgroundColor: "#F5F3F2",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
@@ -123,7 +123,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: font.bold,
     fontWeight: "700",
-    color: palette.text,
     marginBottom: 16,
     letterSpacing: -0.5,
   },
@@ -131,13 +130,11 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontFamily: font.regular,
     lineHeight: 26,
-    color: palette.textSecondary,
   },
   actions: {
     gap: 12,
   },
   primaryBtn: {
-    backgroundColor: palette.primary,
     paddingVertical: 16,
     borderRadius: radii.xl,
     alignItems: "center",
@@ -149,15 +146,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   secondaryBtn: {
-    backgroundColor: "#fff",
     paddingVertical: 16,
     borderRadius: radii.xl,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E3DBD8",
   },
   secondaryBtnText: {
-    color: palette.primary,
     fontSize: 17,
     fontFamily: font.semibold,
     fontWeight: "600",
@@ -169,6 +163,5 @@ const styles = StyleSheet.create({
   tertiary: {
     fontSize: 16,
     fontFamily: font.medium,
-    color: palette.textTertiary,
   },
 });
