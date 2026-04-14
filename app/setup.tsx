@@ -935,15 +935,11 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
       // Poll for completion whether the user finished or closed early
       const { complete, payoutsEnabled, requiresVerification } = await pollConnectStatus(apiFetch);
       if (complete) {
-        if (payoutsEnabled && !requiresVerification) {
-          // Fully ready — charges and payouts both enabled
-          setSuccess(true);
-          setTimeout(onContinue, 1400);
-        } else {
-          // Stripe accepted info but still reviewing / needs ID for payouts
-          setNeedsVerification(true);
-          setLoading(false);
-        }
+        // Always show the informational screen so the user sees the real state —
+        // never silently claim "payouts set up" right after basic onboarding.
+        setNeedsVerification(!payoutsEnabled || requiresVerification);
+        setSuccess(true);
+        setLoading(false);
       } else {
         // Not complete yet — they can finish later in Settings
         setLoading(false);
@@ -956,62 +952,42 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
   };
 
   if (success) {
-    return (
-      <View style={styles.centerFull}>
-        <Animated.View entering={FadeIn.duration(400)}>
-          <View style={[styles.successCircle, { borderColor: theme.primary }]}>
-            <Ionicons name="checkmark-circle" size={56} color={theme.primary} />
-          </View>
-        </Animated.View>
-        <Text style={[styles.successTitle, { color: theme.text }]}>Payouts set up!</Text>
-        <Text style={[styles.successSub, { color: theme.textTertiary }]}>
-          Tap-to-pay payments will be deposited directly to your bank.
-        </Text>
-      </View>
-    );
-  }
-
-  if (needsVerification) {
+    const fullyActive = !needsVerification;
     return (
       <Animated.View entering={FadeIn.duration(400)} style={styles.stepContainer}>
-        <View style={styles.illustrationWrap}>
-          <View style={[styles.successCircle, { borderColor: theme.warning ?? "#F59E0B" }]}>
-            <Ionicons name="shield-outline" size={56} color={theme.warning ?? "#F59E0B"} />
+        <View style={[styles.illustrationWrap, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[styles.successCircle, { borderColor: fullyActive ? theme.primary : (theme.warning ?? "#F59E0B") }]}>
+            <Ionicons
+              name={fullyActive ? "checkmark-circle" : "shield-outline"}
+              size={56}
+              color={fullyActive ? theme.primary : (theme.warning ?? "#F59E0B")}
+            />
           </View>
         </View>
         <View style={styles.stepContent}>
-          <Text style={[styles.stepTitle, { color: theme.text }]}>Almost there</Text>
-          <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
-            Stripe has received your info and is reviewing your account. You can start accepting payments now, but payouts to your bank will be enabled once Stripe verifies your identity.
+          <Text style={[styles.successTitle, { color: theme.text }]}>
+            {fullyActive ? "Account connected" : "Almost there"}
           </Text>
-          <View style={[{ borderRadius: 14, padding: 14, marginTop: 8, backgroundColor: (theme.warningLight as string | undefined) ?? "#FEF3C7", borderWidth: 1, borderColor: (theme.warning as string | undefined) ?? "#F59E0B" }]}>
-            <Text style={[{ fontSize: 13, fontFamily: font.medium, color: theme.text, lineHeight: 18 }]}>
-              Stripe will email you if they need anything — this usually takes 1–2 business days. You can also check Settings → Payments at any time.
-            </Text>
-          </View>
+          <Text style={[styles.successSub, { color: theme.textTertiary }]}>
+            {fullyActive
+              ? "Stripe has verified your account. Tap to Pay earnings will be deposited to your linked bank account."
+              : "Stripe has received your info and is reviewing your account. Payouts will be activated once they verify your identity — usually 1–2 business days."}
+          </Text>
+          {!fullyActive && (
+            <View style={[{ borderRadius: 14, padding: 14, marginTop: 12, backgroundColor: (theme.warningLight as string | undefined) ?? "#FEF3C7", borderWidth: 1, borderColor: (theme.warning as string | undefined) ?? "#F59E0B" }]}>
+              <Text style={[{ fontSize: 13, fontFamily: font.medium, color: theme.text, lineHeight: 18 }]}>
+                Stripe will email you if they need anything. You can also check Settings → Payments at any time.
+              </Text>
+            </View>
+          )}
         </View>
-        <View style={{ gap: 8 }}>
-          <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: theme.primary }, loading && styles.disabled]}
-            onPress={startOnboarding}
-            disabled={loading}
-            activeOpacity={0.9}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="refresh-outline" size={20} color="#fff" />
-                <Text style={styles.primaryBtnText}>Open Stripe to check</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onContinue} style={styles.secondaryBtn} hitSlop={8}>
-            <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
-              Continue to app
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+          onPress={onContinue}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.primaryBtnText}>Continue</Text>
+        </TouchableOpacity>
       </Animated.View>
     );
   }
