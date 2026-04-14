@@ -82,7 +82,7 @@ export default function PayScreen() {
         throw new Error((errData.error as string) ?? "Failed to get Terminal location");
       }
       const locData = await locRes.json() as Record<string, unknown>;
-      const locationId = locData.locationId;
+      const locationId = locData.locationId as string | undefined;
 
       if (!locationId) {
         Alert.alert("Error", "Could not get Terminal location. Ensure Stripe is configured.");
@@ -143,7 +143,7 @@ export default function PayScreen() {
       const clientSecret = piData.clientSecret as string | undefined;
 
       if (!clientSecret) {
-        Alert.alert("Error", piData.error ?? "Failed to create payment intent");
+        Alert.alert("Error", (piData.error as string) ?? "Failed to create payment intent");
         setCollecting(false);
         return;
       }
