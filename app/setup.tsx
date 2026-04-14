@@ -929,6 +929,9 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
       // Open Stripe's hosted onboarding in-app
       await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
 
+      // Bust the cached status so polling always hits Stripe fresh
+      invalidateApiCache("/api/stripe/connect/status");
+
       // Poll for completion whether the user finished or closed early
       const { complete, payoutsEnabled, requiresVerification } = await pollConnectStatus(apiFetch);
       if (complete) {
