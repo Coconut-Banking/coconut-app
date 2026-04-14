@@ -340,6 +340,12 @@ export function DevToolsCard() {
                         onPress: async () => {
                           invalidateApiCache();
                           resetSetup();
+                          // Also reset the one-time TTP modal so the full intro
+                          // shows again on next login (new user experience)
+                          await AsyncStorage.multiRemove([
+                            "coconut_ttp_hero_modal_seen_v1",
+                            "coconut_ttp_education_completed_v1",
+                          ]).catch(() => {});
                           await signOut();
                         },
                   },
