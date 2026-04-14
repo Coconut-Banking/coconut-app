@@ -120,8 +120,8 @@ export default function SettingsScreen() {
         <DevToolsCard />
 
         {!isPro && (
-          <TouchableOpacity
-            style={[
+                <TouchableOpacity
+              style={[
               styles.actionButton,
               {
                 borderColor: theme.border,
@@ -139,13 +139,13 @@ export default function SettingsScreen() {
                 style={[styles.actionText, { color: theme.textSecondary }]}
               >
                 Restore purchases
-              </Text>
-            )}
-          </TouchableOpacity>
+                </Text>
+                  )}
+                </TouchableOpacity>
         )}
 
         <TouchableOpacity
-          style={[
+              style={[
             styles.actionButton,
             {
               borderColor: theme.border,
