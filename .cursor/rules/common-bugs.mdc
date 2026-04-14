@@ -1,0 +1,61 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## API / Network
+
+- **Always check `res.ok` before calling `res.json()`** — server errors may return non-JSON (HTML error pages).
+  Use `res.json().catch(() => ({}))` when extracting error body from a failed response:
+  ```typescript
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error((errData.error as string) ?? "Request failed");
+  }
+  const data = await res.json();
+  ```
+  Confirmed across 4+ audits (2026-04-07, 2026-04-09, 2026-04-10, 2026-04-14): 10+ occurrences in 5 files.
+
+- **Never send payment amounts in dollars to Stripe** — Stripe Terminal and Payment Intents require amounts in the smallest currency unit (cents for USD). Always use `Math.round(amt * 100)`.
+
+## Error Propagation
+
+- **`try-finally` without `catch` propagates errors** — this is intentional; callers must handle.
+  But if you add a `catch {}` block (empty or comment-only), you silently swallow the error.
+  Always either re-throw or show user feedback:
+  ```typescript
+  // BAD: silently swallows
+  } catch {
+    // stay on screen
+  }
+
+  // GOOD: re-throw so callers can Alert
+  } catch (e) {
+    throw e;
+  }
+  ```
+
+- **Always wrap async `onPress` handlers with try-catch** — unhandled Promise rejections in
+  React Native event handlers may be silently swallowed in production. Users see nothing.
+  ```typescript
+  onPress={async () => {
+    try {
+      await someAsyncOperation();
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Something went wrong");
+    }
+  }}
+  ```
+
+## Auth / Async Timing
+
+- **Wrap Clerk auth flows with `withTimeout()`** — `startGoogleAuthenticationFlow()` and similar
+  OAuth flows can hang indefinitely on flaky mobile networks. Apply a timeout (e.g. 20000ms) to
+  both the auth flow and the subsequent `setActive()` call. Apply consistently across sign-in AND sign-up.
+
+- **Async guard flags must be set AFTER the promise resolves** — setting `hasClearedSession = true`
+  before `await signOut()` means the flag is set even if signOut fails.
