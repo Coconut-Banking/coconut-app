@@ -89,9 +89,12 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: formData,
         });
-        const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error((errData.error as string) ?? "Parse failed");
+        }
+        const data = await res.json();
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -154,8 +157,11 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             merchant_name: editMerchant,
           },
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error((errData.error as string) ?? "Save failed");
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Save failed");
 
         const serverItems = (data.receipt_items ?? [])
           .sort(
@@ -321,10 +327,14 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error((errData.error as string) ?? "Failed to save assignments");
+        }
       } finally {
         setSaving(false);
       }
