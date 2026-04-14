@@ -55,7 +55,7 @@ const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
 const FORCE_SIGN_OUT_KEY = "coconut.force_signout_done";
 
 function AuthSwitch() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAuth();
   const { signOut } = useClerk();
   const { isDemoOn, demoModeHydrated } = useDemoMode();
   const { setupComplete, setupHydrated, markSetupComplete } = useSetup();
@@ -63,6 +63,20 @@ function AuthSwitch() {
   const apiFetch = useApiFetch();
   const checkedStore = useRef(false);
   const autoSkipChecked = useRef(false);
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
+
+  // Flush entire API cache on sign-out or user switch so a new session never
+  // sees stale data (e.g. Stripe Connect status) from the previous user.
+  useEffect(() => {
+    if (prevUserIdRef.current === undefined) {
+      prevUserIdRef.current = userId ?? null;
+      return;
+    }
+    if (prevUserIdRef.current !== (userId ?? null)) {
+      invalidateApiCache();
+      prevUserIdRef.current = userId ?? null;
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (!FORCE_SIGN_OUT_ON_LAUNCH || checkedStore.current) return;

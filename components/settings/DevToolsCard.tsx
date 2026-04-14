@@ -12,7 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useUser, useAuth } from "@clerk/expo";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
-import { useApiFetch } from "../../lib/api";
+import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { useSetup } from "../../lib/setup-context";
 import { resetSetupStep } from "../../app/setup";
 import { settingsStyles as s } from "./styles";
@@ -336,11 +336,12 @@ export function DevToolsCard() {
                   { text: "Cancel", style: "cancel" },
                   {
                     text: "Sign out & restart",
-                    style: "destructive",
-                    onPress: async () => {
-                      resetSetup();
-                      await signOut();
-                    },
+                        style: "destructive",
+                        onPress: async () => {
+                          invalidateApiCache();
+                          resetSetup();
+                          await signOut();
+                        },
                   },
                 ]
               );
