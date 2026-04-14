@@ -1336,37 +1336,30 @@ export default function BalancesPrototypeScreen() {
               </View>
             ) : null}
 
-            {/* Ask mode: AI answer banner */}
-            {searchMode === "natural" && askResults?.answer && !askLoading ? (
-              <View style={searchStyles.answerBanner}>
-                <Ionicons name="sparkles" size={18} color="#7C3AED" />
-                <Text style={searchStyles.answerText}>{askResults.answer}</Text>
-              </View>
-            ) : null}
-
-            {/* Ask mode: loading */}
-            {searchMode === "natural" && askLoading ? (
-              <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                <ActivityIndicator size="small" color="#7C3AED" />
-                <Text style={[searchStyles.loadingText, { color: "#8A9098" }]}>Searching...</Text>
-              </View>
-            ) : null}
-
-            {/* Ask mode: error */}
-            {searchMode === "natural" && askError && !askLoading ? (
-              <View style={{ alignItems: "center", paddingVertical: 24 }}>
-                <Text style={{ color: "#DC2626", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
-              </View>
-            ) : null}
-
             {searchMode === "natural" && (askLoading || askResults || askError) ? (
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {!askLoading && !askError && askResults ? (
-                  askResults.transactions.length === 0 ? (
-                    <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                      <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No transactions found. Try a different question.</Text>
-                    </View>
-                  ) : (
+                {askLoading ? (
+                  <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                    <ActivityIndicator size="small" color="#7C3AED" />
+                    <Text style={[searchStyles.loadingText, { color: "#8A9098" }]}>Searching...</Text>
+                  </View>
+                ) : askError ? (
+                  <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                    <Text style={{ color: "#DC2626", fontSize: 13, fontFamily: font.medium }}>{askError}</Text>
+                  </View>
+                ) : askResults ? (
+                  <>
+                    {askResults.answer ? (
+                      <View style={searchStyles.answerBanner}>
+                        <Ionicons name="sparkles" size={18} color="#7C3AED" />
+                        <Text style={searchStyles.answerText}>{askResults.answer}</Text>
+                      </View>
+                    ) : null}
+                    {askResults.transactions.length === 0 ? (
+                      <View style={[styles.emptyBank, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <Text style={[styles.emptyBankText, { color: theme.textTertiary }]}>No transactions found. Try a different question.</Text>
+                      </View>
+                    ) : (
                     <>
                       <Text style={searchStyles.resultCount}>
                         {askResults.count} transaction{askResults.count !== 1 ? "s" : ""}
@@ -1399,7 +1392,8 @@ export default function BalancesPrototypeScreen() {
                         })}
                       </View>
                     </>
-                  )
+                    )}
+                  </>
                 ) : null}
               </ScrollView>
             ) : (

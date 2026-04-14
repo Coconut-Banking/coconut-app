@@ -182,17 +182,17 @@ export function SplitwiseCard({ onShowInvites }: Props) {
     }
   };
 
-  const runSplitwiseClearAndRefresh = async () => {
+  const runFullReset = async () => {
     setSplitwiseClearing(true);
     try {
       const res = await apiFetch("/api/splitwise/clear", {
         method: "POST",
-        body: { disconnectToken: true },
+        body: { resetAll: true },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         Alert.alert(
-          "Could not disconnect",
+          "Could not reset",
           (data as { error?: string }).error ?? "Try again.",
         );
         return;
@@ -208,23 +208,23 @@ export function SplitwiseCard({ onShowInvites }: Props) {
     } catch {
       Alert.alert(
         "Error",
-        "Could not disconnect. Check your connection.",
+        "Could not reset. Check your connection.",
       );
     } finally {
       setSplitwiseClearing(false);
     }
   };
 
-  const disconnectSplitwiseAndClear = () => {
+  const clearAllAndDisconnect = () => {
     Alert.alert(
-      "Disconnect Splitwise?",
-      "Removes every Splitwise-imported group and expense from Coconut and disconnects your Splitwise login. Your Splitwise account is unchanged.",
+      "Clear all transactions & history?",
+      "This deletes ALL groups, friends, expenses, and settlements from Coconut and disconnects Splitwise. Only your bank transactions remain. Your Splitwise account is unchanged.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Disconnect",
+          text: "Clear everything",
           style: "destructive",
-          onPress: () => void runSplitwiseClearAndRefresh(),
+          onPress: () => void runFullReset(),
         },
       ],
     );
@@ -239,7 +239,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         {
           text: "Remove",
           style: "destructive",
-          onPress: () => void runSplitwiseClearAndRefresh(),
+          onPress: () => void runFullReset(),
         },
       ],
     );
@@ -636,7 +636,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
                   backgroundColor: theme.surfaceSecondary,
                 },
               ]}
-              onPress={disconnectSplitwiseAndClear}
+              onPress={clearAllAndDisconnect}
               disabled={splitwiseClearing || splitwiseImporting}
             >
               {splitwiseClearing ? (
@@ -648,7 +648,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
                     { color: theme.error },
                   ]}
                 >
-                  Disconnect &amp; remove saved login
+                  Clear all transactions &amp; history
                 </Text>
               )}
             </TouchableOpacity>
