@@ -33,6 +33,7 @@ import { useTheme } from "../../lib/theme-context";
 import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useSetup } from "../../lib/setup-context";
+import { resetSetupStep } from "../../app/setup";
 import { colors, font, shadow, radii } from "../../lib/theme";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { sendSmsInvite, sendEmailInvite, shareInvite, type InviteLink } from "../../lib/invite";
@@ -950,6 +951,11 @@ export default function SettingsScreen() {
     setSigningOut(true);
     try {
       setIsDemoOn(false);
+      invalidateApiCache();
+      await AsyncStorage.multiRemove([
+        "coconut_ttp_hero_modal_seen_v1",
+        "coconut_ttp_education_completed_v1",
+      ]).catch(() => {});
       const p = sessionId ? signOut({ sessionId }) : signOut();
       await Promise.race([
         p,
@@ -1680,6 +1686,92 @@ export default function SettingsScreen() {
               ) : null}
 
               <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={() => {
+                  Alert.alert(
+                    "Reset Tap to Pay intro?",
+                    "Clears the 'seen' flag so the full-screen intro modal shows again on next app launch. Use this for recording the Existing User Flow demo video.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Reset",
+                        onPress: async () => {
+                          try {
+                            await AsyncStorage.multiRemove([
+                              "coconut_ttp_hero_modal_seen_v1",
+                              "coconut_ttp_education_completed_v1",
+                            ]);
+                            Alert.alert("Done", "Tap to Pay intro will show on next launch.");
+                          } catch {
+                            Alert.alert("Error", "Could not clear flags.");
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+                  Reset Tap to Pay intro modal
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}
+                onPress={() => {
+                  Alert.alert(
+                    "Re-run onboarding?",
+                    "This will take you back to the start of the setup flow. Your data stays intact.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Re-run setup",
+                        onPress: () => {
+                          resetSetupStep();
+                          resetSetup();
+                          router.replace("/setup");
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.textSecondary, fontSize: 14 }]}>
+                  Re-run onboarding
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.splitwiseDisconnectBtn, { borderColor: (theme.warning as string | undefined) ?? "#F59E0B", backgroundColor: theme.surfaceSecondary }]}
+                onPress={() => {
+                  Alert.alert(
+                    "Sign out & restart?",
+                    "Signs you out completely and resets the onboarding flow so you can test the full new user experience.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Sign out & restart",
+                        style: "destructive",
+                        onPress: async () => {
+                          invalidateApiCache();
+                          resetSetup();
+                          await AsyncStorage.multiRemove([
+                            "coconut_ttp_hero_modal_seen_v1",
+                            "coconut_ttp_education_completed_v1",
+                          ]).catch(() => {});
+                          await handleSignOut();
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={[styles.splitwiseDisconnectBtnText, { color: (theme.warning as string | undefined) ?? "#F59E0B", fontSize: 14 }]}>
+                  Sign out &amp; restart as new user
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.splitwiseDisconnectBtn, { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary }]}
                 onPress={handleClearAll}
                 disabled={clearingAll}
@@ -1703,6 +1795,7 @@ export default function SettingsScreen() {
             { borderColor: theme.border, backgroundColor: theme.surfaceSecondary },
           ]}
           onPress={async () => {
+            resetSetupStep();
             resetSetup();
             try { await SecureStore.setItemAsync("coconut.pending_full_reset", "true"); } catch {}
             try { await SecureStore.deleteItemAsync("coconut.force_signout_done"); } catch {}
