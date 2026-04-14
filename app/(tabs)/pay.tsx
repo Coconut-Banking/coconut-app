@@ -77,7 +77,11 @@ export default function PayScreen() {
     setConnecting(true);
     try {
       const locRes = await apiFetch("/api/stripe/terminal/location");
-      const locData = await locRes.json();
+      if (!locRes.ok) {
+        const errData = await locRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) ?? "Failed to get Terminal location");
+      }
+      const locData = await locRes.json() as Record<string, unknown>;
       const locationId = locData.locationId;
 
       if (!locationId) {
@@ -121,7 +125,7 @@ export default function PayScreen() {
 
     setCollecting(true);
     try {
-      const body: Record<string, unknown> = { amount: amt };
+      const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
       if (params.groupId && params.payerMemberId && params.receiverMemberId) {
         body.groupId = params.groupId;
         body.payerMemberId = params.payerMemberId;
@@ -131,8 +135,12 @@ export default function PayScreen() {
         method: "POST",
         body,
       });
-      const piData = await piRes.json();
-      const clientSecret = piData.clientSecret;
+      if (!piRes.ok) {
+        const errData = await piRes.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) ?? "Failed to create payment intent");
+      }
+      const piData = await piRes.json() as Record<string, unknown>;
+      const clientSecret = piData.clientSecret as string | undefined;
 
       if (!clientSecret) {
         Alert.alert("Error", piData.error ?? "Failed to create payment intent");
