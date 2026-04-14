@@ -611,8 +611,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
-            rs.computeSummary();
+            try {
+              await rs.saveAssignments();
+              rs.computeSummary();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Failed to save assignments");
+            }
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
         >
@@ -692,16 +696,16 @@ function SummaryStep({
           people: rs.people.map((p) => ({ name: p.name, email: p.email })),
         },
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
 
       if (res.ok) {
         setFinished(true);
-        setGroupBalances(data.balances || []);
-        setSuggestions(data.suggestions || []);
-        setGroupName(data.groupName || "");
-        setMembers(data.members || []);
+        setGroupBalances((data.balances as typeof groupBalances) || []);
+        setSuggestions((data.suggestions as typeof suggestions) || []);
+        setGroupName((data.groupName as string) || "");
+        setMembers((data.members as typeof members) || []);
       } else {
-        Alert.alert("Error", data.error || "Failed to save to group");
+        Alert.alert("Error", (data.error as string) || "Failed to save to group");
         setFinishing(false);
       }
     } catch {
@@ -721,21 +725,21 @@ function SummaryStep({
           ownerDisplayName: "You",
         },
       });
-      const groupData = await createRes.json();
+      const groupData = await createRes.json().catch(() => ({})) as Record<string, unknown>;
       if (!createRes.ok || !groupData.id) {
         Alert.alert(
           "Error",
-          (groupData as { error?: string }).error ?? "Failed to create group"
+          (groupData.error as string) ?? "Failed to create group"
         );
         setFinishing(false);
         return;
       }
       setGroups((prev) => [
         ...prev,
-        { id: groupData.id, name: (groupData as { name?: string }).name || "New group" },
+        { id: groupData.id as string, name: (groupData.name as string) || "New group" },
       ]);
-      setSelectedGroupId(groupData.id);
-      await handleFinish({ stayForSettle: true, groupId: groupData.id });
+      setSelectedGroupId(groupData.id as string);
+      await handleFinish({ stayForSettle: true, groupId: groupData.id as string });
     } catch {
       Alert.alert("Error", "Failed to create group");
       setFinishing(false);
