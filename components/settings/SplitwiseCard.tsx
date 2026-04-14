@@ -391,6 +391,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         /* ignore malformed return URL */
       }
 
+      invalidateApiCache("/api/splitwise/status");
       const verifyRes = await apiFetch("/api/splitwise/status");
       if (!verifyRes.ok) {
         Alert.alert(
