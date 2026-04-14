@@ -390,7 +390,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
       }
 
       invalidateApiCache("/api/splitwise/status");
-      const verifyRes = await apiFetch("/api/splitwise/status");
+      const verifyRes = await apiFetch(`/api/splitwise/status?_t=${Date.now()}`);
       if (!verifyRes.ok) {
         Alert.alert(
           "Splitwise",

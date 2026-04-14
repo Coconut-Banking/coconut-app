@@ -35,7 +35,7 @@ const CACHE_TTL_MS: Record<string, number> = {
   "/api/groups/recent-activity": 30_000,
   "/api/groups/person": 30_000,
   "/api/plaid/accounts": 120_000,
-  "/api/splitwise/status": 120_000,
+  "/api/splitwise/status": 0,
   "/api/gmail/status": 300_000,
   "/api/stripe/connect/status": 300_000,
   "/api/subscriptions": 60_000,
