@@ -925,9 +925,8 @@ export default function AddExpenseScreen() {
     if (notesTrim) body.notes = notesTrim;
     if (splitMethod === "equal" && targets.length === 1 && targets[0].type === "friend") {
       body.personKey = targets[0].key;
-    } else if (splitMethod !== "equal") {
-      body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
     }
+    body.shares = shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: Math.round(sh.share * 100) / 100 }));
 
     // Optimistic: give instant feedback, fire the POST in the background
     sfx.coin();
