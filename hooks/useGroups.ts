@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useApiFetch, getPersistedResponse, invalidateApiCache } from "../lib/api";
+import { getCacheGeneration } from "../lib/api-cache";
 import {
   applySettlementToFriendBalance,
   applySettlementToGroupDetail,
@@ -84,6 +85,25 @@ export function clearAllSharedCaches() {
   _memPersonDetail.clear();
   _memTxDetail.clear();
   _memActivity = null;
+  _lastSeenGen = getCacheGeneration();
+}
+
+/**
+ * Generation-based auto-clear: if any mutation bumped the cache generation
+ * since we last checked, all _mem* caches are stale. Call this at the top
+ * of any hook fetch path to auto-detect staleness without manual invalidation.
+ */
+let _lastSeenGen = 0;
+export function syncCacheGeneration() {
+  const current = getCacheGeneration();
+  if (current !== _lastSeenGen) {
+    _lastSeenGen = current;
+    _memSummary.clear();
+    _memGroupDetail.clear();
+    _memPersonDetail.clear();
+    _memTxDetail.clear();
+    _memActivity = null;
+  }
 }
 
 export interface GroupMember {
@@ -190,6 +210,7 @@ export type UseGroupsSummaryOptions = {
 };
 
 export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
+  syncCacheGeneration();
   const contacts = options?.contacts === true;
   const summaryPath = contacts ? "/api/groups/summary?contacts=1" : "/api/groups/summary";
   const apiFetch = useApiFetch();
@@ -351,6 +372,7 @@ function _setMemGroupDetail(id: string, detail: GroupDetail) {
 }
 
 export function useGroupDetail(id: string | null) {
+  syncCacheGeneration();
   const apiFetch = useApiFetch();
   const cached = id ? _memGroupDetail.get(id) ?? null : null;
   const [detail, setDetail] = useState<GroupDetail | null>(cached);
@@ -460,6 +482,7 @@ function _setMemPersonDetail(key: string, detail: PersonDetail) {
 }
 
 export function usePersonDetail(key: string | null) {
+  syncCacheGeneration();
   const apiFetch = useApiFetch();
   const cached = key ? _memPersonDetail.get(key) ?? null : null;
   const [detail, setDetail] = useState<PersonDetail | null>(cached);
@@ -584,6 +607,7 @@ export interface TransactionDetail {
 const _memTxDetail = new Map<string, TransactionDetail>();
 
 export function useTransactionDetail(id: string | null) {
+  syncCacheGeneration();
   const apiFetch = useApiFetch();
   const cached = id ? _memTxDetail.get(id) ?? null : null;
   const [detail, setDetail] = useState<TransactionDetail | null>(cached);
@@ -723,6 +747,7 @@ export function useHasUnseenActivity(): boolean {
 const ACTIVITY_DEBOUNCE_MS = 2_000;
 
 export function useRecentActivity(enabled = true) {
+  syncCacheGeneration();
   const apiFetch = useApiFetch();
   const mem = _memActivity;
   const [activity, setActivity] = useState<RecentActivityItem[]>(mem ?? []);

@@ -2,6 +2,22 @@ import { useCallback, useRef } from "react";
 import { useAuth } from "@clerk/expo";
 import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  getCacheGeneration as _getCacheGeneration,
+  getCacheTtl,
+  readCache,
+  writeCache,
+  shouldPersist,
+  PERSIST_PREFIX,
+  _inflightGets,
+  _inflightAborts,
+  invalidateApiCache as _invalidateApiCache,
+  bumpCacheGeneration as _bumpCacheGeneration,
+} from "./api-cache";
+
+// Re-export for consumers
+export { getCacheGeneration } from "./api-cache";
+export const invalidateApiCache = _invalidateApiCache;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
@@ -24,51 +40,6 @@ const _endpointBackoff = new Map<string, number>();
 const BACKOFF_BASE_MS = 3000;
 const BACKOFF_MAX_MS = 30000;
 
-const _inflightGets = new Map<string, Promise<Response>>();
-
-const MAX_CACHE_ENTRIES = 50;
-const _responseCache = new Map<string, { body: unknown; status: number; ts: number }>();
-const CACHE_TTL_MS: Record<string, number> = {
-  "/api/plaid/status": 60_000,
-  "/api/plaid/transactions": 60_000,
-  "/api/groups/summary": 45_000,
-  "/api/groups/recent-activity": 30_000,
-  "/api/groups/person": 30_000,
-  "/api/plaid/accounts": 120_000,
-  "/api/splitwise/status": 0,
-  "/api/gmail/status": 300_000,
-  "/api/stripe/connect/status": 300_000,
-  "/api/subscriptions": 60_000,
-};
-
-const GROUP_DETAIL_RE = /^\/api\/groups\/[a-f0-9-]+$/;
-
-function getCacheTtl(path: string): number {
-  for (const [prefix, ttl] of Object.entries(CACHE_TTL_MS)) {
-    if (path === prefix || path.startsWith(prefix + "?")) return ttl;
-  }
-  if (GROUP_DETAIL_RE.test(path)) return 10_000;
-  return 0;
-}
-
-const PERSIST_PATHS = new Set([
-  "/api/groups/summary",
-  "/api/groups/recent-activity",
-  "/api/plaid/transactions",
-  "/api/plaid/status",
-  "/api/plaid/accounts",
-]);
-
-function shouldPersist(path: string): boolean {
-  for (const p of PERSIST_PATHS) {
-    if (path === p || path.startsWith(p + "?")) return true;
-  }
-  if (GROUP_DETAIL_RE.test(path)) return true;
-  return false;
-}
-
-const PERSIST_PREFIX = "coconut.api.cache.";
-
 function persistToStorage(path: string, body: string, status: number) {
   AsyncStorage.setItem(
     PERSIST_PREFIX + path,
@@ -86,14 +57,19 @@ export async function getPersistedResponse(path: string): Promise<{ body: string
   }
 }
 
-export function invalidateApiCache(path?: string) {
-  if (path) {
-    Array.from(_responseCache.keys()).forEach((key) => {
-      if (key === path || key.startsWith(path + "?")) _responseCache.delete(key);
-    });
-  } else {
-    _responseCache.clear();
-  }
+/**
+ * Nuclear invalidation: bumps generation + clears RAM + aborts inflight GETs
+ * + wipes AsyncStorage response cache.
+ */
+export function bumpCacheGeneration() {
+  _bumpCacheGeneration(() => {
+    AsyncStorage.getAllKeys()
+      .then((keys) => {
+        const cacheKeys = keys.filter((k) => k.startsWith(PERSIST_PREFIX));
+        if (cacheKeys.length > 0) AsyncStorage.multiRemove(cacheKeys).catch(() => {});
+      })
+      .catch(() => {});
+  });
 }
 
 const MAX_CONCURRENT = 6;
@@ -254,16 +230,13 @@ export function useApiFetch() {
       if (__DEV__) console.log(`[api] → ${method} ${path}`);
 
       if (method === "GET") {
-        const ttl = getCacheTtl(path);
-        if (ttl > 0) {
-          const cached = _responseCache.get(path);
-          if (cached && Date.now() - cached.ts < ttl) {
-            if (__DEV__) console.log(`[api] 💾 cache hit ${path}`);
-            return new Response(JSON.stringify(cached.body), {
-              status: cached.status,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
+        const cached = readCache(path);
+        if (cached) {
+          if (__DEV__) console.log(`[api] 💾 cache hit ${path}`);
+          return new Response(JSON.stringify(cached.body), {
+            status: cached.status,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         const inflight = _inflightGets.get(path);
@@ -405,27 +378,22 @@ export function useApiFetch() {
       };
 
       if (method === "GET") {
+        const getAbort = new AbortController();
+        _inflightAborts.set(path, getAbort);
+        const genAtStart = _getCacheGeneration();
         const promise = (async () => {
           await acquireSlot();
           try {
             const res = await executeFetch();
-            const ttl = getCacheTtl(path);
+            if (getAbort.signal.aborted || _getCacheGeneration() !== genAtStart) return res;
             if (res.ok) {
               const clone = res.clone();
               clone.text().then((body) => {
-                if (ttl > 0) {
-                  const parsed = JSON.parse(body);
-                  if (_responseCache.size >= MAX_CACHE_ENTRIES) {
-                    const firstKey = _responseCache.keys().next().value;
-                    if (firstKey !== undefined) _responseCache.delete(firstKey);
-                  }
-                  _responseCache.set(path, { body: parsed, status: res.status, ts: Date.now() });
-                }
-                if (shouldPersist(path)) {
-                  // Skip persistence for responses > 2 MB to avoid AsyncStorage limits
-                  if (body.length <= 2 * 1024 * 1024) {
-                    persistToStorage(path, body, res.status);
-                  }
+                if (_getCacheGeneration() !== genAtStart) return;
+                const parsed = JSON.parse(body);
+                writeCache(path, parsed, res.status);
+                if (shouldPersist(path) && body.length <= 2 * 1024 * 1024) {
+                  persistToStorage(path, body, res.status);
                 }
               }).catch(() => {});
             }
@@ -438,10 +406,11 @@ export function useApiFetch() {
           return res;
         } finally {
           _inflightGets.delete(path);
+          _inflightAborts.delete(path);
         }
       }
 
-      invalidateApiCache(path);
+      bumpCacheGeneration();
       await acquireSlot();
       try { return await executeFetch(); } finally { releaseSlot(); }
     },
