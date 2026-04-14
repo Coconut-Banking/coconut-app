@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import {
@@ -128,7 +128,6 @@ export default function SettingsScreen() {
     importedSplitwiseGroupCount?: number;
   } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
-  const [splitwiseClearing, setSplitwiseClearing] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
   /** True only while the in-focus Settings fetch runs (avoids treating null status as “not configured”). */
   const [splitwiseLoading, setSplitwiseLoading] = useState(false);
@@ -808,71 +807,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const runSplitwiseClearAndRefresh = async () => {
-    setSplitwiseClearing(true);
-    try {
-      const res = await apiFetch("/api/splitwise/clear", {
-        method: "POST",
-        body: { disconnectToken: true },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        Alert.alert("Could not disconnect", (data as { error?: string }).error ?? "Try again.");
-        return;
-      }
-      setSplitwiseResult(null);
-      invalidateApiCache("/api/splitwise/status");
-      invalidateApiCache("/api/groups/summary");
-      invalidateApiCache("/api/groups/recent-activity");
-      clearMemSummaryCache();
-      clearMemActivityCache();
-      DeviceEventEmitter.emit("groups-updated");
-      await fetchSplitwiseStatus();
-    } catch {
-      Alert.alert("Error", "Could not disconnect. Check your connection.");
-    } finally {
-      setSplitwiseClearing(false);
-    }
-  };
-
-  /** Full disconnect: only after Splitwise data exists in Coconut (imported groups or a successful import this session). */
-  const disconnectSplitwiseAndClear = () => {
-    Alert.alert(
-      "Disconnect Splitwise?",
-      "Removes every Splitwise-imported group and expense from Coconut and disconnects your Splitwise login. Your Splitwise account is unchanged.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: () => void runSplitwiseClearAndRefresh(),
-        },
-      ]
-    );
-  };
-
-  /** Linked token only (no imported data yet): remove OAuth token without implying a full data wipe. */
-  const removeSplitwiseSavedLogin = () => {
-    Alert.alert(
-      "Remove saved login?",
-      "Coconut will forget your Splitwise authorization. You haven’t imported groups yet, so nothing is removed from Shared.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: () => void runSplitwiseClearAndRefresh(),
-        },
-      ]
-    );
-  };
-
-  const hasSplitwiseImportedData = useMemo(
-    () =>
-      (splitwiseStatus?.importedSplitwiseGroupCount ?? 0) > 0 || Boolean(splitwiseResult?.ok),
-    [splitwiseStatus?.importedSplitwiseGroupCount, splitwiseResult?.ok]
-  );
-
   const disconnectBank = () => {
     Alert.alert(
       "Disconnect bank",
@@ -905,8 +839,8 @@ export default function SettingsScreen() {
 
   const handleClearAll = () => {
     Alert.alert(
-      "Clear all data?",
-      "This permanently deletes ALL your groups, expenses, settlements, and receipts from Coconut. Your bank connections and account stay intact.",
+      "Clear all account data?",
+      "This permanently deletes ALL your groups, friends, expenses, settlements, receipts, and Splitwise connection from Coconut. Your bank connections and login stay intact.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -925,12 +859,18 @@ export default function SettingsScreen() {
                     : null,
                 ].filter(Boolean).join("\n");
                 Alert.alert("All data cleared", details || "Everything wiped.");
+                invalidateApiCache();
+                clearMemSummaryCache();
+                clearMemActivityCache();
                 try {
                   const allKeys = await AsyncStorage.getAllKeys();
-                  const staleKeys = allKeys.filter((k) => k.startsWith("coconut.optimistic.friends."));
+                  const staleKeys = allKeys.filter((k) =>
+                    k.startsWith("coconut.optimistic.friends.") || k.startsWith("coconut.api.cache.")
+                  );
                   if (staleKeys.length) await AsyncStorage.multiRemove(staleKeys);
                 } catch { /* best effort */ }
                 DeviceEventEmitter.emit("groups-updated");
+                await fetchSplitwiseStatus();
               } else {
                 const errData = await res.json().catch(() => null);
                 Alert.alert("Error", errData?.error ?? "Could not clear data.");
@@ -1479,7 +1419,7 @@ export default function SettingsScreen() {
                   <TouchableOpacity
                     style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
                     onPress={startSplitwiseImport}
-                    disabled={splitwiseImporting || splitwiseClearing}
+                    disabled={splitwiseImporting}
                   >
                     {splitwiseImporting ? (
                       <ActivityIndicator size="small" color="#fff" />
@@ -1497,7 +1437,7 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
                   onPress={startSplitwiseImport}
-                  disabled={splitwiseImporting || splitwiseClearing}
+                  disabled={splitwiseImporting}
                 >
                   {splitwiseImporting ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -1506,34 +1446,7 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               ) : null}
-              {hasSplitwiseImportedData ? (
-                <TouchableOpacity
-                  style={[
-                    styles.splitwiseDisconnectBtn,
-                    { borderColor: theme.errorLight, backgroundColor: theme.surfaceSecondary },
-                  ]}
-                  onPress={disconnectSplitwiseAndClear}
-                  disabled={splitwiseClearing || splitwiseImporting}
-                >
-                  {splitwiseClearing ? (
-                    <ActivityIndicator size="small" color={theme.error} />
-                  ) : (
-                    <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error }]}>
-                      Disconnect &amp; remove saved login
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  onPress={removeSplitwiseSavedLogin}
-                  disabled={splitwiseClearing || splitwiseImporting}
-                  style={{ alignSelf: "flex-start", paddingVertical: 4 }}
-                >
-                  <Text style={{ color: theme.textQuaternary, fontSize: 14, textDecorationLine: "underline" }}>
-                    Remove saved Splitwise login
-                  </Text>
-                </TouchableOpacity>
-              )}
+              {null}
             </View>
           )}
         </View>
@@ -1780,7 +1693,7 @@ export default function SettingsScreen() {
                   <ActivityIndicator size="small" color={theme.error} />
                 ) : (
                   <Text style={[styles.splitwiseDisconnectBtnText, { color: theme.error, fontSize: 14 }]}>
-                    Clear all data
+                    Clear all account data
                   </Text>
                 )}
               </TouchableOpacity>

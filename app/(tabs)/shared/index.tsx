@@ -254,7 +254,7 @@ export default function SharedIndex() {
   const isFocused = useIsFocused();
   const { isDemoOn, setIsDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: realSummary, loading, refetch } = useGroupsSummary({ contacts: true });
+  const { summary: realSummary, loading, refetch, forceRefetch } = useGroupsSummary({ contacts: true });
   const summary = isDemoOn ? demo.summary : realSummary;
   const { currencyCode: myCurrency } = useCurrency();
 
@@ -357,7 +357,7 @@ export default function SharedIndex() {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      const [, res] = await Promise.all([refetch(), apiFetch("/api/groups")]);
+      const [, res] = await Promise.all([forceRefetch(), apiFetch("/api/groups")]);
       if (res.ok) {
         const data = await res.json().catch(() => []);
         if (Array.isArray(data)) {
@@ -374,7 +374,7 @@ export default function SharedIndex() {
     } finally {
       setRefreshing(false);
     }
-  }, [isDemoOn, refetch, apiFetch]);
+  }, [isDemoOn, forceRefetch, apiFetch]);
 
   useEffect(() => {
     // Shared tab should always use real data.

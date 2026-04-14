@@ -261,13 +261,14 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
     [apiFetch, summaryPath, contacts]
   );
 
-  // Clears local state immediately then refetches — use after mutations (e.g. settlements)
-  // so the UI doesn't show stale balances while the background fetch completes.
-  const forceRefetch = useCallback(() => {
+  // Clears local state AND API-level cache, then refetches. Use for pull-to-refresh
+  // and after mutations so the UI doesn't show stale balances.
+  const forceRefetch = useCallback(async () => {
     _memSummary.delete(summaryPath);
+    invalidateApiCache(summaryPath);
     setSummary(null);
     setLoading(true);
-    void fetchSummary(false);
+    await fetchSummary(false);
   }, [fetchSummary, summaryPath]);
 
   useEffect(() => {
