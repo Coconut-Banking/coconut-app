@@ -852,23 +852,31 @@ const POLL_CONNECT_INTERVAL = 1500;
 
 async function pollConnectStatus(
   apiFetch: (path: string) => Promise<Response>,
-): Promise<{ complete: boolean; requiresVerification: boolean }> {
+): Promise<{ complete: boolean; payoutsEnabled: boolean; requiresVerification: boolean }> {
   for (let i = 0; i < POLL_CONNECT_ATTEMPTS; i++) {
     try {
       const res = await apiFetch("/api/stripe/connect/status");
       if (res.ok) {
         const data = await res.json() as {
           onboardingComplete?: boolean;
+          chargesEnabled?: boolean;
+          payoutsEnabled?: boolean;
           requiresVerification?: boolean;
         };
-        if (data.onboardingComplete) {
-          return { complete: true, requiresVerification: data.requiresVerification ?? false };
+        // Consider the account "submitted" once Stripe has received their info,
+        // even if payouts aren't enabled yet (pending review / ID verification)
+        if (data.onboardingComplete || data.chargesEnabled) {
+          return {
+            complete: true,
+            payoutsEnabled: data.payoutsEnabled ?? false,
+            requiresVerification: data.requiresVerification ?? false,
+          };
         }
       }
     } catch { /* keep polling */ }
     if (i < POLL_CONNECT_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, POLL_CONNECT_INTERVAL));
   }
-  return { complete: false, requiresVerification: false };
+  return { complete: false, payoutsEnabled: false, requiresVerification: false };
 }
 
 function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
@@ -922,15 +930,16 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
       await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
 
       // Poll for completion whether the user finished or closed early
-      const { complete, requiresVerification } = await pollConnectStatus(apiFetch);
+      const { complete, payoutsEnabled, requiresVerification } = await pollConnectStatus(apiFetch);
       if (complete) {
-        if (requiresVerification) {
-          // Stripe accepted basic info but still needs identity verification for payouts
-          setNeedsVerification(true);
-          setLoading(false);
-        } else {
+        if (payoutsEnabled && !requiresVerification) {
+          // Fully ready — charges and payouts both enabled
           setSuccess(true);
           setTimeout(onContinue, 1400);
+        } else {
+          // Stripe accepted info but still reviewing / needs ID for payouts
+          setNeedsVerification(true);
+          setLoading(false);
         }
       } else {
         // Not complete yet — they can finish later in Settings
@@ -968,19 +977,19 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
           </View>
         </View>
         <View style={styles.stepContent}>
-          <Text style={[styles.stepTitle, { color: theme.text }]}>One more step</Text>
+          <Text style={[styles.stepTitle, { color: theme.text }]}>Almost there</Text>
           <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
-            Stripe needs to verify your identity before payouts can be deposited to your bank. This usually takes a minute.
+            Stripe has received your info and is reviewing your account. You can start accepting payments now, but payouts to your bank will be enabled once Stripe verifies your identity.
           </Text>
           <View style={[{ borderRadius: 14, padding: 14, marginTop: 8, backgroundColor: (theme.warningLight as string | undefined) ?? "#FEF3C7", borderWidth: 1, borderColor: (theme.warning as string | undefined) ?? "#F59E0B" }]}>
             <Text style={[{ fontSize: 13, fontFamily: font.medium, color: theme.text, lineHeight: 18 }]}>
-              Without verification, you can still accept payments — but funds will be held until Stripe confirms your identity.
+              Stripe will email you if they need anything — this usually takes 1–2 business days. You can also check Settings → Payments at any time.
             </Text>
           </View>
         </View>
         <View style={{ gap: 8 }}>
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: theme.warning ?? "#F59E0B" }, loading && styles.disabled]}
+            style={[styles.primaryBtn, { backgroundColor: theme.primary }, loading && styles.disabled]}
             onPress={startOnboarding}
             disabled={loading}
             activeOpacity={0.9}
@@ -989,14 +998,14 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
               <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Ionicons name="person-outline" size={20} color="#fff" />
-                <Text style={styles.primaryBtnText}>Verify my identity</Text>
+                <Ionicons name="refresh-outline" size={20} color="#fff" />
+                <Text style={styles.primaryBtnText}>Open Stripe to check</Text>
               </>
             )}
           </TouchableOpacity>
           <TouchableOpacity onPress={onContinue} style={styles.secondaryBtn} hitSlop={8}>
             <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
-              I&apos;ll do this later
+              Continue to app
             </Text>
           </TouchableOpacity>
         </View>
