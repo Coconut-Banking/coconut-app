@@ -847,8 +847,8 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
 // STEP 3: STRIPE CONNECT — receive tap-to-pay directly to your bank
 // ────────────────────────────────────────────────────────────────────────────
 
-const POLL_CONNECT_ATTEMPTS = 6;
-const POLL_CONNECT_INTERVAL = 1500;
+const POLL_CONNECT_ATTEMPTS = 20;
+const POLL_CONNECT_INTERVAL = 2000;
 
 async function pollConnectStatus(
   apiFetch: (path: string) => Promise<Response>,
@@ -941,7 +941,10 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
         setSuccess(true);
         setLoading(false);
       } else {
-        // Not complete yet — they can finish later in Settings
+        // Stripe is still processing — treat as pending review so they get
+        // the "Almost there" screen rather than silently going nowhere
+        setNeedsVerification(true);
+        setSuccess(true);
         setLoading(false);
       }
     } catch (e) {
@@ -1042,6 +1045,11 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
             </>
           )}
         </TouchableOpacity>
+        {loading ? (
+          <Text style={[{ color: theme.textTertiary, textAlign: "center", fontSize: 13, marginTop: 4, fontFamily: font.regular }]}>
+            Verifying with Stripe — this can take up to 30 seconds…
+          </Text>
+        ) : null}
 
         <TouchableOpacity onPress={onContinue} style={styles.secondaryBtn} hitSlop={8}>
           <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
