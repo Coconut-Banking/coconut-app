@@ -22,6 +22,7 @@ import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import {
   clearMemSummaryCache,
   clearMemActivityCache,
+  clearAllSharedCaches,
 } from "../../hooks/useGroups";
 import { settingsStyles as s } from "./styles";
 import type { UninvitedMember } from "./InviteModal";
@@ -198,11 +199,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         return;
       }
       setSplitwiseResult(null);
-      invalidateApiCache("/api/splitwise/status");
-      invalidateApiCache("/api/groups/summary");
-      invalidateApiCache("/api/groups/recent-activity");
-      clearMemSummaryCache();
-      clearMemActivityCache();
+      invalidateApiCache();
+      clearAllSharedCaches();
       DeviceEventEmitter.emit("groups-updated");
       await fetchSplitwiseStatus();
     } catch {

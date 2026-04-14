@@ -77,6 +77,15 @@ export function clearMemSummaryCache() {
   _memSummary.clear();
 }
 
+/** Nuclear: wipe every in-memory shared/split cache. */
+export function clearAllSharedCaches() {
+  _memSummary.clear();
+  _memGroupDetail.clear();
+  _memPersonDetail.clear();
+  _memTxDetail.clear();
+  _memActivity = null;
+}
+
 export interface GroupMember {
   id: string;
   user_id: string | null;
