@@ -852,18 +852,23 @@ const POLL_CONNECT_INTERVAL = 1500;
 
 async function pollConnectStatus(
   apiFetch: (path: string) => Promise<Response>,
-): Promise<boolean> {
+): Promise<{ complete: boolean; requiresVerification: boolean }> {
   for (let i = 0; i < POLL_CONNECT_ATTEMPTS; i++) {
     try {
       const res = await apiFetch("/api/stripe/connect/status");
       if (res.ok) {
-        const data = await res.json();
-        if ((data as { onboardingComplete?: boolean }).onboardingComplete) return true;
+        const data = await res.json() as {
+          onboardingComplete?: boolean;
+          requiresVerification?: boolean;
+        };
+        if (data.onboardingComplete) {
+          return { complete: true, requiresVerification: data.requiresVerification ?? false };
+        }
       }
     } catch { /* keep polling */ }
     if (i < POLL_CONNECT_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, POLL_CONNECT_INTERVAL));
   }
-  return false;
+  return { complete: false, requiresVerification: false };
 }
 
 function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
@@ -871,11 +876,13 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
   const apiFetch = useApiFetch();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const startOnboarding = async () => {
     setLoading(true);
     setError(null);
+    setNeedsVerification(false);
     try {
       const rawScheme = Constants.expoConfig?.scheme;
       const scheme =
@@ -915,10 +922,16 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
       await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
 
       // Poll for completion whether the user finished or closed early
-      const complete = await pollConnectStatus(apiFetch);
+      const { complete, requiresVerification } = await pollConnectStatus(apiFetch);
       if (complete) {
-        setSuccess(true);
-        setTimeout(onContinue, 1400);
+        if (requiresVerification) {
+          // Stripe accepted basic info but still needs identity verification for payouts
+          setNeedsVerification(true);
+          setLoading(false);
+        } else {
+          setSuccess(true);
+          setTimeout(onContinue, 1400);
+        }
       } else {
         // Not complete yet — they can finish later in Settings
         setLoading(false);
@@ -943,6 +956,51 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
           Tap-to-pay payments will be deposited directly to your bank.
         </Text>
       </View>
+    );
+  }
+
+  if (needsVerification) {
+    return (
+      <Animated.View entering={FadeIn.duration(400)} style={styles.stepContainer}>
+        <View style={styles.illustrationWrap}>
+          <View style={[styles.successCircle, { borderColor: theme.warning ?? "#F59E0B" }]}>
+            <Ionicons name="shield-outline" size={56} color={theme.warning ?? "#F59E0B"} />
+          </View>
+        </View>
+        <View style={styles.stepContent}>
+          <Text style={[styles.stepTitle, { color: theme.text }]}>One more step</Text>
+          <Text style={[styles.stepDesc, { color: theme.textTertiary }]}>
+            Stripe needs to verify your identity before payouts can be deposited to your bank. This usually takes a minute.
+          </Text>
+          <View style={[{ borderRadius: 14, padding: 14, marginTop: 8, backgroundColor: (theme.warningLight as string | undefined) ?? "#FEF3C7", borderWidth: 1, borderColor: (theme.warning as string | undefined) ?? "#F59E0B" }]}>
+            <Text style={[{ fontSize: 13, fontFamily: font.medium, color: theme.text, lineHeight: 18 }]}>
+              Without verification, you can still accept payments — but funds will be held until Stripe confirms your identity.
+            </Text>
+          </View>
+        </View>
+        <View style={{ gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: theme.warning ?? "#F59E0B" }, loading && styles.disabled]}
+            onPress={startOnboarding}
+            disabled={loading}
+            activeOpacity={0.9}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="person-outline" size={20} color="#fff" />
+                <Text style={styles.primaryBtnText}>Verify my identity</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onContinue} style={styles.secondaryBtn} hitSlop={8}>
+            <Text style={[styles.secondaryBtnText, { color: theme.textTertiary }]}>
+              I&apos;ll do this later
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     );
   }
 
