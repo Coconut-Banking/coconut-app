@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { AppState, NativeModules, type AppStateStatus } from "react-native";
+import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ENABLED_KEY = "coconut.biometric_lock_enabled_v1";
@@ -33,10 +33,11 @@ let _LocalAuthentication: typeof import("expo-local-authentication") | null = nu
 
 async function getLocalAuth() {
   if (_LocalAuthentication) return _LocalAuthentication;
-  // Guard: native module is not registered in Expo Go — skip to avoid crash
-  if (!NativeModules.ExpoLocalAuthentication) return null;
   try {
-    _LocalAuthentication = await import("expo-local-authentication");
+    const mod = await import("expo-local-authentication");
+    // Verify the native module is actually functional (not stubbed in Expo Go)
+    if (typeof mod.hasHardwareAsync !== "function") return null;
+    _LocalAuthentication = mod;
     return _LocalAuthentication;
   } catch {
     return null;

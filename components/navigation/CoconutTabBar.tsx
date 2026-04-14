@@ -5,7 +5,7 @@
 import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { StackActions } from "@react-navigation/native";
+import { CommonActions, StackActions } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { font, fontSize } from "../../lib/theme";
 import { useEffect, useRef } from "react";
@@ -61,17 +61,17 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
     sfx.tabTap();
     const route = state.routes.find((r) => r.name === "shared");
     const nested = route?.state;
-    const isDeep = nested?.key && (nested.index ?? 0) > 0;
+    const isDeep = Boolean(nested?.key && (nested.index ?? 0) > 0);
 
     if (current === "shared") {
-      if (isDeep) {
-        navigation.dispatch({ ...StackActions.popToTop(), target: nested!.key });
+      if (isDeep && nested?.key) {
+        navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
       }
     } else {
-      navigation.navigate("shared" as never);
-      if (isDeep) {
+      navigation.dispatch(CommonActions.navigate({ name: "shared", params: {} }));
+      if (isDeep && nested?.key) {
         queueMicrotask(() => {
-          navigation.dispatch({ ...StackActions.popToTop(), target: nested!.key });
+          navigation.dispatch({ ...StackActions.popToTop(), target: nested.key });
         });
       }
     }
