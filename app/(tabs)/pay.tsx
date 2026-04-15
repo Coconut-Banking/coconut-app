@@ -531,7 +531,7 @@ function PayScreenInner() {
         directPayout = cached.directPayout;
         if (__DEV__) console.log("[Pay] Using pre-fetched PaymentIntent:", cached.paymentIntentId);
       } else {
-        const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
+        const body: Record<string, unknown> = { amount: amt };
         if (params.currency) body.currency = params.currency;
         if (params.groupId && params.payerMemberId && params.receiverMemberId) {
           body.groupId = params.groupId;
