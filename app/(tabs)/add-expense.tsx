@@ -947,6 +947,9 @@ export default function AddExpenseScreen() {
     });
     if (nav.canGoBack()) nav.back();
     else nav.replace("/(tabs)");
+    // Reset the guard so a second save in the same session works if navigation
+    // doesn't fully unmount the screen (e.g. replace stays on same stack level).
+    savedRef.current = false;
 
     const _saveT0 = __DEV__ ? Date.now() : 0;
     apiFetch("/api/manual-expense", { method: "POST", body })
