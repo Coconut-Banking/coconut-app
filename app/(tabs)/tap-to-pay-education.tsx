@@ -54,13 +54,18 @@ export default function TapToPayEducationScreen() {
   const done = useCallback(async () => {
     await markTapToPayEducationCompleted();
     if (params.fromTerms === "1") {
-      // Came from T&C acceptance mid-payment — go back to where they were
       if (router.canGoBack()) router.back();
       else router.replace("/(tabs)");
     } else {
       router.push("/(tabs)/add-expense");
     }
   }, [router, params.fromTerms]);
+
+  const gotIt = useCallback(async () => {
+    await markTapToPayEducationCompleted();
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  }, [router]);
 
   const back = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -125,6 +130,11 @@ export default function TapToPayEducationScreen() {
             {params.fromTerms === "1" ? "Got it — I'm ready" : "Add an expense to collect"}
           </Text>
         </TouchableOpacity>
+        {params.fromTerms !== "1" && (
+          <TouchableOpacity onPress={gotIt} style={styles.secondaryCta} hitSlop={12} activeOpacity={0.7}>
+            <Text style={[styles.secondaryCtaText, { color: theme.textTertiary }]}>Got it, I'll explore on my own</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -207,4 +217,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
   },
   ctaText: { color: "#fff", fontSize: 17, fontFamily: font.semibold },
+  secondaryCta: { alignItems: "center", paddingVertical: 12 },
+  secondaryCtaText: { fontSize: 15, fontFamily: font.medium },
 });
