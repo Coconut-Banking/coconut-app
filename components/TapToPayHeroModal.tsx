@@ -31,26 +31,29 @@ export function TapToPayHeroModal() {
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasSignedInRef = useRef(false);
 
   const scheduleCheck = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    // Wait 3.5s after the app is active + auth confirmed — enough for Face ID
-    // to fully complete its prompt and unlock animation before we show anything.
     timerRef.current = setTimeout(async () => {
       if (Platform.OS === "web") return;
       const seen = await hasSeenTapToPayHeroModal();
       if (!seen) setVisible(true);
       setReady(true);
-    }, 3500);
+    }, 800);
   }, []);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
 
-    // Fire once when auth is ready
-    scheduleCheck();
+    // Only trigger on the transition from not-signed-in → signed-in
+    // (i.e. after Face ID completes), not on every re-render.
+    if (!wasSignedInRef.current) {
+      wasSignedInRef.current = true;
+      scheduleCheck();
+    }
 
-    // Re-arm when app comes back to foreground (e.g. after Face ID on re-open)
+    // Re-arm when app comes back to foreground after being backgrounded
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") scheduleCheck();
     });
