@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Pressable,
   Platform,
+  AppState,
   useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -29,30 +30,36 @@ export function TapToPayHeroModal() {
   const { isSignedIn, isLoaded } = useAuth();
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    // Wait until Clerk auth is fully loaded and user is confirmed signed in
-    // before even checking the flag — this prevents the modal from racing
-    // with Face ID / biometric authentication on app launch.
-    if (!isLoaded || !isSignedIn) return;
-
-    let cancelled = false;
-    // Additional delay so biometric prompt has fully resolved before we show
-    // a full-screen modal on top of it.
-    const timer = setTimeout(async () => {
+  const scheduleCheck = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    // Wait 3.5s after the app is active + auth confirmed — enough for Face ID
+    // to fully complete its prompt and unlock animation before we show anything.
+    timerRef.current = setTimeout(async () => {
       if (Platform.OS === "web") return;
       const seen = await hasSeenTapToPayHeroModal();
-      if (!cancelled && !seen) {
-        setVisible(true);
-      }
-      if (!cancelled) setReady(true);
-    }, 1500);
+      if (!seen) setVisible(true);
+      setReady(true);
+    }, 3500);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
+    // Fire once when auth is ready
+    scheduleCheck();
+
+    // Re-arm when app comes back to foreground (e.g. after Face ID on re-open)
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") scheduleCheck();
+    });
 
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      sub.remove();
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, scheduleCheck]);
 
   const dismiss = useCallback(async () => {
     await markTapToPayHeroModalSeen();
