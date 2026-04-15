@@ -32,30 +32,36 @@ export function TapToPayHeroModal() {
   const [ready, setReady] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasSignedInRef = useRef(false);
+  // Track the last time the app became active so we can measure elapsed time
+  const lastActivatedAtRef = useRef<number>(Date.now());
 
   const scheduleCheck = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    // Face ID fires when app becomes active and takes ~1–1.5s to scan + animate.
+    // We measure how long ago "active" was set and pad to 2s total from that point.
+    const elapsed = Date.now() - lastActivatedAtRef.current;
+    const remaining = Math.max(0, 2000 - elapsed);
     timerRef.current = setTimeout(async () => {
       if (Platform.OS === "web") return;
       const seen = await hasSeenTapToPayHeroModal();
       if (!seen) setVisible(true);
       setReady(true);
-    }, 800);
+    }, remaining);
   }, []);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
+    if (wasSignedInRef.current) return;
+    wasSignedInRef.current = true;
 
-    // Only trigger on the transition from not-signed-in → signed-in
-    // (i.e. after Face ID completes), not on every re-render.
-    if (!wasSignedInRef.current) {
-      wasSignedInRef.current = true;
-      scheduleCheck();
-    }
+    // Schedule based on how long ago the app became active
+    scheduleCheck();
 
-    // Re-arm when app comes back to foreground after being backgrounded
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") scheduleCheck();
+      if (state === "active") {
+        lastActivatedAtRef.current = Date.now();
+        scheduleCheck();
+      }
     });
 
     return () => {
