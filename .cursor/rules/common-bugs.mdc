@@ -7,30 +7,34 @@ globs:
 
 # Common Bug Patterns
 
-## API / Network
+## Async / API Error Handling
 
-- Always check `res.ok` BEFORE calling `res.json()` — server errors may return non-JSON (HTML error pages, 500s). Pattern:
-  ```typescript
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? "Request failed");
-  }
-  const data = await res.json();
-  ```
-- Never send an empty `Authorization` header — if token is null, throw early: `if (!token) throw new Error("No auth token")`.
-- Call `setLoading(false)` unconditionally in `finally` — never gate on flags.
-- Always have a `catch` alongside `try-finally` for user-visible operations — `try-finally` without `catch` swallows errors silently.
+- Always capture the `Response` from `apiFetch()` — calling `await apiFetch(...)` without assigning the result silently discards HTTP errors (4xx/5xx), because `fetch()` does NOT throw on non-ok responses.
+- Always check `res.ok` before proceeding after an API call. If the server returns a 500 HTML error page, calling `.json()` first will throw a `SyntaxError` instead of a meaningful error.
+- Never use an empty `catch {}` or `catch { // stay on step }` — always set an error state so the user knows the operation failed. Silent failure is data loss waiting to happen.
+- When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
 
-## Payments
+- Always check `res.ok` before calling `res.json()`. Use `await res.json().catch(() => ({}))` when reading error details from a non-ok response to handle non-JSON bodies safely.
+- `try { } finally { }` without a `catch` block does NOT swallow errors — they propagate — but it also doesn't handle them. Any async action that can fail user-visibly must have an explicit `catch` that sets an error state.
+- Never gate navigation/step-advance on an awaited async call without checking success: `await save(); advance()` silently advances even if `save()` throws (and is caught elsewhere). Capture a success boolean instead.
 
-- Stripe Terminal requires amounts in **cents** — always use `Math.round(amount * 100)`. Sending dollars causes 100× undercharge.
+## Config and Credentials
 
-## Auth Screens
+- Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
+- Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
 
-- Apply `withTimeout()` consistently to ALL async auth operations on BOTH sign-in AND sign-up. Parity between screens is critical. One screen having timeouts but not the other causes indefinite spinner hangs.
-- When wrapping Clerk SDK calls with `withTimeout<T>`, if the Clerk type is incomplete (pre-existing type error), the inferred `T` may be `unknown`. Cast the result explicitly: `const result = await withTimeout(...) as { status: string; ... }`.
+## Payment Amounts
 
-## State Management
+- **Stripe expects amounts in cents (integer)** — always convert user-entered dollar amounts with `Math.round(dollars * 100)` before sending to any Stripe API. Sending `25.0` instead of `2500` charges $0.25 instead of $25.00.
 
-- Set guard flags (e.g. `hasClearedSession`) AFTER the async operation completes, not before.
-- Receipt/payment flows: always validate that a save API call succeeded before advancing to the next step (e.g., `computeSummary()`). Wrap callers in try-catch and show `Alert` on failure.
+## Timeout Protection for Auth
+
+- All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
+- The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
+
+## Audit History
+- 2026-04-03: First audit
+- 2026-04-05: `.json()` before `.ok` pattern first appeared
+- 2026-04-07: Silent catch blocks, async guard flags
+- 2026-04-09: Hardcoded credentials fallback, empty Authorization header
+- 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent

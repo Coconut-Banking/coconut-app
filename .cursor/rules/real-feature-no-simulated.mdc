@@ -1,0 +1,19 @@
+---
+description: Don't add simulated/fallback options when user wants the real feature
+alwaysApply: true
+---
+
+# Real Features, No Simulated Bandaids
+
+When a user wants to **actually use or test a real feature** (Tap to Pay, hardware, native capability, physical device), do **NOT** add simulated/fallback/mock alternatives.
+
+- ❌ Don't add "Use simulated reader for testing"
+- ❌ Don't add mock/stub modes as a workaround
+- ❌ Don't suggest "you can test the flow with X instead"
+
+Instead, help them get the **real thing** working:
+- Debug why it's not working (Expo Go vs dev build, simulator vs device, permissions, config)
+- Fix the actual blockers
+- Provide clear steps for real setup
+
+Only suggest simulated/mock when the user explicitly asks for a testing fallback or says they can't use the real hardware yet.
