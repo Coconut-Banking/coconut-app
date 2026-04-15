@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -241,6 +242,14 @@ export default function EmailReceiptsScreen() {
   }, [apiFetch]);
 
   useEffect(() => { fetchReceipts(); }, [fetchReceipts]);
+
+  // Clear receipts immediately when Gmail is disconnected from Settings
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("gmail-disconnected", () => {
+      setReceipts([]);
+    });
+    return () => sub.remove();
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

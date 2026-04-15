@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "@clerk/expo";
@@ -173,6 +174,7 @@ export function GmailCard() {
                   lastScanAt: null,
                 });
                 setGmailScanResult(null);
+                DeviceEventEmitter.emit("gmail-disconnected");
               }
             } catch {
               Alert.alert(
