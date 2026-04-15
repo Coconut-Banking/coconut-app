@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@clerk/expo";
 import { font, radii } from "../lib/theme";
 import { useTheme } from "../lib/theme-context";
 import { hasSeenTapToPayHeroModal, markTapToPayHeroModalSeen } from "../lib/tap-to-pay-onboarding";
@@ -25,23 +26,33 @@ export function TapToPayHeroModal() {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { theme } = useTheme();
+  const { isSignedIn, isLoaded } = useAuth();
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // Wait until Clerk auth is fully loaded and user is confirmed signed in
+    // before even checking the flag — this prevents the modal from racing
+    // with Face ID / biometric authentication on app launch.
+    if (!isLoaded || !isSignedIn) return;
+
     let cancelled = false;
-    (async () => {
+    // Additional delay so biometric prompt has fully resolved before we show
+    // a full-screen modal on top of it.
+    const timer = setTimeout(async () => {
       if (Platform.OS === "web") return;
       const seen = await hasSeenTapToPayHeroModal();
       if (!cancelled && !seen) {
         setVisible(true);
       }
       if (!cancelled) setReady(true);
-    })();
+    }, 1500);
+
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   const dismiss = useCallback(async () => {
     await markTapToPayHeroModalSeen();
