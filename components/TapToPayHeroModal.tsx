@@ -115,7 +115,7 @@ export function TapToPayHeroModal() {
             <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>How it works</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={dismiss} style={styles.tertiaryWrap} hitSlop={12}>
-            <Text style={[styles.tertiary, { color: theme.textTertiary }]}>Maybe later</Text>
+            <Text style={[styles.tertiary, { color: theme.textTertiary }]}>Got it</Text>
           </TouchableOpacity>
         </View>
       </View>
