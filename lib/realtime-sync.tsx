@@ -20,6 +20,7 @@ export function RealtimeSyncProvider({ children }: { children: ReactNode }) {
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSubscribed = useRef(false);
   const errorCount = useRef(0);
+  const subscribeCount = useRef(0);
 
   const emitUpdate = () => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -51,7 +52,9 @@ export function RealtimeSyncProvider({ children }: { children: ReactNode }) {
     errorCount.current = 0;
     await refreshAuth();
 
-    const channel = client.channel("groups-sync");
+    // Use a unique name each time so we always get a fresh channel — Supabase
+    // reuses channels by name, and calling .on() on an already-subscribed channel throws.
+    const channel = client.channel(`groups-sync-${subscribeCount.current++}`);
     for (const table of TABLES) {
       channel.on(
         "postgres_changes" as any,
