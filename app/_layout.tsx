@@ -50,6 +50,7 @@ if (!publishableKey) {
   console.warn("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY not set — auth will fail");
 }
 
+
 const FORCE_SIGN_OUT_ON_LAUNCH = process.env.EXPO_PUBLIC_FORCE_SIGN_OUT === "true";
 const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
 const FORCE_SIGN_OUT_KEY = "coconut.force_signout_done";

@@ -42,7 +42,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-const SIGN_IN_TIMEOUT_MS = 20000;
+const SIGN_UP_TIMEOUT_MS = 20000;
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -159,8 +159,16 @@ export default function SignUpScreen() {
     setError("");
     setLoading(true);
     try {
-      await signUp.create({ emailAddress: email, password });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      await withTimeout(
+        signUp.create({ emailAddress: email, password }),
+        SIGN_UP_TIMEOUT_MS,
+        "Sign-up create"
+      );
+      await withTimeout(
+        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
+        SIGN_UP_TIMEOUT_MS,
+        "Prepare email verification"
+      );
       setPendingVerification(true);
     } catch (e: unknown) {
       setError(getClerkErrorMessage(e, "Sign up failed"));
@@ -174,7 +182,11 @@ export default function SignUpScreen() {
     setError("");
     setLoading(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
+      const result = await withTimeout(
+        signUp.attemptEmailAddressVerification({ code }),
+        SIGN_UP_TIMEOUT_MS,
+        "Attempt email verification"
+      ) as { status: string; createdSessionId: string | null };
       if (result.status === "complete" && result.createdSessionId) {
         await withTimeout(setActive({ session: result.createdSessionId }), SIGN_IN_TIMEOUT_MS, "Email verification setActive");
         setIsDemoOn(false);
