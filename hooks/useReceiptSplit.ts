@@ -137,6 +137,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           method: "POST",
           body: formData,
         });
+
         // Parse body once; non-JSON error bodies (413/504) must not throw SyntaxError.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let data: any = {};

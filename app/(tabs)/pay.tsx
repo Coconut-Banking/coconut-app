@@ -262,7 +262,7 @@ function PayScreenInner() {
     prefetchingPi.current = true;
     (async () => {
       try {
-        const body: Record<string, unknown> = { amount: lockedAmount };
+        const body: Record<string, unknown> = { amount: Math.round(lockedAmount * 100) };
         if (params.currency) body.currency = params.currency;
         if (params.groupId && params.payerMemberId && params.receiverMemberId) {
           body.groupId = params.groupId;
@@ -430,13 +430,13 @@ function PayScreenInner() {
 
       const locRes = await apiFetch("/api/stripe/terminal/location");
       if (!locRes.ok) {
-        const errData = await locRes.json().catch(() => ({}));
+        const errData = await locRes.json().catch(() => ({})) as Record<string, unknown>;
         setReaderPrepVisible(false);
-        Alert.alert("Error", errData.error ?? "Could not get Terminal location");
+        Alert.alert("Error", (errData.error as string) ?? "Could not get Terminal location");
         return;
       }
-      const locData = await locRes.json();
-      const locationId = locData.locationId;
+      const locData = await locRes.json() as Record<string, unknown>;
+      const locationId = locData.locationId as string | undefined;
 
       if (!locationId) {
         setReaderPrepVisible(false);
@@ -543,13 +543,13 @@ function PayScreenInner() {
           body,
         });
         if (!piRes.ok) {
-          const errData = await piRes.json().catch(() => ({}));
-          Alert.alert("Error", errData.error ?? "Failed to create payment intent");
+          const errData = await piRes.json().catch(() => ({})) as Record<string, unknown>;
+          Alert.alert("Error", (errData.error as string) ?? "Failed to create payment intent");
           setCollecting(false);
           return;
         }
-        const piData = await piRes.json();
-        clientSecret = piData.clientSecret;
+        const piData = await piRes.json() as Record<string, unknown>;
+        clientSecret = piData.clientSecret as string | undefined;
         directPayout = piData.directPayout === true;
         if (__DEV__ && piData.paymentIntentId) {
           console.log("[Pay] PaymentIntent created on-demand:", piData.paymentIntentId);
