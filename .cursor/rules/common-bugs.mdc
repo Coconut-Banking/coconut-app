@@ -1,0 +1,63 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## Network / API
+
+- **Always check `res.ok` before calling `res.json()`** — server errors (5xx, 4xx) may return non-JSON bodies (e.g., HTML). Calling `.json()` first throws a parse error that bypasses your error handling. Use `res.json().catch(() => ({}))` when extracting error bodies from non-ok responses.
+  ```ts
+  // Wrong
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+
+  // Right
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `Request failed (${res.status})`);
+  }
+  const data = await res.json();
+  ```
+
+- **Always check `res.ok` in fire-and-forget calls** — `await apiFetch(...)` with no response inspection silently ignores 4xx/5xx. If the caller proceeds as if the write succeeded (e.g., calling `computeSummary()` after `saveAssignments()`), this causes data loss or stale UI.
+
+- **Empty `Authorization` header on null token** — `token ? \`Bearer ${token}\` : ""` sends an invalid header that wastes a network round-trip. Throw early: `if (!token) throw new Error("No auth token available");`
+
+## State Management
+
+- **`setLoading(false)` must be in `finally`** — never gate it on success or error flags. Any early return or exception leaves the spinner running forever. Move it unconditionally to a `finally` block, including the SUCCESS path.
+  ```ts
+  // Wrong — success path never clears spinner
+  try {
+    const data = await res.json();
+    if (res.ok) { setDone(true); } else { setLoading(false); }
+  } catch { setLoading(false); }
+
+  // Right
+  try {
+    const data = await res.json();
+    if (res.ok) { setDone(true); } else { Alert.alert(...); }
+  } catch { Alert.alert(...); } finally { setLoading(false); }
+  ```
+
+- **Async guard flags set before promise resolves** — setting a "has done X" flag before `await someAction()` means concurrent calls see it as done before it actually is.
+
+## Error Handling
+
+- **`try-finally` without `catch` swallows errors** — if any exception escapes the `try` block, it propagates silently past the `finally`. Always add a `catch` block that at minimum shows an `Alert` to the user.
+
+- **Empty `catch` blocks give users no feedback** — `catch { /* stay on screen */ }` is not acceptable. Re-throw or call `Alert.alert()` so the user knows something went wrong.
+
+## Payments (Stripe Terminal)
+
+- **Payment amounts must be in cents** — Stripe Terminal requires integer cent values. Always use `Math.round(amount * 100)`. Sending dollars causes a 100x undercharge. This pattern has regressed multiple times.
+
+## Auth (Clerk)
+
+- **Apply `withTimeout()` consistently to ALL auth screens** — if sign-in wraps Clerk calls with a 20-second timeout, sign-up must do the same. Asymmetric timeout protection leaves one flow hanging indefinitely on slow networks.
+
+- **`withTimeout<T>` type inference** — wrapping broken Clerk type calls (e.g., `signUp.create()` with mismatched types) may infer `T` as `unknown`. Cast the result explicitly instead of fixing the base Clerk types.
