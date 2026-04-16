@@ -7,57 +7,77 @@ globs:
 
 # Common Bug Patterns
 
-## Network / API
+## API / Network
 
-- **Always check `res.ok` before calling `res.json()`** — server errors (5xx, 4xx) may return non-JSON bodies (e.g., HTML). Calling `.json()` first throws a parse error that bypasses your error handling. Use `res.json().catch(() => ({}))` when extracting error bodies from non-ok responses.
-  ```ts
-  // Wrong
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error);
-
-  // Right
+- **Always check `res.ok` before calling `res.json()`** — server errors may return non-JSON (HTML error pages).
+  Use `res.json().catch(() => ({}))` when extracting error body from a failed response:
+  ```typescript
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error ?? `Request failed (${res.status})`);
+    const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error((errData.error as string) ?? "Request failed");
   }
   const data = await res.json();
   ```
+  Confirmed across 4+ audits (2026-04-07, 2026-04-09, 2026-04-10, 2026-04-14): 10+ occurrences in 5 files.
 
-- **Always check `res.ok` in fire-and-forget calls** — `await apiFetch(...)` with no response inspection silently ignores 4xx/5xx. If the caller proceeds as if the write succeeded (e.g., calling `computeSummary()` after `saveAssignments()`), this causes data loss or stale UI.
+- **Never send payment amounts in dollars to Stripe** — Stripe Terminal and Payment Intents require amounts in the smallest currency unit (cents for USD). Always use `Math.round(amt * 100)`.
 
-- **Empty `Authorization` header on null token** — `token ? \`Bearer ${token}\` : ""` sends an invalid header that wastes a network round-trip. Throw early: `if (!token) throw new Error("No auth token available");`
+- Always capture the `Response` from `apiFetch()` — calling `await apiFetch(...)` without assigning the result silently discards HTTP errors (4xx/5xx), because `fetch()` does NOT throw on non-ok responses.
 
-## State Management
+- When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
 
-- **`setLoading(false)` must be in `finally`** — never gate it on success or error flags. Any early return or exception leaves the spinner running forever. Move it unconditionally to a `finally` block, including the SUCCESS path.
-  ```ts
-  // Wrong — success path never clears spinner
-  try {
-    const data = await res.json();
-    if (res.ok) { setDone(true); } else { setLoading(false); }
-  } catch { setLoading(false); }
+## Error Propagation
 
-  // Right
-  try {
-    const data = await res.json();
-    if (res.ok) { setDone(true); } else { Alert.alert(...); }
-  } catch { Alert.alert(...); } finally { setLoading(false); }
+- **`try-finally` without `catch` propagates errors** — this is intentional; callers must handle.
+  But if you add a `catch {}` block (empty or comment-only), you silently swallow the error.
+  Always either re-throw or show user feedback:
+  ```typescript
+  // BAD: silently swallows
+  } catch {
+    // stay on screen
+  }
+
+  // GOOD: re-throw so callers can Alert
+  } catch (e) {
+    throw e;
+  }
   ```
 
-- **Async guard flags set before promise resolves** — setting a "has done X" flag before `await someAction()` means concurrent calls see it as done before it actually is.
+- **Always wrap async `onPress` handlers with try-catch** — unhandled Promise rejections in
+  React Native event handlers may be silently swallowed in production. Users see nothing.
+  ```typescript
+  onPress={async () => {
+    try {
+      await someAsyncOperation();
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Something went wrong");
+    }
+  }}
+  ```
 
-## Error Handling
+- Never gate navigation/step-advance on an awaited async call without checking success: `await save(); advance()` silently advances even if `save()` throws (and is caught elsewhere). Capture a success boolean instead.
 
-- **`try-finally` without `catch` swallows errors** — if any exception escapes the `try` block, it propagates silently past the `finally`. Always add a `catch` block that at minimum shows an `Alert` to the user.
+## Auth / Async Timing
 
-- **Empty `catch` blocks give users no feedback** — `catch { /* stay on screen */ }` is not acceptable. Re-throw or call `Alert.alert()` so the user knows something went wrong.
+- **Wrap Clerk auth flows with `withTimeout()`** — `startGoogleAuthenticationFlow()` and similar
+  OAuth flows can hang indefinitely on flaky mobile networks. Apply a timeout (e.g. 20000ms) to
+  both the auth flow and the subsequent `setActive()` call. Apply consistently across sign-in AND sign-up.
 
-## Payments (Stripe Terminal)
+- **Async guard flags must be set AFTER the promise resolves** — setting `hasClearedSession = true`
+  before `await signOut()` means the flag is set even if signOut fails.
 
-- **Payment amounts must be in cents** — Stripe Terminal requires integer cent values. Always use `Math.round(amount * 100)`. Sending dollars causes a 100x undercharge. This pattern has regressed multiple times.
+- All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
+- The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
 
-## Auth (Clerk)
+## Config and Credentials
 
-- **Apply `withTimeout()` consistently to ALL auth screens** — if sign-in wraps Clerk calls with a 20-second timeout, sign-up must do the same. Asymmetric timeout protection leaves one flow hanging indefinitely on slow networks.
+- Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
+- Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
 
-- **`withTimeout<T>` type inference** — wrapping broken Clerk type calls (e.g., `signUp.create()` with mismatched types) may infer `T` as `unknown`. Cast the result explicitly instead of fixing the base Clerk types.
+## Audit History
+- 2026-04-03: First audit
+- 2026-04-05: `.json()` before `.ok` pattern first appeared
+- 2026-04-07: Silent catch blocks, async guard flags
+- 2026-04-09: Hardcoded credentials fallback, empty Authorization header
+- 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
+- 2026-04-14: `.json()` before `.ok` (2 more in pay.tsx + receipt.tsx + useReceiptSplit.ts), missing timeout on Google sign-up flow
