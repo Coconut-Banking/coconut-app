@@ -709,10 +709,10 @@ function SummaryStep({
         setMembers(data.members || []);
       } else {
         Alert.alert("Error", data.error || "Failed to save to group");
-        setFinishing(false);
       }
     } catch {
       Alert.alert("Error", "Failed to save to group");
+    } finally {
       setFinishing(false);
     }
   };
@@ -790,6 +790,8 @@ function SummaryStep({
           );
         }
       }
+    } catch (e) {
+      Alert.alert("Error", "Could not create payment link. Please try again.");
     } finally {
       setRequestingPayment(null);
     }
