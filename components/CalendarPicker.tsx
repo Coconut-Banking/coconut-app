@@ -102,7 +102,7 @@ export function CalendarPicker({ startDate, endDate, onSelect, onApply }: Props)
       <View style={s.row}>
         {DAYS.map((d) => (
           <View key={d} style={s.cell}>
-            <Text style={[s.dayHeader, { color: theme.textMuted }]}>{d}</Text>
+            <Text style={[s.dayHeader, { color: theme.textQuaternary }]}>{d}</Text>
           </View>
         ))}
       </View>
