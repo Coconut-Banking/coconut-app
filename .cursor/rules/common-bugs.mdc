@@ -22,6 +22,10 @@ globs:
 
 - **Never send payment amounts in dollars to Stripe** — Stripe Terminal and Payment Intents require amounts in the smallest currency unit (cents for USD). Always use `Math.round(amt * 100)`.
 
+- Always capture the `Response` from `apiFetch()` — calling `await apiFetch(...)` without assigning the result silently discards HTTP errors (4xx/5xx), because `fetch()` does NOT throw on non-ok responses.
+
+- When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
+
 ## Error Propagation
 
 - **`try-finally` without `catch` propagates errors** — this is intentional; callers must handle.
@@ -51,6 +55,8 @@ globs:
   }}
   ```
 
+- Never gate navigation/step-advance on an awaited async call without checking success: `await save(); advance()` silently advances even if `save()` throws (and is caught elsewhere). Capture a success boolean instead.
+
 ## Auth / Async Timing
 
 - **Wrap Clerk auth flows with `withTimeout()`** — `startGoogleAuthenticationFlow()` and similar
@@ -59,3 +65,19 @@ globs:
 
 - **Async guard flags must be set AFTER the promise resolves** — setting `hasClearedSession = true`
   before `await signOut()` means the flag is set even if signOut fails.
+
+- All `setActive()` and other Clerk session calls must be wrapped with `withTimeout()`. See `app/(auth)/sign-in.tsx` for the reference implementation. Clerk can hang indefinitely on flaky networks, freezing the auth UI with no feedback to the user.
+- The `SIGN_IN_TIMEOUT_MS = 20000` constant is the project standard for Clerk operation timeouts.
+
+## Config and Credentials
+
+- Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
+- Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
+
+## Audit History
+- 2026-04-03: First audit
+- 2026-04-05: `.json()` before `.ok` pattern first appeared
+- 2026-04-07: Silent catch blocks, async guard flags
+- 2026-04-09: Hardcoded credentials fallback, empty Authorization header
+- 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
+- 2026-04-14: `.json()` before `.ok` (2 more in pay.tsx + receipt.tsx + useReceiptSplit.ts), missing timeout on Google sign-up flow
