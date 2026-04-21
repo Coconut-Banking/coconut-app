@@ -1,0 +1,25 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## Network / API
+- Always check `res.ok` BEFORE calling `res.json()` — error responses may return non-JSON (HTML, plain text). Use `res.json().catch(() => ({}))` for safe error-body extraction.
+- Always capture and check the return value of `apiFetch` — never `await apiFetch(...)` without checking `.ok`. Silent API failures cause data to appear saved when it wasn't.
+- Always use `try-catch-finally`, not `try-finally` — a bare `try-finally` swallows errors from the try block and gives users no feedback.
+
+## Payments
+- Stripe Terminal requires amounts in **cents** (integer). Always convert: `Math.round(amountInDollars * 100)`. Never send a raw dollar float.
+
+## Auth / Timeouts
+- Apply `withTimeout()` to ALL Clerk async operations on EVERY auth screen — sign-in and sign-up must have parity. Missing timeout = infinite spinner on slow networks.
+- When wrapping Clerk calls in `withTimeout<T>()`, the broken Clerk type causes T to infer as `unknown`. Cast the result explicitly: `as { status?: string; createdSessionId?: string }`.
+- After retrying `getToken()`, throw early if token is still null — never send `Authorization: ""`. Empty auth headers cause 401s that are harder to diagnose than an explicit throw.
+
+## Loading State
+- Call `setLoading(false)` in a `finally` block unconditionally — never gate it on flags or only in the catch branch.
+- Set guard flags (`hasClearedSession`, etc.) BEFORE the async call to prevent re-entry, but handle the error if the call fails.
