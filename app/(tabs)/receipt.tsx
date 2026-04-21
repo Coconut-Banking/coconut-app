@@ -611,7 +611,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
+            try {
+              await rs.saveAssignments();
+            } catch (e) {
+              Alert.alert("Error", e instanceof Error ? e.message : "Failed to save assignments");
+              return;
+            }
             rs.computeSummary();
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
@@ -757,8 +762,12 @@ function SummaryStep({
           receiverMemberId: s.toMemberId,
         },
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? "Payment link request failed");
+      }
       const data = await res.json();
-      if (res.ok && data.url) {
+      if (data.url) {
         await Share.share({
           message: `You owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}. Pay here: ${data.url}`,
           url: data.url,
@@ -783,6 +792,8 @@ function SummaryStep({
           );
         }
       }
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to request payment");
     } finally {
       setRequestingPayment(null);
     }

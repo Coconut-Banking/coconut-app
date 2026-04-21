@@ -112,7 +112,7 @@ export default function SignUpScreen() {
         signUp.attemptEmailAddressVerification({ code }),
         SIGN_UP_TIMEOUT_MS,
         "Email verification"
-      );
+      ) as { status?: string; createdSessionId?: string };
       if (result.status === "complete" && result.createdSessionId) {
         await withTimeout(
           setActive({ session: result.createdSessionId }),
