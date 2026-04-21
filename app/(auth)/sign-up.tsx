@@ -19,6 +19,22 @@ function getClerkErrorMessage(e: unknown, fallback: string): string {
   return first?.longMessage || first?.message || err?.message || fallback;
 }
 
+const SIGN_UP_TIMEOUT_MS = 20000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export default function SignUpScreen() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
@@ -35,9 +51,17 @@ export default function SignUpScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
+      const { createdSessionId, setActive } = await withTimeout(
+        startGoogleAuthenticationFlow(),
+        SIGN_UP_TIMEOUT_MS,
+        "Google auth flow"
+      );
       if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+        await withTimeout(
+          setActive({ session: createdSessionId }),
+          SIGN_UP_TIMEOUT_MS,
+          "Google setActive"
+        );
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
@@ -61,8 +85,16 @@ export default function SignUpScreen() {
     setError("");
     setLoading(true);
     try {
-      await signUp.create({ emailAddress: email, password });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      await withTimeout(
+        signUp.create({ emailAddress: email, password }),
+        SIGN_UP_TIMEOUT_MS,
+        "Sign-up create"
+      );
+      await withTimeout(
+        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
+        SIGN_UP_TIMEOUT_MS,
+        "Email verification prep"
+      );
       setPendingVerification(true);
     } catch (e: unknown) {
       setError(getClerkErrorMessage(e, "Sign up failed"));
@@ -76,9 +108,17 @@ export default function SignUpScreen() {
     setError("");
     setLoading(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
+      const result = await withTimeout(
+        signUp.attemptEmailAddressVerification({ code }),
+        SIGN_UP_TIMEOUT_MS,
+        "Email verification"
+      );
       if (result.status === "complete" && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
+        await withTimeout(
+          setActive({ session: result.createdSessionId }),
+          SIGN_UP_TIMEOUT_MS,
+          "Verify setActive"
+        );
       } else {
         setError("Verification is not complete yet. Please try again.");
       }
