@@ -77,6 +77,12 @@ export default function PayScreen() {
     setConnecting(true);
     try {
       const locRes = await apiFetch("/api/stripe/terminal/location");
+      if (!locRes.ok) {
+        const errData = await locRes.json().catch(() => ({}));
+        Alert.alert("Error", (errData as any).error ?? "Failed to fetch location");
+        setConnecting(false);
+        return;
+      }
       const locData = await locRes.json();
       const locationId = locData.locationId;
 
@@ -121,7 +127,7 @@ export default function PayScreen() {
 
     setCollecting(true);
     try {
-      const body: Record<string, unknown> = { amount: amt };
+      const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
       if (params.groupId && params.payerMemberId && params.receiverMemberId) {
         body.groupId = params.groupId;
         body.payerMemberId = params.payerMemberId;
@@ -131,6 +137,12 @@ export default function PayScreen() {
         method: "POST",
         body,
       });
+      if (!piRes.ok) {
+        const errData = await piRes.json().catch(() => ({}));
+        Alert.alert("Error", (errData as any).error ?? "Failed to create payment intent");
+        setCollecting(false);
+        return;
+      }
       const piData = await piRes.json();
       const clientSecret = piData.clientSecret;
 
