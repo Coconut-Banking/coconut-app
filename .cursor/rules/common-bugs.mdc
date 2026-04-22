@@ -81,3 +81,4 @@ globs:
 - 2026-04-09: Hardcoded credentials fallback, empty Authorization header
 - 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
 - 2026-04-14: `.json()` before `.ok` (2 more in pay.tsx + receipt.tsx + useReceiptSplit.ts), missing timeout on Google sign-up flow
+- 2026-04-22: Payment amount in cents regressed in pay.tsx + receipt.tsx; `.ok`-before-`.json()` in pay.tsx + receipt.tsx; saveAssignments throws on API error; withTimeout applied to all sign-up Clerk calls
