@@ -611,8 +611,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
-            rs.computeSummary();
+            try {
+              await rs.saveAssignments();
+              rs.computeSummary();
+            } catch {
+              Alert.alert("Error", "Could not save assignments. Please try again.");
+            }
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
         >
@@ -749,7 +753,7 @@ function SummaryStep({
       const res = await apiFetch("/api/stripe/create-payment-link", {
         method: "POST",
         body: {
-          amount: s.amount,
+          amount: Math.round(s.amount * 100),
           description: `${rs.editMerchant || "Receipt"} split`,
           recipientName: s.fromName,
           groupId: selectedGroupId,
@@ -757,8 +761,13 @@ function SummaryStep({
           receiverMemberId: s.toMemberId,
         },
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        Alert.alert("Error", (errData as any).error ?? "Failed to create payment link");
+        return;
+      }
       const data = await res.json();
-      if (res.ok && data.url) {
+      if (data.url) {
         await Share.share({
           message: `You owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}. Pay here: ${data.url}`,
           url: data.url,
@@ -777,10 +786,7 @@ function SummaryStep({
             `mailto:${payer.email}?subject=${subject}&body=${body}`
           );
         } else {
-          Alert.alert(
-            "No email",
-            "Add their email in the group to send a payment request."
-          );
+          Alert.alert("Error", "No URL returned");
         }
       }
     } finally {
