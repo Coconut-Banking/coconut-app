@@ -1,0 +1,17 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON (HTML error pages). Use `res.json().catch(() => ({}))` only for error-body extraction after a failed `.ok` check.
+- Call `setLoading(false)` unconditionally in `finally` — never gate on flags.
+- Never use `try-finally` without `catch` on async API calls — errors are swallowed silently. Add a `catch` or propagate via `throw` so the caller can show an Alert.
+- Payment amounts sent to Stripe must be in **cents** (integer). Always use `Math.round(amount * 100)`. Never send raw dollar floats (e.g., `10.50` → send `1050`). This bug has recurred 3+ times.
+- Apply `withTimeout()` to ALL async Clerk calls in BOTH sign-in and sign-up. Hung promises leave loading spinners permanently — no error shown, no retry possible. Parity between auth screens is critical.
+- Set async guard flags (e.g., `hasClearedSession`) AFTER the promise resolves, not before.
+- Empty `Authorization` header (`token ? \`Bearer ${token}\` : ""`) is worse than throwing — throw early on null token.
+- Empty `catch` blocks that silently swallow errors give users no feedback. Re-throw or show an Alert.
