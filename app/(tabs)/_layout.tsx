@@ -28,8 +28,8 @@ export default function TabLayout() {
 
   return (
     <>
-      <TapToPayHeroModal />
       <Wrapper>
+        <TapToPayHeroModal />
         <Tabs
           tabBar={(props) => <CoconutTabBar {...props} />}
           screenOptions={{

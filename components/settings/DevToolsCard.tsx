@@ -273,6 +273,7 @@ export function DevToolsCard() {
                         await AsyncStorage.multiRemove([
                           "coconut_ttp_hero_modal_seen_v1",
                           "coconut_ttp_education_completed_v1",
+                          "coconut_ttp_terms_accepted_v1",
                         ]);
                         Alert.alert("Done", "Tap to Pay intro will show on next launch.");
                       } catch {
@@ -345,6 +346,7 @@ export function DevToolsCard() {
                           await AsyncStorage.multiRemove([
                             "coconut_ttp_hero_modal_seen_v1",
                             "coconut_ttp_education_completed_v1",
+                            "coconut_ttp_terms_accepted_v1",
                           ]).catch(() => {});
                           await signOut();
                         },

@@ -19,6 +19,7 @@ import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
+import { TTP_ENABLE_REQUESTED_EVENT } from "../../components/StripeTerminalEagerConnect";
 import { useTheme } from "../../lib/theme-context";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
@@ -183,9 +184,6 @@ function PayScreenInner() {
       setTtpSoftwareUpdate(false);
       setReaderPrepVisible(false);
       setReaderPrepMessage("Preparing Tap to Pay…");
-    },
-    onDidAcceptTermsOfService: () => {
-      router.push("/(tabs)/tap-to-pay-education?fromTerms=1");
     },
     onDidRequestReaderDisplayMessage: (message) => {
       if (collectingRef.current) {
@@ -381,12 +379,8 @@ function PayScreenInner() {
 
   const connectTapToPay = useCallback(async () => {
     if (!isInitialized) {
-      Alert.alert(
-        "One moment",
-        USE_SIMULATED_TERMINAL_READER
-          ? "Terminal is still starting up. Try again in a second."
-          : "Tap to Pay is still starting up. Try again in a second."
-      );
+      // Terminal not initialized yet — trigger explicit enable flow (shows T&C if needed)
+      DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
       return;
     }
 
@@ -853,12 +847,8 @@ function PayScreenInner() {
             onPress={() => {
               if (collecting || connecting) return;
               if (!isInitialized) {
-                Alert.alert(
-                  "One moment",
-                  USE_SIMULATED_TERMINAL_READER
-                    ? "Terminal is still starting up. Try again in a second."
-                    : "Tap to Pay is still starting up. Try again in a second."
-                );
+                // Trigger the explicit enable flow (shows Apple T&C if not yet accepted — §3.7)
+                DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
                 return;
               }
               if (isConnected) void collectPayment();
@@ -872,11 +862,9 @@ function PayScreenInner() {
               <View style={styles.buttonContent}>
                 <TapToPayButtonIcon color="#fff" size={22} />
                 <Text style={styles.buttonText}>
-                  {isConnected
-                    ? `Charge $${lockedAmount.toFixed(2)}`
-                    : USE_SIMULATED_TERMINAL_READER
-                      ? "Connect simulated reader"
-                      : "Pay with Tap to Pay on iPhone"}
+                  {USE_SIMULATED_TERMINAL_READER
+                    ? "Connect simulated reader"
+                    : "Tap to Pay on iPhone"}
                 </Text>
               </View>
             )}

@@ -1,11 +1,13 @@
-import { useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
 import { font, radii } from "../../lib/theme";
 import { markTapToPayEducationCompleted } from "../../lib/tap-to-pay-onboarding";
+import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
+import { presentProximityReaderEducation } from "../../lib/proximity-reader-discovery";
 
 const SECTIONS: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -50,6 +52,24 @@ export default function TapToPayEducationScreen() {
   const { theme } = useTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ fromTerms?: string }>();
+  const [nativeAttempted, setNativeAttempted] = useState(false);
+
+  // On iOS 18+: immediately present Apple's built-in education UI (satisfies §4.3 marketing guidelines).
+  // Falls back to the custom screen below if unavailable or the user dismisses.
+  useEffect(() => {
+    if (Platform.OS !== "ios" || nativeAttempted) return;
+    setNativeAttempted(true);
+
+    presentProximityReaderEducation()
+      .then(async () => {
+        await markTapToPayEducationCompleted();
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)");
+      })
+      .catch(() => {
+        // iOS < 18 or content unavailable — stay on this screen, show custom fallback
+      });
+  }, [nativeAttempted, router]);
 
   const done = useCallback(async () => {
     await markTapToPayEducationCompleted();
@@ -87,7 +107,7 @@ export default function TapToPayEducationScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           <View style={[styles.heroIconWrap, { backgroundColor: theme.surfaceSecondary }]}>
-            <Ionicons name="phone-portrait" size={32} color={theme.text} />
+            <TapToPayButtonIcon color={theme.primary} size={32} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.heroTitle, { color: theme.text }]}>How it works</Text>

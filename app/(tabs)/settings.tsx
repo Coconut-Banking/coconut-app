@@ -1671,6 +1671,7 @@ export default function SettingsScreen() {
                           await AsyncStorage.multiRemove([
                             "coconut_ttp_hero_modal_seen_v1",
                             "coconut_ttp_education_completed_v1",
+                            "coconut_ttp_terms_accepted_v1",
                           ]).catch(() => {});
                           await handleSignOut();
                         },

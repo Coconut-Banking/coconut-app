@@ -8,15 +8,17 @@ import {
   Pressable,
   Platform,
   AppState,
+  DeviceEventEmitter,
   useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import { font, radii } from "../lib/theme";
 import { useTheme } from "../lib/theme-context";
+import { TapToPayButtonIcon } from "./TapToPayButtonIcon";
 import { hasSeenTapToPayHeroModal, markTapToPayHeroModalSeen } from "../lib/tap-to-pay-onboarding";
+import { TTP_ENABLE_REQUESTED_EVENT } from "./StripeTerminalEagerConnect";
 
 /**
  * One-time full-screen surface for Tap to Pay discovery (Apple checklist 3.1 / 3.2 style).
@@ -75,11 +77,12 @@ export function TapToPayHeroModal() {
     setVisible(false);
   }, []);
 
-  const openAddExpense = useCallback(async () => {
+  const enableTapToPay = useCallback(async () => {
     await markTapToPayHeroModalSeen();
     setVisible(false);
-    router.push("/(tabs)/add-expense");
-  }, [router]);
+    // Fire event so StripeTerminalEagerConnect calls initialize() — this shows Apple's T&C screen
+    DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
+  }, []);
 
   const openEducation = useCallback(async () => {
     await markTapToPayHeroModalSeen();
@@ -93,29 +96,31 @@ export function TapToPayHeroModal() {
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={dismiss}>
       <View style={[styles.root, { paddingTop: insets.top, minHeight: height, backgroundColor: theme.background }]}>
         <Pressable style={styles.closeHit} onPress={dismiss} accessibilityLabel="Close">
-          <Ionicons name="close" size={28} color={theme.textTertiary} />
+          <TapToPayButtonIcon color={theme.textTertiary} size={28} />
         </Pressable>
 
         <View style={styles.hero}>
-          <View style={[styles.iconWrap, { backgroundColor: theme.surfaceSecondary }]}>
-            <Ionicons name="phone-portrait-outline" size={44} color={theme.primary} />
+          <View style={[styles.iconWrap, { backgroundColor: theme.primaryLight }]}>
+            <TapToPayButtonIcon color={theme.primary} size={44} />
           </View>
           <Text style={[styles.title, { color: theme.text }]}>Tap to Pay on iPhone</Text>
           <Text style={[styles.body, { color: theme.textSecondary }]}>
-            Accept contactless cards and digital wallets on your iPhone—no extra hardware. Set up payments in
-            Settings, then collect when you add an expense or settle up with someone.
+            Accept contactless cards and digital wallets on your iPhone — no extra hardware needed.
+            Tap below to enable and accept the Terms and Conditions.
           </Text>
         </View>
 
         <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={openAddExpense} activeOpacity={0.9}>
-            <Text style={styles.primaryBtnText}>Add an expense</Text>
+          {/* Primary CTA — explicitly triggers Apple T&C (checklist §3.5) */}
+          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={enableTapToPay} activeOpacity={0.9}>
+            <TapToPayButtonIcon color="#fff" size={20} />
+            <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>Enable Tap to Pay on iPhone</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.secondaryBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={openEducation} activeOpacity={0.85}>
             <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>How it works</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={dismiss} style={styles.tertiaryWrap} hitSlop={12}>
-            <Text style={[styles.tertiary, { color: theme.textTertiary }]}>Got it</Text>
+            <Text style={[styles.tertiary, { color: theme.textTertiary }]}>Set up later</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -165,6 +170,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: radii.xl,
     alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
   },
   primaryBtnText: {
     color: "#fff",
