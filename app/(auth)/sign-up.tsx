@@ -13,6 +13,22 @@ import { useSignUp } from "@clerk/expo";
 import { useSignInWithGoogle } from "@clerk/expo/google";
 import { router } from "expo-router";
 
+const SIGN_IN_TIMEOUT_MS = 20000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
   const first = err?.errors?.[0];
@@ -35,9 +51,17 @@ export default function SignUpScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      const { createdSessionId, setActive } = await startGoogleAuthenticationFlow();
+      const { createdSessionId, setActive } = await withTimeout(
+        startGoogleAuthenticationFlow(),
+        SIGN_IN_TIMEOUT_MS,
+        "Google auth flow"
+      );
       if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+        await withTimeout(
+          setActive({ session: createdSessionId }),
+          SIGN_IN_TIMEOUT_MS,
+          "Google setActive"
+        );
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
