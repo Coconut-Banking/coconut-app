@@ -42,6 +42,11 @@ export function StripeTerminalEagerConnect() {
   const readersRef = useRef<Reader.Type[]>([]);
   const [, setDiscoveredReaders] = useState<Reader.Type[]>([]);
   const termsCheckDoneRef = useRef(false);
+  // Ref mirror of isInitialized so event listener closure can read current value
+  const isInitializedRef = useRef(false);
+  // Set when user explicitly taps "Enable Tap to Pay" — used to navigate to education
+  // even when onDidAcceptTermsOfService doesn't fire (T&C previously accepted)
+  const userRequestedEnableRef = useRef(false);
 
   const {
     initialize,
@@ -61,6 +66,11 @@ export function StripeTerminalEagerConnect() {
       router.push("/(tabs)/tap-to-pay-education?fromTerms=1");
     },
   });
+
+  // Keep ref in sync so event listener closure always reads the latest value
+  useEffect(() => {
+    isInitializedRef.current = isInitialized;
+  }, [isInitialized]);
 
   // Gate initialization: for first-time users wait for explicit "Enable" action
   useEffect(() => {
@@ -85,6 +95,15 @@ export function StripeTerminalEagerConnect() {
     // Listen for the explicit "Enable Tap to Pay on iPhone" user action
     const sub = DeviceEventEmitter.addListener(TTP_ENABLE_REQUESTED_EVENT, () => {
       if (__DEV__) console.log("[TerminalEager] enable requested by user");
+      // If terminal is already initialized (T&C previously accepted at native layer),
+      // onDidAcceptTermsOfService won't fire again — navigate to education directly.
+      if (isInitializedRef.current) {
+        if (__DEV__) console.log("[TerminalEager] already initialized, navigating to education");
+        markTapToPayTermsAccepted().catch(() => {});
+        router.push("/(tabs)/tap-to-pay-education");
+        return;
+      }
+      userRequestedEnableRef.current = true;
       initAttempted.current = false; // Allow init
       triggerInit();
     });
@@ -97,9 +116,13 @@ export function StripeTerminalEagerConnect() {
   }, []);
 
   function triggerInit() {
-    if (isInitialized || initAttempted.current) return;
+    if (__DEV__) console.log("[TerminalEager] triggerInit isInit=", isInitializedRef.current, "attempted=", initAttempted.current);
+    if (isInitializedRef.current || initAttempted.current) return;
     initAttempted.current = true;
-    initialize().catch((e) => {
+    if (__DEV__) console.log("[TerminalEager] calling initialize()");
+    initialize().then(() => {
+      if (__DEV__) console.log("[TerminalEager] initialize() resolved, isInitialized now=", isInitializedRef.current);
+    }).catch((e) => {
       if (__DEV__) console.warn("[TerminalEager] init failed", e);
       initAttempted.current = false;
     });
@@ -171,8 +194,15 @@ export function StripeTerminalEagerConnect() {
         if (connectResult.error) {
           if (__DEV__) console.warn("[TerminalEager] connect failed", connectResult.error.message);
           connectAttempted.current = false;
-        } else if (__DEV__) {
-          console.log("[TerminalEager] reader connected");
+        } else {
+          if (__DEV__) console.log("[TerminalEager] reader connected");
+          // If user explicitly requested TTP and T&C wasn't shown (already accepted),
+          // onDidAcceptTermsOfService won't fire — navigate to education ourselves.
+          if (userRequestedEnableRef.current) {
+            userRequestedEnableRef.current = false;
+            markTapToPayTermsAccepted().catch(() => {});
+            router.push("/(tabs)/tap-to-pay-education");
+          }
         }
       } catch (e) {
         if (__DEV__) console.warn("[TerminalEager] error", e);

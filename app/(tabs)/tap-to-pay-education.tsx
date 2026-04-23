@@ -60,13 +60,24 @@ export default function TapToPayEducationScreen() {
     if (Platform.OS !== "ios" || nativeAttempted) return;
     setNativeAttempted(true);
 
+    if (__DEV__) {
+      const { NativeModules: NM } = require("react-native");
+      console.log("[Education] ProximityReaderDiscoveryModule present:", !!NM.ProximityReaderDiscoveryModule);
+      const proximityKeys = Object.keys(NM).filter(k => k.toLowerCase().includes("proximity") || k.toLowerCase().includes("reader"));
+      console.log("[Education] Proximity/Reader native modules:", proximityKeys.join(", ") || "none");
+    }
+    if (__DEV__) console.log("[Education] attempting ProximityReaderDiscovery...");
     presentProximityReaderEducation()
       .then(async () => {
+        if (__DEV__) console.log("[Education] ProximityReaderDiscovery succeeded, navigating back");
         await markTapToPayEducationCompleted();
         if (router.canGoBack()) router.back();
         else router.replace("/(tabs)");
       })
-      .catch(() => {
+      .catch((e: unknown) => {
+        const code = (e as { code?: string })?.code ?? "unknown";
+        const msg = (e as Error)?.message ?? String(e);
+        if (__DEV__) console.warn("[Education] ProximityReaderDiscovery failed", code, msg);
         // iOS < 18 or content unavailable — stay on this screen, show custom fallback
       });
   }, [nativeAttempted, router]);
