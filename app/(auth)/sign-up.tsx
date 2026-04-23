@@ -26,22 +26,6 @@ import { CoconutMark } from "../../components/brand/CoconutMark";
 
 const SIGN_UP_GOOGLE_OAUTH_TIMEOUT_MS = 120000;
 
-const SIGN_IN_TIMEOUT_MS = 20000;
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-  });
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
 const SIGN_UP_TIMEOUT_MS = 20000;
 
 const SIGN_IN_TIMEOUT_MS = 20000;
