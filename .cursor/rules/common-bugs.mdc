@@ -1,0 +1,17 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON (HTML error pages from proxy/CDN). Use `res.json().catch(() => ({}))` for error-body extraction on the failure path.
+- Call `setLoading(false)` unconditionally in `finally` — never gate on flags. But always add a `catch` block too — `try-finally` without `catch` silently swallows errors and lets callers proceed as if the operation succeeded.
+- Apply `withTimeout()` consistently to ALL auth screens for OAuth flows (sign-in AND sign-up). Parity between screens is critical — a missing timeout on sign-up causes infinite spinner on stalled network.
+- Payment amounts sent to Stripe must be in **cents** (integer), not dollars. Always use `Math.round(amt * 100)` before sending to any Stripe endpoint. This has regressed multiple times.
+- Never send an empty `Authorization: ""` header — throw early if token is unavailable rather than making a doomed request.
+- Empty catch blocks (`catch { }` or `catch (e) { // stay on screen }`) give users no feedback. Re-throw or show an Alert so callers can handle the failure.
+- Async guard flags (e.g. `hasClearedSession = true`) must be set AFTER the async operation resolves, not before.
+- When wrapping Clerk calls with `withTimeout<T>`, Clerk's broken types may infer T as unknown — cast the result explicitly.
