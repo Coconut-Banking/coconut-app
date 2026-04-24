@@ -1,0 +1,17 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON (HTML 502, plain-text 429). Use `res.json().catch(() => ({}))` to safely parse error bodies.
+- Call `setLoading(false)` unconditionally in `finally` — never gate on flags. Pass AbortController signal to ALL fetches in a chain; clearing the timeout early leaves later fetches unguarded.
+- Throw early on null auth token — never send `Authorization: ""`. If `getToken()` returns null after retries, `throw new Error("No auth token available")` before making the request.
+- Always wrap `catch` blocks with user-visible feedback — empty `catch { }` blocks silently swallow errors. Use `Alert.alert(...)` or set error state so users know something went wrong.
+- Stripe Terminal requires amounts in cents (integer) — always use `Math.round(amt * 100)`. Never send a dollar float. This regression has appeared 4+ times.
+- Apply `withTimeout()` consistently to ALL auth screens — sign-in AND sign-up must both wrap `startGoogleAuthenticationFlow()` and `setActive()`. Parity between screens is critical.
+- Use a generation counter (useRef) for fetch cancellation, not a local flag — `let cancelled = false` inside a useCallback is never set to true by cleanup. Increment a ref on each call and compare in guards.
+- `saveAssignments` and similar mutation functions must check `res.ok` — `apiFetch` returns a Response on 4xx/5xx without throwing; always check `.ok` and throw before the call site can proceed.
