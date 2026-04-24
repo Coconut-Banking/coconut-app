@@ -26,26 +26,34 @@ export function useTransactions() {
   const [status, setStatus] = useState<PlaidStatus>("ok");
   const hasShownInitialLoad = useRef(false);
   const transientRetryCount = useRef(0);
+  // BUG-API-2 fix: generation counter so stale fetches can detect a newer one started
+  const fetchGeneration = useRef(0);
 
   const fetchData = useCallback((silent = false): Promise<void> => {
-    let cancelled = false;
+    // BUG-API-2 fix: capture this call's generation; if a newer fetchData starts,
+    // this generation will be stale and all guards will discard the results.
+    fetchGeneration.current += 1;
+    const gen = fetchGeneration.current;
+    const isCancelled = () => gen !== fetchGeneration.current;
+
     const isFirstLoad = !hasShownInitialLoad.current;
-    console.log(`[useTransactions] fetchData started silent=${silent} isFirstLoad=${isFirstLoad}`);
+    console.log(`[useTransactions] fetchData started silent=${silent} isFirstLoad=${isFirstLoad} gen=${gen}`);
     setStatus("ok");
     if (!silent && isFirstLoad) setLoading(true);
     const controller = new AbortController();
+    // BUG-API-1 fix: do NOT clear the timeout here — let it cover the full fetch
+    // chain including the /api/plaid/transactions request. Clear only in finally/catch.
     const timeout = setTimeout(() => controller.abort(), 10000);
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
-        clearTimeout(timeout);
-        if (cancelled) return null;
+        if (isCancelled()) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
           if (transientRetryCount.current < 8) {
             transientRetryCount.current += 1;
             console.log(`[useTransactions] 425 retry ${transientRetryCount.current}/8`);
             setTimeout(() => {
-              if (!cancelled) fetchData(true);
+              if (!isCancelled()) fetchData(true);
             }, 800);
             return null;
           }
@@ -67,7 +75,7 @@ export function useTransactions() {
         return r.json();
       })
       .then((data) => {
-        if (cancelled || !data) return null;
+        if (isCancelled() || !data) return null;
         if (!data.linked) {
           console.log("[useTransactions] not linked, loading=false");
           setStatus("not_linked");
@@ -76,26 +84,28 @@ export function useTransactions() {
         }
         console.log("[useTransactions] linked! fetching transactions");
         setLinked(true);
-        return apiFetch("/api/plaid/transactions");
+        // BUG-API-1 fix: pass the same abort signal so the timeout covers this fetch too
+        return apiFetch("/api/plaid/transactions", { signal: controller.signal });
       })
       .then((r) => {
-        if (cancelled || !r || !r.ok) return null;
+        if (isCancelled() || !r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         if (Array.isArray(data)) setTransactions(data as Transaction[]);
       })
       .finally(() => {
-        if (!cancelled) {
-          clearTimeout(timeout);
+        // BUG-API-1 fix: clear the timeout here (covers the full fetch chain)
+        clearTimeout(timeout);
+        if (!isCancelled()) {
           hasShownInitialLoad.current = true;
           setLoading(false);
         }
       })
       .catch(() => {
         clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
+        if (!isCancelled()) setLoading(false);
       });
   }, [apiFetch]);
 
