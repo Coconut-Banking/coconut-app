@@ -5,7 +5,7 @@ The app and web must use the **same Clerk application** so users who sign in wit
 ## Already matching
 
 - Both use `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` (app) / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (web) — must be identical
-- Both talk to the same backend (`coconut-lemon.vercel.app`), which uses `CLERK_SECRET_KEY` to validate tokens
+- Both talk to the same backend (`coconut-app.dev`), which uses `CLERK_SECRET_KEY` to validate tokens
 
 ---
 

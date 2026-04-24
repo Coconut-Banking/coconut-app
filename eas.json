@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 14.0.0"
+    "version": ">= 18.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -8,21 +9,39 @@
       "distribution": "internal",
       "ios": {
         "simulator": false
-      }
-    },
-    "development-simulator": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "simulator": true
+      },
+      "env": {
+        "APP_VARIANT": "development"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false
+      },
+      "env": {
+        "APP_VARIANT": "preview"
       }
     },
-    "production": {}
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_API_URL": "https://coconut-app.dev",
+        "EXPO_PUBLIC_SKIP_AUTH": "false",
+        "EXPO_PUBLIC_FORCE_SIGN_OUT": "false",
+        "EXPO_PUBLIC_FORCE_SETUP": "false",
+        "ENABLE_TAP_TO_PAY_IOS": "true"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "harshils2340@gmail.com",
+        "ascAppId": "6760692779",
+        "appleTeamId": "942BUGUD75"
+      }
+    }
   }
 }
