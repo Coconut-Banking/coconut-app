@@ -1,21 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
-  Linking,
+  Image,
 } from "react-native";
-import { useSignIn } from "@clerk/expo";
-import { useSignInWithGoogle } from "@clerk/expo/google";
-import { router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useSSO } from "@clerk/expo";
+import * as WebBrowser from "expo-web-browser";
+import * as SecureStore from "expo-secure-store";
+import { useTheme } from "../../lib/theme-context";
+import { useDemoMode } from "../../lib/demo-mode-context";
+import { useSetup } from "../../lib/setup-context";
 
-const SIGN_IN_TIMEOUT_MS = 20000;
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-lemon.vercel.app";
+import { font, radii } from "../../lib/theme";
+import { CoconutMark } from "../../components/brand/CoconutMark";
+
+const GOOGLE_OAUTH_TIMEOUT_MS = 120000;
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -26,9 +30,7 @@ function getClerkErrorMessage(e: unknown, fallback: string): string {
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
   });
   try {
     return await Promise.race([promise, timeoutPromise]);
@@ -37,263 +39,180 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-export default function SignInScreen() {
-  const { isLoaded, signIn, setActive } = useSignIn();
-  const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
-  const [email, setEmail] = useState("");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const googleLogo = require("../../assets/google-g.png") as number;
 
-  useEffect(() => {
-    console.log("[SignInScreen] mounted isLoaded=", isLoaded);
-  }, [isLoaded]);
-  const [password, setPassword] = useState("");
+export default function SignInScreen() {
+  const { theme } = useTheme();
+  const { setIsDemoOn } = useDemoMode();
+  const { resetSetup } = useSetup();
+  const { startSSOFlow } = useSSO();
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleGoogleSignIn = async () => {
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    WebBrowser.warmUpAsync().catch(() => {});
+    return () => { WebBrowser.coolDownAsync().catch(() => {}); };
+  }, []);
+
+  const handleGoogleSignIn = useCallback(async () => {
     if (Platform.OS !== "ios" && Platform.OS !== "android") return;
     setError("");
     setGoogleLoading(true);
-    console.log("[auth-mobile] google_sign_in_start");
     try {
-      const { createdSessionId, setActive } = await withTimeout(
-        startGoogleAuthenticationFlow(),
-        SIGN_IN_TIMEOUT_MS,
-        "Google auth flow"
+      await WebBrowser.dismissBrowser();
+    } catch { /* nothing to dismiss */ }
+    try {
+      const result = await withTimeout(
+        startSSOFlow({ strategy: "oauth_google" }),
+        GOOGLE_OAUTH_TIMEOUT_MS,
+        "Google OAuth"
       );
-      if (createdSessionId && setActive) {
-        await withTimeout(
-          setActive({ session: createdSessionId }),
-          SIGN_IN_TIMEOUT_MS,
-          "Google setActive"
-        );
-        console.log("[auth-mobile] google_sign_in_success");
-      } else {
-        console.warn("[auth-mobile] google_sign_in_missing_session");
-        setError("Google sign-in returned no session. Please try again.");
+      if (result.createdSessionId && result.setActive) {
+        resetSetup();
+        await result.setActive({ session: result.createdSessionId });
+        setIsDemoOn(false);
+        return;
       }
+      setError("Google sign-in did not complete. Try again.");
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
       if (err.code === "SIGN_IN_CANCELLED" || err.code === "-5") return;
-      console.error("[auth-mobile] google_sign_in_error", e);
-      setError(getClerkErrorMessage(e, "Google sign-in failed"));
+      const msg = getClerkErrorMessage(e, "Google sign-in failed");
+      if (msg.toLowerCase().includes("timed out") || msg.toLowerCase().includes("another web browser")) {
+        await WebBrowser.dismissBrowser().catch(() => {});
+      }
+      if (msg.toLowerCase().includes("already signed in")) {
+        setIsDemoOn(false);
+        return;
+      }
+      if (__DEV__) console.warn("[GoogleSignIn]", msg);
+      setError(msg);
     } finally {
       setGoogleLoading(false);
     }
-  };
-
-  const handleSignIn = async () => {
-    if (!isLoaded || !signIn) {
-      setError("Auth is still loading. Please try again.");
-      return;
-    }
-    if (!email.trim() || !password) {
-      setError("Enter email and password.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    console.log("[auth-mobile] password_sign_in_start", { email: email.trim().toLowerCase() });
-    try {
-      const res = await withTimeout(
-        signIn.create({ identifier: email.trim(), password } as { identifier: string; password: string }),
-        SIGN_IN_TIMEOUT_MS,
-        "Password sign-in"
-      );
-      const result = res as { createdSessionId?: string };
-      if (result?.createdSessionId && setActive) {
-        await withTimeout(
-          setActive({ session: result.createdSessionId }),
-          SIGN_IN_TIMEOUT_MS,
-          "Password setActive"
-        );
-        console.log("[auth-mobile] password_sign_in_success");
-      } else {
-        console.warn("[auth-mobile] password_sign_in_missing_session");
-        setError("Sign-in did not create a session. Please try again.");
-      }
-    } catch (e: unknown) {
-      console.error("[auth-mobile] password_sign_in_error", e);
-      setError(getClerkErrorMessage(e, "Sign in failed"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const webLoginUrl = `${API_URL.replace(/\/$/, "")}/login`;
-  const formDisabled = !isLoaded;
+  }, [startSSOFlow, resetSetup, setIsDemoOn]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <Text style={styles.title}>Coconut</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: "#fff" }]} edges={["top", "bottom"]}>
+      <View style={styles.container}>
+        <View style={styles.topSection}>
+          <CoconutMark size={72} />
+          <Text style={styles.title}>Sign in to Coconut</Text>
+          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+            We'll automatically attach receipts{"\n"}from your Gmail to transactions
+          </Text>
+        </View>
 
-      {/* Always-available escape: Clerk SignIn can stay loading indefinitely on some devices */}
-      <TouchableOpacity
-        onPress={() => Linking.openURL(webLoginUrl)}
-        style={{
-          backgroundColor: "#3D8E62",
-          paddingVertical: 14,
-          paddingHorizontal: 24,
-          borderRadius: 12,
-          marginBottom: 20,
-        }}
-      >
-        <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" }}>
-          Open login in browser
-        </Text>
-      </TouchableOpacity>
-      <Text style={{ color: "#9CA3AF", fontSize: 12, textAlign: "center", marginBottom: 16 }}>
-        Or sign in below
-      </Text>
+        <View style={styles.bottomSection}>
+          {error ? (
+            <Text style={styles.error}>{error}</Text>
+          ) : null}
 
-      {(Platform.OS === "ios" || Platform.OS === "android") && (
-        <>
           <TouchableOpacity
-            style={[styles.googleButton, (googleLoading || formDisabled) && styles.buttonDisabled]}
+            style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
             onPress={handleGoogleSignIn}
-            disabled={googleLoading || formDisabled}
+            disabled={googleLoading}
+            activeOpacity={0.85}
           >
             {googleLoading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
+              <>
+                <View style={styles.googleIconWrap}>
+                  <Image source={googleLogo} style={styles.googleIcon} />
+                </View>
+                <Text style={styles.googleText}>Continue with Google</Text>
+              </>
             )}
           </TouchableOpacity>
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-        </>
-      )}
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        autoComplete="email"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoComplete="password"
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity
-        style={[styles.button, (loading || formDisabled) && styles.buttonDisabled]}
-        onPress={handleSignIn}
-        disabled={loading || formDisabled}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Sign in</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => router.replace("/(auth)/sign-up")}
-      >
-        <Text style={styles.linkText}>
-          Don&apos;t have an account? Sign up
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+
+          <Text style={[styles.terms, { color: theme.textQuaternary }]}>
+            By continuing, you agree to our{" "}
+            <Text style={styles.termsLink}>Terms of Service</Text>
+            {"\n"}and{" "}
+            <Text style={styles.termsLink}>Privacy Policy</Text>
+          </Text>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1 },
   container: {
     flex: 1,
-    padding: 24,
-    backgroundColor: "#F7FAF8",
-    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  topSection: {
+    alignItems: "center",
+    paddingTop: 80,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "700",
-    color: "#1F2937",
-    textAlign: "center",
-    marginBottom: 8,
+    fontFamily: font.bold,
+    color: "#000",
+    letterSpacing: -0.3,
+    marginTop: 16,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
+    fontSize: 15,
+    fontFamily: font.regular,
+    lineHeight: 22,
     textAlign: "center",
-    marginBottom: 24,
+    marginTop: 10,
   },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 12,
+  bottomSection: {
+    marginTop: "auto",
+    paddingBottom: 40,
   },
   error: {
-    color: "#DC2626",
     fontSize: 14,
-    marginBottom: 8,
+    fontFamily: font.regular,
+    color: "#C94C4C",
+    textAlign: "center",
+    marginBottom: 16,
   },
-  button: {
-    backgroundColor: "#3D8E62",
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  linkButton: {
-    marginTop: 16,
-    alignSelf: "center",
-  },
-  linkText: {
-    color: "#3D8E62",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  googleButton: {
-    backgroundColor: "#4285F4",
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  googleButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  divider: {
+  googleBtn: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 16,
+    justifyContent: "center",
+    gap: 12,
+    backgroundColor: "#1e2021",
+    borderRadius: radii.xl,
+    height: 56,
+    paddingHorizontal: 24,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E5E7EB",
+  googleIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  dividerText: {
-    marginHorizontal: 12,
-    color: "#6B7280",
-    fontSize: 14,
+  googleIcon: {
+    width: 18,
+    height: 18,
+  },
+  googleText: {
+    fontSize: 16,
+    fontWeight: "600",
+    fontFamily: font.semibold,
+    color: "#fff",
+  },
+  btnDisabled: { opacity: 0.6 },
+  terms: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: 20,
+  },
+  termsLink: {
+    textDecorationLine: "underline",
   },
 });

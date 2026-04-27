@@ -15,6 +15,8 @@ export interface Person {
   memberId: string | null;
   email: string | null;
   hasAccount: boolean;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 type ApiFetch = (
@@ -23,6 +25,15 @@ type ApiFetch = (
 ) => Promise<Response>;
 
 export function useReceiptSplit(apiFetch: ApiFetch) {
+  return useReceiptSplitInternal(apiFetch, { demo: false });
+}
+
+export function useReceiptSplitWithOptions(apiFetch: ApiFetch, opts?: { demo?: boolean }) {
+  return useReceiptSplitInternal(apiFetch, { demo: Boolean(opts?.demo) });
+}
+
+function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
+  const demoMode = opts.demo;
   const [step, setStep] = useState<Step>("upload");
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -63,6 +74,7 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const [itemsWithExtras, setItemsWithExtras] = useState<ReceiptItemWithExtras[]>([]);
   const [personShares, setPersonShares] = useState<PersonShare[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const uploadReceipt = useCallback(
     async (
@@ -73,6 +85,42 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
       setUploadError(null);
       setImageUri(uri);
       setIsPdf(opts?.mimeType === "application/pdf");
+
+      if (demoMode) {
+        // Demo-only: skip network parsing, but keep the same UI flow.
+        const demoReceiptId = `demo-receipt-${Date.now()}`;
+        const demoMerchant = "Blue Bottle Coffee";
+        const receiptItems = [
+          { id: `d-${Date.now()}-1`, name: "Iced Latte", quantity: 2, unit_price: 6.5, total_price: 13.0 },
+          { id: `d-${Date.now()}-2`, name: "Banana Bread", quantity: 1, unit_price: 5.75, total_price: 5.75 },
+          { id: `d-${Date.now()}-3`, name: "Tip", quantity: 1, unit_price: 3.0, total_price: 3.0 },
+        ];
+        const subtotal = receiptItems.reduce((s, i) => s + i.total_price, 0);
+        const tax = Math.round(subtotal * 0.0825 * 100) / 100;
+        const tip = 3.0;
+        const total = Math.round((subtotal + tax + tip) * 100) / 100;
+
+        // Let the UI breathe: the stage indicator is driven by `uploading`.
+        setReceiptId(demoReceiptId);
+        setEditItems(
+          receiptItems.map((i) => ({
+            id: i.id,
+            name: i.name,
+            quantity: Number(i.quantity),
+            unitPrice: Number(i.unit_price),
+            totalPrice: Number(i.total_price),
+          }))
+        );
+        setEditSubtotal(subtotal);
+        setEditTax(tax);
+        setEditTip(tip);
+        setEditExtras([]);
+        setEditTotal(total);
+        setEditMerchant(demoMerchant);
+        setStep("review");
+        setUploading(false);
+        return;
+      }
 
       const mimeType = opts?.mimeType ?? "image/jpeg";
       const fileName = opts?.name ?? "receipt.jpg";
@@ -89,9 +137,16 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: formData,
         });
-        const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
+        // Parse body once; non-JSON error bodies (413/504) must not throw SyntaxError.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Server error (${res.status})`);
+        }
+        if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -129,12 +184,25 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         setUploading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, demoMode]
   );
 
   const confirmItems = useCallback(
     async () => {
       if (!receiptId) return;
+      setSaveError(null);
+      if (demoMode) {
+        const withExtras = distributeExtras(
+          editItems,
+          editSubtotal,
+          editTax,
+          editTip,
+          editExtras
+        );
+        setItemsWithExtras(withExtras);
+        setStep("assign");
+        return;
+      }
       setSaving(true);
       try {
         const res = await apiFetch(`/api/receipt/${receiptId}/items`, {
@@ -154,8 +222,16 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             merchant_name: editMerchant,
           },
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Save failed");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Server error (${res.status})`);
+        }
+        if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
+
+        setSaveError(null);
 
         const serverItems = (data.receipt_items ?? [])
           .sort(
@@ -189,7 +265,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         setItemsWithExtras(withExtras);
         setStep("assign");
       } catch (e) {
-        setUploadError(e instanceof Error ? e.message : "Failed to save items");
+        setSaveError(
+          e instanceof Error ? e.message : "Failed to save changes. Please try again."
+        );
       } finally {
         setSaving(false);
       }
@@ -204,8 +282,36 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
       editExtras,
       editTotal,
       editMerchant,
+      demoMode,
     ]
   );
+
+  const addItem = useCallback(() => {
+    const id = `new-${Date.now()}`;
+    setEditItems((prev) => [...prev, { id, name: "New item", quantity: 1, unitPrice: 0, totalPrice: 0 }]);
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setEditItems((prev) => prev.filter((i) => i.id !== id));
+    setAssignments((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const updateItem = useCallback((id: string, updates: Partial<Omit<ReceiptItem, "id">>) => {
+    setEditItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, ...updates };
+        if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+          updated.totalPrice = Math.round(updated.quantity * updated.unitPrice * 100) / 100;
+        }
+        return updated;
+      })
+    );
+  }, []);
 
   const addPerson = useCallback(
     (
@@ -214,6 +320,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         memberId?: string | null;
         email?: string | null;
         hasAccount?: boolean;
+        groupId?: string | null;
+        groupName?: string | null;
       }
     ) => {
       const trimmed = name.trim();
@@ -227,6 +335,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           memberId: opts?.memberId ?? null,
           email: opts?.email ?? null,
           hasAccount: opts?.hasAccount ?? false,
+          groupId: opts?.groupId ?? null,
+          groupName: opts?.groupName ?? null,
         },
       ]);
     },
@@ -310,6 +420,10 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
   const saveAssignments = useCallback(
     async () => {
       if (!receiptId) return;
+      if (demoMode) {
+        // Demo-only: assignments are handled locally; Summary is computed from local state.
+        return;
+      }
       setSaving(true);
       try {
         const payload = Array.from(assignments.entries()).map(
@@ -321,17 +435,23 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
-      } catch (e) {
+        if (!res.ok) {
+          let errMsg = "Failed to save assignments";
+          try {
+            const d = await res.json();
+            errMsg = (d as { error?: string }).error ?? errMsg;
+          } catch {}
+          throw new Error(errMsg);
+        }
+      } finally {
         setSaving(false);
-        throw e;
       }
-      setSaving(false);
     },
-    [receiptId, apiFetch, assignments]
+    [receiptId, apiFetch, assignments, demoMode]
   );
 
   const reset = useCallback(() => {
@@ -365,6 +485,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     uploadReceipt,
     editItems,
     setEditItems,
+    addItem,
+    removeItem,
+    updateItem,
     editSubtotal,
     setEditSubtotal,
     editTax,
@@ -387,6 +510,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
     personShares,
     saveAssignments,
     saving,
+    saveError,
+    setSaveError,
     reset,
   };
 }
