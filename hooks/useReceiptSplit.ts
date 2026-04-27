@@ -188,8 +188,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Failed to save items");
       } finally {
         setSaving(false);
       }
@@ -325,9 +325,11 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: { assignments: payload },
         });
-      } finally {
+      } catch (e) {
         setSaving(false);
+        throw e;
       }
+      setSaving(false);
     },
     [receiptId, apiFetch, assignments]
   );
