@@ -100,7 +100,7 @@ export default function SignUpScreen() {
     setError("");
     setLoading(true);
     try {
-      const result = await withTimeout(signUp.attemptEmailAddressVerification({ code }), SIGN_UP_TIMEOUT_MS, "attemptEmailAddressVerification");
+      const result = await withTimeout(signUp.attemptEmailAddressVerification({ code }), SIGN_UP_TIMEOUT_MS, "attemptEmailAddressVerification") as { status: string; createdSessionId?: string | null };
       if (result.status === "complete" && result.createdSessionId) {
         await withTimeout(setActive({ session: result.createdSessionId }), SIGN_UP_TIMEOUT_MS, "verify setActive");
       } else {
