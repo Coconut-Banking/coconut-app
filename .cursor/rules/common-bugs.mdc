@@ -1,0 +1,33 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## Network / API
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON bodies (HTML, plain-text). Use `if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error ?? "Request failed"); }`
+- Never send `Authorization: token ? \`Bearer ${token}\` : ""` — throw early if token is null: `if (!token) throw new Error("No auth token")`
+- Always call `setLoading(false)` unconditionally in `finally` — never gate on a flag
+
+## Payments (Stripe Terminal)
+- Always multiply dollar amounts by 100 before sending to Stripe: `Math.round(amt * 100)` — Stripe requires cents
+- Stripe Terminal create-payment-intent expects `amount` in cents (integer), NOT dollars (float)
+
+## Auth (Clerk)
+- Wrap every Clerk call with `withTimeout(promise, 20000, label)` — Clerk can hang indefinitely on flaky networks, leaving `loading=true` forever
+- Apply timeout consistently to ALL auth screens (sign-in AND sign-up) — parity is critical
+- When `withTimeout<T>` wraps a Clerk call with broken types, TypeScript infers T as `unknown` — always add an explicit `as { ... }` cast on the result
+
+## State Management
+- Never use `let cancelled = false` inside a `useCallback` to cancel stale fetches — the variable is local to each invocation and can never be set `true` by another invocation. Use a `useRef` generation counter instead: increment on each call, compare in guards
+- The pattern: `fetchGenRef.current += 1; const gen = fetchGenRef.current;` then check `if (gen !== fetchGenRef.current) return;`
+
+## Error Handling
+- Never use empty catch blocks (`catch { }` or `catch { // stay on screen }`) — always surface errors to the user via Alert or error state
+- `try { ... } finally { setLoading(false); }` without `catch` means API errors propagate as unhandled rejections silently swallowed by React Native event handlers — add a catch that re-throws and handle in the caller
+
+## Security
+- Never hardcode credentials as fallbacks in `app.config.js` (or anywhere in source) — use `process.env.VAR || ""` not `process.env.VAR || "hardcoded-secret"`. A missing env var should fail visibly, not silently use a stale credential
