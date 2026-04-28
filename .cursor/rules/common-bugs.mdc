@@ -26,6 +26,8 @@ globs:
 
 - When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
 
+- Never call `clearTimeout` on an AbortController timer before all fetches in a chain complete — any subsequent fetch will have no timeout/abort coverage. Create a separate `AbortController` per fetch call.
+
 ## Error Propagation
 
 - **`try-finally` without `catch` propagates errors** — this is intentional; callers must handle.
@@ -74,6 +76,11 @@ globs:
 - Never hardcode API keys, tokens, or credentials as fallback values in config files (e.g. `process.env.FOO || "hardcoded-key"`). They end up in VCS history and build artifacts. If the env var is required, let it be undefined and fail loudly.
 - Never pass an empty string as an Authorization header (`Authorization: ""`). If the token is unavailable, throw early before making the request.
 
+## React State & Concurrency
+
+- A `let cancelled = false` guard inside `useCallback` is inert — it is never set to `true`. Use a `useRef` generation counter instead: `const fetchGenRef = useRef(0)`, increment at the top of each call, and guard with `() => fetchGenRef.current !== gen`.
+- Always call `setLoading(false)` (and other cleanup) in a `finally` block — never gate it on flags that may not flip.
+
 ## Audit History
 - 2026-04-03: First audit
 - 2026-04-05: `.json()` before `.ok` pattern first appeared
@@ -81,3 +88,4 @@ globs:
 - 2026-04-09: Hardcoded credentials fallback, empty Authorization header
 - 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
 - 2026-04-14: `.json()` before `.ok` (2 more in pay.tsx + receipt.tsx + useReceiptSplit.ts), missing timeout on Google sign-up flow
+- 2026-04-28: AbortController clearTimeout gap, useRef generation counter, per-fetch AbortController, setLoading in finally

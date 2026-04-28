@@ -26,6 +26,8 @@ import { CoconutMark } from "../../components/brand/CoconutMark";
 
 const SIGN_UP_GOOGLE_OAUTH_TIMEOUT_MS = 120000;
 
+const SIGN_UP_TIMEOUT_MS = 20000;
+
 const SIGN_IN_TIMEOUT_MS = 20000;
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -41,8 +43,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
     if (timeoutId) clearTimeout(timeoutId);
   }
 }
-
-const SIGN_UP_TIMEOUT_MS = 20000;
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
