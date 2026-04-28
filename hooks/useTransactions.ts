@@ -76,7 +76,10 @@ export function useTransactions() {
         }
         console.log("[useTransactions] linked! fetching transactions");
         setLinked(true);
-        return apiFetch("/api/plaid/transactions");
+        const txController = new AbortController();
+        const txTimeout = setTimeout(() => txController.abort(), 10000);
+        return apiFetch("/api/plaid/transactions", { signal: txController.signal })
+          .finally(() => clearTimeout(txTimeout));
       })
       .then((r) => {
         if (cancelled || !r || !r.ok) return null;
