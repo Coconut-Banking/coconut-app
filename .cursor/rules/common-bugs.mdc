@@ -1,0 +1,26 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## API & Network
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON (HTML 502/503 pages). Use `res.json().catch(() => ({}))` only when extracting error bodies.
+- Never call `clearTimeout` on an AbortController timer and then issue a second `fetch` without a new timeout — the second fetch will hang forever on flaky mobile networks. Create a separate `AbortController` per fetch in a chain.
+- Stripe Terminal requires amounts in **cents** (integer). Always use `Math.round(amount * 100)`. Never pass raw dollar floats.
+- `try-finally` without `catch` in async functions silently swallows server errors. Always check `res.ok`, throw on failure, and let callers show an `Alert`.
+
+## Auth & Token Management
+
+- After a retry loop for `getToken`, throw early if `token` is still `null` instead of sending `Authorization: ""` — an unauthenticated request wastes a round trip and obscures the root cause.
+- Apply `withTimeout()` consistently to ALL auth screens (sign-in AND sign-up). Parity between screens is critical — a missing timeout leaves `loading` stuck forever.
+- Never hardcode credentials (Clerk publishable keys, API keys) as `||` fallbacks in `app.config.js` — they get baked into the app bundle.
+
+## React State & Concurrency
+
+- A `let cancelled = false` guard inside `useCallback` is inert — it is never set to `true`. Use a `useRef` generation counter: `const fetchGenRef = useRef(0)`, increment at the top of each call, and guard with `() => fetchGenRef.current !== gen`.
+- Always call `setLoading(false)` (and other cleanup) in a `finally` block — never gate it on flags that may not flip.
