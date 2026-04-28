@@ -26,9 +26,11 @@ export function useTransactions() {
   const [status, setStatus] = useState<PlaidStatus>("ok");
   const hasShownInitialLoad = useRef(false);
   const transientRetryCount = useRef(0);
+  const fetchGenRef = useRef(0);
 
   const fetchData = useCallback((silent = false): Promise<void> => {
-    let cancelled = false;
+    const gen = ++fetchGenRef.current;
+    const isCancelled = () => fetchGenRef.current !== gen;
     const isFirstLoad = !hasShownInitialLoad.current;
     console.log(`[useTransactions] fetchData started silent=${silent} isFirstLoad=${isFirstLoad}`);
     setStatus("ok");
@@ -38,14 +40,14 @@ export function useTransactions() {
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
         clearTimeout(timeout);
-        if (cancelled) return null;
+        if (isCancelled()) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
           if (transientRetryCount.current < 8) {
             transientRetryCount.current += 1;
             console.log(`[useTransactions] 425 retry ${transientRetryCount.current}/8`);
             setTimeout(() => {
-              if (!cancelled) fetchData(true);
+              if (!isCancelled()) fetchData(true);
             }, 800);
             return null;
           }
@@ -67,7 +69,7 @@ export function useTransactions() {
         return r.json();
       })
       .then((data) => {
-        if (cancelled || !data) return null;
+        if (isCancelled() || !data) return null;
         if (!data.linked) {
           console.log("[useTransactions] not linked, loading=false");
           setStatus("not_linked");
@@ -82,15 +84,15 @@ export function useTransactions() {
           .finally(() => clearTimeout(txTimeout));
       })
       .then((r) => {
-        if (cancelled || !r || !r.ok) return null;
+        if (isCancelled() || !r || !r.ok) return null;
         return r.json();
       })
       .then((data) => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         if (Array.isArray(data)) setTransactions(data as Transaction[]);
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!isCancelled()) {
           clearTimeout(timeout);
           hasShownInitialLoad.current = true;
           setLoading(false);
@@ -98,7 +100,7 @@ export function useTransactions() {
       })
       .catch(() => {
         clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
+        if (!isCancelled()) setLoading(false);
       });
   }, [apiFetch]);
 
