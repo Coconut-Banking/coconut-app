@@ -77,6 +77,12 @@ export default function PayScreen() {
     setConnecting(true);
     try {
       const locRes = await apiFetch("/api/stripe/terminal/location");
+      if (!locRes.ok) {
+        const errData = await locRes.json().catch(() => ({})) as { error?: string };
+        Alert.alert("Error", errData.error ?? "Could not get Terminal location. Ensure Stripe is configured.");
+        setConnecting(false);
+        return;
+      }
       const locData = await locRes.json();
       const locationId = locData.locationId;
 
