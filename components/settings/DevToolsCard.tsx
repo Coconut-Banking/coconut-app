@@ -263,11 +263,11 @@ export function DevToolsCard() {
             onPress={() => {
               Alert.alert(
                 "Reset Tap to Pay intro?",
-                "Clears the 'seen' flag so the full-screen intro modal shows again on next app launch. Use this for recording the Existing User Flow demo video.",
+                "Clears our in-app flags so the hero modal and education screen reset.\n\n⚠️ Apple's native education UI (ProximityReaderDiscovery) shows only ONCE per app install. To re-trigger it for another recording take:\n\n1. Go to business.apple.com/taptopay/removeall and remove the merchant, OR\n2. Delete the app and reinstall via Xcode.\n\nThen use 'Sign out & restart as new user' below.",
                 [
                   { text: "Cancel", style: "cancel" },
                   {
-                    text: "Reset",
+                    text: "Reset flags",
                     onPress: async () => {
                       try {
                         await AsyncStorage.multiRemove([
@@ -275,7 +275,7 @@ export function DevToolsCard() {
                           "coconut_ttp_education_completed_v1",
                           "coconut_ttp_terms_accepted_v1",
                         ]);
-                        Alert.alert("Done", "Tap to Pay intro will show on next launch.");
+                        Alert.alert("Done", "In-app Tap to Pay flags cleared. See instructions above to also reset Apple's native education UI.");
                       } catch {
                         Alert.alert("Error", "Could not clear flags.");
                       }
