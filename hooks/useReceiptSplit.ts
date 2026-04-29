@@ -449,6 +449,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         }
       } finally {
         setSaving(false);
+      }
     },
     [receiptId, apiFetch, assignments, demoMode]
   );
