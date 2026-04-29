@@ -52,3 +52,12 @@ export async function markTapToPayTermsAccepted(): Promise<void> {
     /* ignore */
   }
 }
+
+/** Clears all TTP onboarding flags — used for video recording / demo resets. */
+export async function resetAllTapToPayFlags(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([HERO_KEY, EDU_DONE_KEY, TERMS_KEY]);
+  } catch {
+    /* ignore */
+  }
+}

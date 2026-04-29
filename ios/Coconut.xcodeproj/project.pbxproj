@@ -26,7 +26,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		13B07F961A680F5B00A75B9A /* CoconutDev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoconutDev.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07F961A680F5B00A75B9A /* Coconut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Coconut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Coconut/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Coconut/Info.plist; sourceTree = "<group>"; };
 		58A1FEB24CC30440F1DB0842 /* libPods-Coconut.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Coconut.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -140,7 +140,7 @@
 		83CBBA001A601CBA00E9B192 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				13B07F961A680F5B00A75B9A /* CoconutDev.app */,
+				13B07F961A680F5B00A75B9A /* Coconut.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,7 +183,7 @@
 				66881584185242A58455F0FF /* ClerkKitUI */,
 			);
 			productName = Coconut;
-			productReference = 13B07F961A680F5B00A75B9A /* CoconutDev.app */;
+			productReference = 13B07F961A680F5B00A75B9A /* Coconut.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -452,8 +452,8 @@
 					ProximityReader,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app.dev;
-				PRODUCT_NAME = CoconutDev;
+				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
+				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -486,8 +486,8 @@
 					ProximityReader,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app.dev;
-				PRODUCT_NAME = CoconutDev;
+				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
+				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

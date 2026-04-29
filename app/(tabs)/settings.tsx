@@ -1613,8 +1613,9 @@ export default function SettingsScreen() {
                             await AsyncStorage.multiRemove([
                               "coconut_ttp_hero_modal_seen_v1",
                               "coconut_ttp_education_completed_v1",
+                              "coconut_ttp_terms_accepted_v1",
                             ]);
-                            Alert.alert("Done", "Tap to Pay intro will show on next launch.");
+                            Alert.alert("Done", "Tap to Pay intro + T&C flags cleared. Restart the app to see the full flow.");
                           } catch {
                             Alert.alert("Error", "Could not clear flags.");
                           }

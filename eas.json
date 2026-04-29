@@ -25,6 +25,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "ios": {
+        "scheme": "Coconut"
+      },
       "env": {
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_API_URL": "https://coconut-app.dev",

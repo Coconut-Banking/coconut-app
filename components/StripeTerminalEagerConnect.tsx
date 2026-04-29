@@ -7,6 +7,7 @@ import { useApiFetch } from "../lib/api";
 import { acquireConnectLock, releaseConnectLock } from "../lib/terminal-connect-lock";
 import {
   hasAcceptedTapToPayTerms,
+  hasSeenTapToPayHeroModal,
   markTapToPayTermsAccepted,
 } from "../lib/tap-to-pay-onboarding";
 
@@ -79,15 +80,18 @@ export function StripeTerminalEagerConnect() {
     let cancelled = false;
 
     (async () => {
-      const accepted = await hasAcceptedTapToPayTerms();
+      const [accepted, heroSeen] = await Promise.all([
+        hasAcceptedTapToPayTerms(),
+        hasSeenTapToPayHeroModal(),
+      ]);
       if (cancelled) return;
       termsCheckDoneRef.current = true;
 
-      if (accepted) {
-        // Returning user — proceed with eager init immediately
+      if (accepted && heroSeen) {
+        // Returning user who completed onboarding — proceed with eager init
         triggerInit();
       } else {
-        // New user — wait for explicit enable tap
+        // New user or reset state — wait for explicit enable tap
         if (__DEV__) console.log("[TerminalEager] waiting for user to enable TTP");
       }
     })();
