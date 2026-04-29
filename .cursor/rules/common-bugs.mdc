@@ -1,0 +1,19 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON (HTML, empty body). Use `res.json().catch(() => ({}))` only for safe error-body extraction on the failure branch.
+- Call `setLoading(false)` unconditionally in `finally` — never gate on success/failure flags.
+- Stripe Terminal `createPaymentIntent` requires `amount` in **cents** — always use `Math.round(amt * 100)`. Never send raw `parseFloat()` dollars.
+- Never embed credentials (Clerk publishable key, Stripe key) as `||` fallbacks in `app.config.js` — require the env var to be set explicitly.
+- Send empty Authorization header (`token ? \`Bearer ${token}\` : ""`) is a silent auth bypass — throw early if token is null instead.
+- `try-finally` without `catch` silently swallows errors — add `catch (e) { throw e; }` so callers can Alert the user.
+- Apply `withTimeout()` to ALL auth flows (sign-in AND sign-up) — both Google auth and setActive calls. Parity is required between screens.
+- Stale `let cancelled = false` local flags inside `useCallback` are never set to true by concurrent calls — use a `useRef` generation counter instead.
+- `AbortController` must cover the entire fetch chain — calling `clearTimeout` after the first fetch in a multi-fetch chain leaves subsequent fetches unprotected.
+- After a successful async action, `setLoading(false)` must run in `finally`, not only in catch — otherwise a success path leaves the spinner spinning.
