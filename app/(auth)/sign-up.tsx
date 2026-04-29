@@ -42,8 +42,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-const SIGN_UP_TIMEOUT_MS = 20000;
-
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
   const first = err?.errors?.[0];
@@ -147,12 +145,12 @@ export default function SignUpScreen() {
     try {
       await withTimeout(
         signUp.create({ emailAddress: email, password }),
-        SIGN_UP_TIMEOUT_MS,
+        SIGN_IN_TIMEOUT_MS,
         "Sign-up create"
       );
       await withTimeout(
         signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
-        SIGN_UP_TIMEOUT_MS,
+        SIGN_IN_TIMEOUT_MS,
         "Prepare email verification"
       );
       setPendingVerification(true);
@@ -170,7 +168,7 @@ export default function SignUpScreen() {
     try {
       const result = await withTimeout(
         signUp.attemptEmailAddressVerification({ code }),
-        SIGN_UP_TIMEOUT_MS,
+        SIGN_IN_TIMEOUT_MS,
         "Attempt email verification"
       ) as { status: string; createdSessionId: string | null };
       if (result.status === "complete" && result.createdSessionId) {

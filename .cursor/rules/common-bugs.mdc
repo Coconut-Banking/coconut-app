@@ -26,6 +26,10 @@ globs:
 
 - When advancing a user to a new screen after an async save, gate the navigation on success: `await save(); navigate()` must be wrapped in try/catch so navigation only happens if the save succeeded.
 
+- **Stale `let cancelled = false` inside `useCallback`** — never set true by concurrent calls; use a `useRef` generation counter instead (increment on each call, compare in guards).
+
+- **`AbortController` must cover the entire fetch chain** — calling `clearTimeout` after the first fetch in a multi-fetch sequence leaves subsequent fetches unprotected.
+
 ## Error Propagation
 
 - **`try-finally` without `catch` propagates errors** — this is intentional; callers must handle.
@@ -81,3 +85,4 @@ globs:
 - 2026-04-09: Hardcoded credentials fallback, empty Authorization header
 - 2026-04-10: `.json()` before `.ok` (3 more instances), no `res.ok` check on saveAssignments, dollars vs cents in Stripe payment intent
 - 2026-04-14: `.json()` before `.ok` (2 more in pay.tsx + receipt.tsx + useReceiptSplit.ts), missing timeout on Google sign-up flow
+- 2026-04-29: `.json()` before `.ok` (pay.tsx ×2, receipt.tsx ×1), Math.round cents (6th regression), saveAssignments silent swallow, withTimeout on sign-up Google auth
