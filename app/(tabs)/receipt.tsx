@@ -611,8 +611,12 @@ function AssignStep({
               styles.buttonDisabled,
           ]}
           onPress={async () => {
-            await rs.saveAssignments();
-            rs.computeSummary();
+            try {
+              await rs.saveAssignments();
+              rs.computeSummary();
+            } catch {
+              Alert.alert("Error", "Could not save assignments. Please try again.");
+            }
           }}
           disabled={!allAssigned || rs.people.length === 0 || rs.saving}
         >
@@ -692,18 +696,18 @@ function SummaryStep({
           people: rs.people.map((p) => ({ name: p.name, email: p.email })),
         },
       });
-      const data = await res.json();
-
-      if (res.ok) {
-        setFinished(true);
-        setGroupBalances(data.balances || []);
-        setSuggestions(data.suggestions || []);
-        setGroupName(data.groupName || "");
-        setMembers(data.members || []);
-      } else {
-        Alert.alert("Error", data.error || "Failed to save to group");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", (data as { error?: string }).error ?? "Failed to save to group");
         setFinishing(false);
+        return;
       }
+      const data = await res.json();
+      setFinished(true);
+      setGroupBalances(data.balances || []);
+      setSuggestions(data.suggestions || []);
+      setGroupName(data.groupName || "");
+      setMembers(data.members || []);
     } catch {
       Alert.alert("Error", "Failed to save to group");
       setFinishing(false);
