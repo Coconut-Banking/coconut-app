@@ -24,5 +24,15 @@ export async function presentProximityReaderEducation(): Promise<void> {
   if (!ProximityReaderDiscoveryModule) {
     throw Object.assign(new Error("ProximityReaderDiscoveryModule not available"), { code: "UNSUPPORTED" });
   }
-  return ProximityReaderDiscoveryModule.presentEducation();
+
+  // 12-second JS-side safety net in case the native Swift timeout doesn't fire
+  // (e.g. if the Task is stuck awaiting contentList and CancellationError isn't thrown).
+  const jsTimeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(Object.assign(new Error("ProximityReaderDiscovery JS timeout"), { code: "TIMEOUT" })),
+      12_000,
+    ),
+  );
+
+  return Promise.race([ProximityReaderDiscoveryModule.presentEducation(), jsTimeout]);
 }
