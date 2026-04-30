@@ -37,7 +37,6 @@ export function useTransactions() {
     const timeout = setTimeout(() => controller.abort(), 10000);
     return apiFetch("/api/plaid/status", { signal: controller.signal })
       .then((r) => {
-        clearTimeout(timeout);
         if (cancelled) return null;
         console.log(`[useTransactions] plaid/status → ${r.status}`);
         if (r.status === 425) {
@@ -76,7 +75,7 @@ export function useTransactions() {
         }
         console.log("[useTransactions] linked! fetching transactions");
         setLinked(true);
-        return apiFetch("/api/plaid/transactions");
+        return apiFetch("/api/plaid/transactions", { signal: controller.signal });
       })
       .then((r) => {
         if (cancelled || !r || !r.ok) return null;
