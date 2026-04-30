@@ -31,11 +31,25 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
+# build artifacts
+*.ipa
+*.apk
+*.aab
+
+# Native build artifacts (commit the rest of /ios for EAS bare workflow)
+/ios/Pods/
+/ios/build/
+/ios/Podfile.lock
+/ios/.xcode.env.local
+/ios/*.xcworkspace
+/ios/**/xcuserdata/
+
+# Android still managed via prebuild
 /android
+.claude/worktrees/
