@@ -1,12 +1,35 @@
 #import <React/RCTBridgeModule.h>
 
-@interface RCT_EXTERN_MODULE(ProximityReaderDiscoveryModule, NSObject)
+RCT_EXTERN void RCTRegisterModule(Class);
 
-RCT_EXTERN_METHOD(
-  presentEducation:(RCTPromiseResolveBlock)resolve
-  rejecter:(RCTPromiseRejectBlock)reject
-)
+@interface ProximityReaderDiscoveryModule : NSObject
+@end
 
-+ (BOOL)requiresMainQueueSetup;
+@interface ProximityReaderDiscoveryModule (RCTExternModule) <RCTBridgeModule>
+@end
+
+@implementation ProximityReaderDiscoveryModule (RCTExternModule)
+
++ (NSString *)moduleName {
+  return @"ProximityReaderDiscoveryModule";
+}
+
+__attribute__((constructor))
+static void initialize_ProximityReaderDiscoveryModule(void) {
+  RCTRegisterModule([ProximityReaderDiscoveryModule class]);
+}
+
++ (const RCTMethodInfo *)__rct_export__presentEducation {
+  static RCTMethodInfo config = {
+    "",
+    "presentEducation:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject",
+    NO
+  };
+  return &config;
+}
+
++ (BOOL)requiresMainQueueSetup {
+  return YES;
+}
 
 @end
