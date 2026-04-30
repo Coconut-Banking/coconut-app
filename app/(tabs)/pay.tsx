@@ -503,6 +503,8 @@ function PayScreenInner() {
   const collectPayment = useCallback(async () => {
     // TODO: remove hardcode after demo
     const amt = params.amount ? 1.00 : Math.round(parseFloat(amount) * 100) / 100;
+    // Clear any cached PI — it may have been pre-fetched with the wrong amount
+    prefetchedPi.current = null;
     if (!Number.isFinite(amt) || amt <= 0) {
       Alert.alert("Invalid amount", "Enter a valid amount to collect");
       return;
