@@ -79,7 +79,7 @@ export function StripeTerminalEagerConnect() {
       // Apple checklist §4.1: show education immediately after T&C acceptance
       markTapToPayTermsAccepted().catch(() => {});
       DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
-      router.push("/(tabs)/tap-to-pay-education?fromTerms=1");
+      setTimeout(() => router.push("/(tabs)/tap-to-pay-education?fromTerms=1"), 80);
     },
   });
 
@@ -133,7 +133,8 @@ export function StripeTerminalEagerConnect() {
         if (__DEV__) console.log("[TerminalEager] already initialized, navigating to education");
         markTapToPayTermsAccepted().catch(() => {});
         DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
-        router.push("/(tabs)/tap-to-pay-education");
+        // Small delay so the modal can begin its dismiss animation before navigation fires
+        setTimeout(() => router.push("/(tabs)/tap-to-pay-education"), 80);
         return;
       }
       userRequestedEnableRef.current = true;
@@ -236,7 +237,7 @@ export function StripeTerminalEagerConnect() {
             userRequestedEnableRef.current = false;
             markTapToPayTermsAccepted().catch(() => {});
             DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
-            router.push("/(tabs)/tap-to-pay-education");
+            setTimeout(() => router.push("/(tabs)/tap-to-pay-education"), 80);
           }
         }
       } catch (e) {
