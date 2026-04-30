@@ -34,7 +34,7 @@
         "EXPO_PUBLIC_SKIP_AUTH": "false",
         "EXPO_PUBLIC_FORCE_SIGN_OUT": "false",
         "EXPO_PUBLIC_FORCE_SETUP": "false",
-        "ENABLE_TAP_TO_PAY_IOS": "true"
+        "ENABLE_TAP_TO_PAY_IOS": "false"
       }
     }
   },
