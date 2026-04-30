@@ -50,20 +50,6 @@ function getClerkErrorMessage(e: unknown, fallback: string): string {
   return first?.longMessage || first?.message || err?.message || fallback;
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-  });
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
 export default function SignUpScreen() {
   const { theme } = useTheme();
   const { setIsDemoOn } = useDemoMode();
