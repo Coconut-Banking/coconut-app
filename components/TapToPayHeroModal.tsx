@@ -9,6 +9,7 @@ import {
   Platform,
   AppState,
   DeviceEventEmitter,
+  ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -18,7 +19,10 @@ import { font, radii } from "../lib/theme";
 import { useTheme } from "../lib/theme-context";
 import { TapToPayButtonIcon } from "./TapToPayButtonIcon";
 import { hasSeenTapToPayHeroModal, markTapToPayHeroModalSeen } from "../lib/tap-to-pay-onboarding";
-import { TTP_ENABLE_REQUESTED_EVENT } from "./StripeTerminalEagerConnect";
+import {
+  TTP_ENABLE_REQUESTED_EVENT,
+  TTP_EDUCATION_READY_EVENT,
+} from "./StripeTerminalEagerConnect";
 
 /**
  * One-time full-screen surface for Tap to Pay discovery (Apple checklist 3.1 / 3.2 style).
@@ -32,7 +36,9 @@ export function TapToPayHeroModal() {
   const { isSignedIn, isLoaded } = useAuth();
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
+  const [enabling, setEnabling] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enablingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasSignedInRef = useRef(false);
   // Track the last time the app became active so we can measure elapsed time
   const lastActivatedAtRef = useRef<number>(Date.now());
@@ -74,13 +80,30 @@ export function TapToPayHeroModal() {
 
   const dismiss = useCallback(async () => {
     await markTapToPayHeroModalSeen();
+    if (enablingTimeoutRef.current) clearTimeout(enablingTimeoutRef.current);
+    setEnabling(false);
     setVisible(false);
+  }, []);
+
+  // Listen for education screen ready — dismiss modal in sync with navigation
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(TTP_EDUCATION_READY_EVENT, () => {
+      if (enablingTimeoutRef.current) clearTimeout(enablingTimeoutRef.current);
+      setEnabling(false);
+      setVisible(false);
+    });
+    return () => sub.remove();
   }, []);
 
   const enableTapToPay = useCallback(async () => {
     await markTapToPayHeroModalSeen();
-    setVisible(false);
-    // Fire event so StripeTerminalEagerConnect calls initialize() — this shows Apple's T&C screen
+    // Stay visible with loading state — modal dismisses when education screen is ready
+    setEnabling(true);
+    // Safety fallback: dismiss after 15s if TTP_EDUCATION_READY_EVENT never fires
+    enablingTimeoutRef.current = setTimeout(() => {
+      setEnabling(false);
+      setVisible(false);
+    }, 15_000);
     DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
   }, []);
 
@@ -112,9 +135,20 @@ export function TapToPayHeroModal() {
 
         <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
           {/* Primary CTA — explicitly triggers Apple T&C (checklist §3.5) */}
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={enableTapToPay} activeOpacity={0.9}>
-            <TapToPayButtonIcon color="#fff" size={20} />
-            <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>Enable Tap to Pay on iPhone</Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: theme.primary, opacity: enabling ? 0.85 : 1 }]}
+            onPress={enableTapToPay}
+            activeOpacity={0.9}
+            disabled={enabling}
+          >
+            {enabling ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <TapToPayButtonIcon color="#fff" size={20} />
+                <Text style={[styles.primaryBtnText, { marginLeft: 8 }]}>Enable Tap to Pay on iPhone</Text>
+              </>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={[styles.secondaryBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={openEducation} activeOpacity={0.85}>
             <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>How it works</Text>

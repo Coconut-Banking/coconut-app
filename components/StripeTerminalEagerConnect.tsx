@@ -30,6 +30,13 @@ export const TTP_ENABLE_REQUESTED_EVENT = "ttp:enable_requested";
 export const TTP_CLEAR_CREDENTIALS_EVENT = "ttp:clear_credentials";
 
 /**
+ * Fired immediately before navigating to the education screen.
+ * The hero modal listens for this to dismiss itself in sync with the navigation,
+ * eliminating the blank-screen gap between modal close and education appearing.
+ */
+export const TTP_EDUCATION_READY_EVENT = "ttp:education_ready";
+
+/**
  * Mounts for the whole main-app session inside StripeTerminalRoot.
  *
  * First-time users: initialization is GATED on the user tapping "Enable Tap to Pay on iPhone"
@@ -71,6 +78,7 @@ export function StripeTerminalEagerConnect() {
     onDidAcceptTermsOfService: () => {
       // Apple checklist §4.1: show education immediately after T&C acceptance
       markTapToPayTermsAccepted().catch(() => {});
+      DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
       router.push("/(tabs)/tap-to-pay-education?fromTerms=1");
     },
   });
@@ -124,6 +132,7 @@ export function StripeTerminalEagerConnect() {
       if (isInitializedRef.current) {
         if (__DEV__) console.log("[TerminalEager] already initialized, navigating to education");
         markTapToPayTermsAccepted().catch(() => {});
+        DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
         router.push("/(tabs)/tap-to-pay-education");
         return;
       }
@@ -226,6 +235,7 @@ export function StripeTerminalEagerConnect() {
           if (userRequestedEnableRef.current) {
             userRequestedEnableRef.current = false;
             markTapToPayTermsAccepted().catch(() => {});
+            DeviceEventEmitter.emit(TTP_EDUCATION_READY_EVENT);
             router.push("/(tabs)/tap-to-pay-education");
           }
         }
