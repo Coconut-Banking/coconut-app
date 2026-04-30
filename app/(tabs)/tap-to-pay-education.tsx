@@ -18,7 +18,12 @@ export default function TapToPayEducationScreen() {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS !== "ios" || attempted) return;
+    // Only attempt ProximityReaderDiscovery when arriving from T&C acceptance (new user flow).
+    // Settings access always shows the custom screen so education is always available as reference.
+    if (Platform.OS !== "ios" || attempted || params.fromTerms !== "1") {
+      setFailed(true); // Show custom screen immediately
+      return;
+    }
     setAttempted(true);
 
     presentProximityReaderEducation()
@@ -32,7 +37,7 @@ export default function TapToPayEducationScreen() {
         await markTapToPayEducationCompleted();
         setFailed(true);
       });
-  }, [attempted, router]);
+  }, [attempted, params.fromTerms, router]);
 
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
