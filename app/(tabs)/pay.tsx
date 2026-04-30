@@ -249,9 +249,11 @@ function PayScreenInner() {
     return () => { cancelled = true; };
   }, [params.receiverMemberId, apiFetch]);
 
-  const lockedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
+  // TODO: remove hardcode after demo — forces $1.00 regardless of passed amount
+  const lockedAmount = params.amount ? 1.00 : Math.round((parseFloat(amount) || 0) * 100) / 100;
   const hasPrefilledCheckout = Boolean(params.amount) && lockedAmount > 0;
 
+  // TODO: remove after demo (hardcoded $1.00 — prefetch disabled)
   const prefetchedPi = useRef<{ clientSecret: string; directPayout: boolean; paymentIntentId: string } | null>(null);
   const prefetchingPi = useRef(false);
 
@@ -499,7 +501,8 @@ function PayScreenInner() {
   );
 
   const collectPayment = useCallback(async () => {
-    const amt = Math.round(parseFloat(amount) * 100) / 100;
+    // TODO: remove hardcode after demo
+    const amt = params.amount ? 1.00 : Math.round(parseFloat(amount) * 100) / 100;
     if (!Number.isFinite(amt) || amt <= 0) {
       Alert.alert("Invalid amount", "Enter a valid amount to collect");
       return;
