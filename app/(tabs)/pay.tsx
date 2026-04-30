@@ -506,7 +506,8 @@ function PayScreenInner() {
   const collectPayment = useCallback(async () => {
     // TODO: remove hardcode after demo
     const amt = params.amount ? 1.00 : Math.round(parseFloat(amount) * 100) / 100;
-    // Clear any cached PI — it may have been pre-fetched with the wrong amount
+    // Capture and clear any cached PI — it may have been pre-fetched with the wrong amount
+    const cached = prefetchedPi.current;
     prefetchedPi.current = null;
     if (!Number.isFinite(amt) || amt <= 0) {
       Alert.alert("Invalid amount", "Enter a valid amount to collect");
@@ -524,9 +525,6 @@ function PayScreenInner() {
     try {
       let clientSecret: string | undefined;
       let directPayout = false;
-
-      const cached = prefetchedPi.current;
-      prefetchedPi.current = null;
 
       if (cached) {
         clientSecret = cached.clientSecret;
