@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { Alert } from "react-native";
 import {
   distributeExtras,
   computePersonShares,
@@ -188,8 +189,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        Alert.alert("Error", e instanceof Error ? e.message : "Could not save items. Please try again.");
       } finally {
         setSaving(false);
       }
@@ -321,13 +322,17 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
-      } finally {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to save assignments");
+      } catch (e) {
         setSaving(false);
+        throw e;
       }
+      setSaving(false);
     },
     [receiptId, apiFetch, assignments]
   );
