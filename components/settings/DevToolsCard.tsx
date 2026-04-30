@@ -16,6 +16,9 @@ import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { useSetup } from "../../lib/setup-context";
 import { resetSetupStep } from "../../app/setup";
 import { settingsStyles as s } from "./styles";
+import {
+  TTP_CLEAR_CREDENTIALS_EVENT,
+} from "../StripeTerminalEagerConnect";
 
 export function DevToolsCard() {
   const { theme } = useTheme();
@@ -275,7 +278,8 @@ export function DevToolsCard() {
                           "coconut_ttp_education_completed_v1",
                           "coconut_ttp_terms_accepted_v1",
                         ]);
-                        Alert.alert("Done", "In-app Tap to Pay flags cleared. See instructions above to also reset Apple's native education UI.");
+                        DeviceEventEmitter.emit(TTP_CLEAR_CREDENTIALS_EVENT);
+                        Alert.alert("Done", "Tap to Pay flags + Stripe credentials cleared.\n\nAlso: remove merchant at business.apple.com/taptopay/removeall to reset Apple T&C, then force-kill and relaunch the app.");
                       } catch {
                         Alert.alert("Error", "Could not clear flags.");
                       }
@@ -341,13 +345,14 @@ export function DevToolsCard() {
                         onPress: async () => {
                           invalidateApiCache();
                           resetSetup();
-                          // Also reset the one-time TTP modal so the full intro
-                          // shows again on next login (new user experience)
                           await AsyncStorage.multiRemove([
                             "coconut_ttp_hero_modal_seen_v1",
                             "coconut_ttp_education_completed_v1",
                             "coconut_ttp_terms_accepted_v1",
                           ]).catch(() => {});
+                          // Clear Stripe Terminal's native credential cache so
+                          // initialize() runs fresh and Apple T&C appears again
+                          DeviceEventEmitter.emit(TTP_CLEAR_CREDENTIALS_EVENT);
                           await signOut();
                         },
                   },

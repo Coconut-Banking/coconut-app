@@ -24,6 +24,12 @@ const USE_SIMULATED =
 export const TTP_ENABLE_REQUESTED_EVENT = "ttp:enable_requested";
 
 /**
+ * Event name fired by DevTools "Reset Tap to Pay" to wipe Stripe Terminal's native
+ * credential cache. Forces a true fresh initialize() → T&C prompt on next enable tap.
+ */
+export const TTP_CLEAR_CREDENTIALS_EVENT = "ttp:clear_credentials";
+
+/**
  * Mounts for the whole main-app session inside StripeTerminalRoot.
  *
  * First-time users: initialization is GATED on the user tapping "Enable Tap to Pay on iPhone"
@@ -56,6 +62,7 @@ export function StripeTerminalEagerConnect() {
     cancelDiscovering,
     connectReader,
     connectedReader,
+    clearCachedCredentials,
   } = useStripeTerminal({
     onUpdateDiscoveredReaders: (readers) => {
       readersRef.current = readers;
@@ -96,6 +103,19 @@ export function StripeTerminalEagerConnect() {
       }
     })();
 
+    // Listen for DevTools "Reset Tap to Pay" — wipes Stripe Terminal's native cache so the
+    // next enable tap calls initialize() fresh and Apple shows T&C again.
+    const resetSub = DeviceEventEmitter.addListener(TTP_CLEAR_CREDENTIALS_EVENT, () => {
+      if (__DEV__) console.log("[TerminalEager] clearing cached credentials for TTP reset");
+      initAttempted.current = false;
+      userRequestedEnableRef.current = false;
+      clearCachedCredentials().then(() => {
+        if (__DEV__) console.log("[TerminalEager] credentials cleared — ready for fresh init");
+      }).catch((e) => {
+        if (__DEV__) console.warn("[TerminalEager] clearCachedCredentials failed", e);
+      });
+    });
+
     // Listen for the explicit "Enable Tap to Pay on iPhone" user action
     const sub = DeviceEventEmitter.addListener(TTP_ENABLE_REQUESTED_EVENT, () => {
       if (__DEV__) console.log("[TerminalEager] enable requested by user");
@@ -114,6 +134,7 @@ export function StripeTerminalEagerConnect() {
 
     return () => {
       cancelled = true;
+      resetSub.remove();
       sub.remove();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
