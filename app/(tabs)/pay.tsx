@@ -258,6 +258,9 @@ function PayScreenInner() {
   const prefetchingPi = useRef(false);
 
   useEffect(() => {
+    // TODO: re-enable prefetch after demo — disabled so stale $100 PI can't be used
+    return;
+    // eslint-disable-next-line no-unreachable
     if (!hasPrefilledCheckout || prefetchingPi.current || lockedAmount <= 0) return;
     prefetchingPi.current = true;
     (async () => {
