@@ -760,10 +760,8 @@ function PayScreenInner() {
         {!hasPrefilledCheckout ? (
           <>
             <View style={styles.checkoutHeader}>
-              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
-                <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
-              </TouchableOpacity>
-              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
+              <View style={styles.checkoutHeaderBtn} />
+              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay on iPhone</Text>
               <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
                 <Ionicons name="close" size={20} color={theme.textTertiary} />
               </TouchableOpacity>
@@ -796,10 +794,8 @@ function PayScreenInner() {
         ) : (
           <>
             <View style={styles.checkoutHeader}>
-              <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
-                <Ionicons name="chevron-back" size={22} color={theme.textSecondary} />
-              </TouchableOpacity>
-              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay</Text>
+              <View style={styles.checkoutHeaderBtn} />
+              <Text style={[styles.checkoutHeaderTitle, { color: theme.text }]}>Tap to Pay on iPhone</Text>
               <TouchableOpacity onPress={handleClose} style={styles.checkoutHeaderBtn} hitSlop={10}>
                 <Ionicons name="close" size={20} color={theme.textTertiary} />
               </TouchableOpacity>
@@ -869,15 +865,10 @@ function PayScreenInner() {
               </View>
             )}
           </TouchableOpacity>
-          {isConnected && receiverPayoutsEnabled === false && hasPrefilledCheckout ? (
+          {isConnected && receiverPayoutsEnabled === false && hasPrefilledCheckout && __DEV__ ? (
             <Text style={[styles.payoutNote, { color: theme.textQuaternary }]}>
               Recipient hasn't set up payments yet — balance will be recorded but funds won't transfer to their bank.
             </Text>
-          ) : null}
-          {isConnected ? (
-            <TouchableOpacity style={styles.checkoutLink} onPress={disconnect}>
-              <Text style={[styles.checkoutLinkText, { color: theme.textTertiary }]}>Disconnect reader</Text>
-            </TouchableOpacity>
           ) : null}
         </View>
 
