@@ -29,9 +29,9 @@ function TerminalTokenProvider({ children }: { children: React.ReactElement | Re
         "Content-Type": "application/json",
       },
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({})) as { error?: string; secret?: string };
     if (!res.ok) throw new Error(data.error ?? "Failed to get connection token");
-    return data.secret;
+    return data.secret ?? "";
   };
 
   return (
