@@ -8,20 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		1DDD46D958B8DC4EF6ECAC53 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E037AB991C265065ED83031A /* ExpoModulesProvider.swift */; };
-		2B3703E1BB9B906324638EE4 /* libPods-Coconut.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58A1FEB24CC30440F1DB0842 /* libPods-Coconut.a */; };
+		1AF52D6BA9DD328AAF7D4E3C /* ProximityReaderDiscoveryBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 32C65C5F951BDF1BA3CF065C /* ProximityReaderDiscoveryBridge.m */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		810A8CC930A753578617E706 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D2382CF75F1BF9026FFDAAFB /* PrivacyInfo.xcprivacy */; };
-		A8C2284988C14BA997E566C1 /* ClerkViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65702E3C80624DA592473B34 /* ClerkViewFactory.swift */; };
-		AF175D4A1E93482693861CEC /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87C219D1D0514AB7A4870F4C /* noop-file.swift */; };
-		B4116BAC2F7A279B0060119D /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6810C398120B485CBA578E11 /* ClerkKit */; };
-		B4116BAD2F7A279B0060119D /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 45B224BC144B4EB2A189FF23 /* ClerkKitUI */; };
-		B4E3F0532F87870E0085DA2A /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = F7A8AD791620432FAD7B117B /* ClerkKit */; };
-		B4E3F0542F87870E0085DA2A /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 66881584185242A58455F0FF /* ClerkKitUI */; };
+		53F56B7BEE7C54B5D438C12B /* ProximityReader.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A2D807AC1B92AC4642DAC1 /* ProximityReader.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		A29A4BA6C611D7859A9293C6 /* ProximityReaderDiscoveryModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D0F38A4A22A600D060D1D2 /* ProximityReaderDiscoveryModule.swift */; };
+		A8E1E612946146F794FC3365 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5BC114FEEB40859A294E26 /* noop-file.swift */; };
+		B31064A3979D4BA5AFEACE91 /* ClerkViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1CACA3500E84F3497BF55F6 /* ClerkViewFactory.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C0C0A1B2C3D4E5F6A7B8C9D3 /* ProximityReaderDiscoveryModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C0A1B2C3D4E5F6A7B8C9D1 /* ProximityReaderDiscoveryModule.swift */; };
-		C0C0A1B2C3D4E5F6A7B8C9D4 /* ProximityReaderDiscoveryBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = C0C0A1B2C3D4E5F6A7B8C9D2 /* ProximityReaderDiscoveryBridge.m */; };
-		EA9DF3C9485E4ADB90ED55A2 /* ClerkViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37CA32A8F0948BCAC3CC96B /* ClerkViewFactory.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -29,21 +22,16 @@
 		13B07F961A680F5B00A75B9A /* Coconut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Coconut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Coconut/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Coconut/Info.plist; sourceTree = "<group>"; };
-		58A1FEB24CC30440F1DB0842 /* libPods-Coconut.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Coconut.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		65702E3C80624DA592473B34 /* ClerkViewFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClerkViewFactory.swift; path = Coconut/ClerkViewFactory.swift; sourceTree = "<group>"; };
-		6DE6B83D6AC72D655D5986BE /* Pods-Coconut.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Coconut.debug.xcconfig"; path = "Target Support Files/Pods-Coconut/Pods-Coconut.debug.xcconfig"; sourceTree = "<group>"; };
-		87C219D1D0514AB7A4870F4C /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "Coconut/noop-file.swift"; sourceTree = "<group>"; };
-		9FF7363E27421DDC076879D0 /* Pods-Coconut.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Coconut.release.xcconfig"; path = "Target Support Files/Pods-Coconut/Pods-Coconut.release.xcconfig"; sourceTree = "<group>"; };
+		32C65C5F951BDF1BA3CF065C /* ProximityReaderDiscoveryBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ProximityReaderDiscoveryBridge.m; sourceTree = "<group>"; };
+		6B5BC114FEEB40859A294E26 /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "Coconut/noop-file.swift"; sourceTree = "<group>"; };
+		A7D0F38A4A22A600D060D1D2 /* ProximityReaderDiscoveryModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProximityReaderDiscoveryModule.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Coconut/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C0C0A1B2C3D4E5F6A7B8C9D1 /* ProximityReaderDiscoveryModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProximityReaderDiscoveryModule.swift; path = Coconut/ProximityReaderDiscoveryModule.swift; sourceTree = "<group>"; };
-		C0C0A1B2C3D4E5F6A7B8C9D2 /* ProximityReaderDiscoveryBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ProximityReaderDiscoveryBridge.m; path = Coconut/ProximityReaderDiscoveryBridge.m; sourceTree = "<group>"; };
-		D2382CF75F1BF9026FFDAAFB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Coconut/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		E037AB991C265065ED83031A /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Coconut/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		C1CACA3500E84F3497BF55F6 /* ClerkViewFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClerkViewFactory.swift; path = Coconut/ClerkViewFactory.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Coconut/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Coconut-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Coconut-Bridging-Header.h"; path = "Coconut/Coconut-Bridging-Header.h"; sourceTree = "<group>"; };
-		F37CA32A8F0948BCAC3CC96B /* ClerkViewFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClerkViewFactory.swift; path = Coconut/ClerkViewFactory.swift; sourceTree = "<group>"; };
+		F4A2D807AC1B92AC4642DAC1 /* ProximityReader.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ProximityReader.framework; path = System/Library/Frameworks/ProximityReader.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,11 +39,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B4E3F0542F87870E0085DA2A /* ClerkKitUI in Frameworks */,
-				B4E3F0532F87870E0085DA2A /* ClerkKit in Frameworks */,
-				B4116BAD2F7A279B0060119D /* ClerkKitUI in Frameworks */,
-				B4116BAC2F7A279B0060119D /* ClerkKit in Frameworks */,
-				2B3703E1BB9B906324638EE4 /* libPods-Coconut.a in Frameworks */,
+				53F56B7BEE7C54B5D438C12B /* ProximityReader.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,48 +55,21 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				87C219D1D0514AB7A4870F4C /* noop-file.swift */,
-				F37CA32A8F0948BCAC3CC96B /* ClerkViewFactory.swift */,
-				D2382CF75F1BF9026FFDAAFB /* PrivacyInfo.xcprivacy */,
-				65702E3C80624DA592473B34 /* ClerkViewFactory.swift */,
-				C0C0A1B2C3D4E5F6A7B8C9D1 /* ProximityReaderDiscoveryModule.swift */,
-				C0C0A1B2C3D4E5F6A7B8C9D2 /* ProximityReaderDiscoveryBridge.m */,
+				6B5BC114FEEB40859A294E26 /* noop-file.swift */,
+				C1CACA3500E84F3497BF55F6 /* ClerkViewFactory.swift */,
+				A7D0F38A4A22A600D060D1D2 /* ProximityReaderDiscoveryModule.swift */,
+				32C65C5F951BDF1BA3CF065C /* ProximityReaderDiscoveryBridge.m */,
 			);
 			name = Coconut;
-			sourceTree = "<group>";
-		};
-		17885D33D1BFE614FB20B084 /* Coconut */ = {
-			isa = PBXGroup;
-			children = (
-				E037AB991C265065ED83031A /* ExpoModulesProvider.swift */,
-			);
-			name = Coconut;
-			sourceTree = "<group>";
-		};
-		255382205FB32D5F1DEDCFF6 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				6DE6B83D6AC72D655D5986BE /* Pods-Coconut.debug.xcconfig */,
-				9FF7363E27421DDC076879D0 /* Pods-Coconut.release.xcconfig */,
-			);
-			path = Pods;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				58A1FEB24CC30440F1DB0842 /* libPods-Coconut.a */,
+				F4A2D807AC1B92AC4642DAC1 /* ProximityReader.framework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		47C90C60168A95B295CA1A0B /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				17885D33D1BFE614FB20B084 /* Coconut */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -129,8 +86,6 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				255382205FB32D5F1DEDCFF6 /* Pods */,
-				47C90C60168A95B295CA1A0B /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -162,14 +117,12 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Coconut" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				F9EC798BA9DAA8CDB00AA0CE /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				FEFEE59F625D41F7AA838688 /* [Expo Dev Launcher] Strip Local Network Keys for Release */,
-				33E95B05A9409C9503DE15C2 /* [CP] Embed Pods Frameworks */,
+				597A53D5CBDA4C929137C407 /* [Expo Dev Launcher] Strip Local Network Keys for Release */,
 			);
 			buildRules = (
 			);
@@ -177,10 +130,8 @@
 			);
 			name = Coconut;
 			packageProductDependencies = (
-				6810C398120B485CBA578E11 /* ClerkKit */,
-				45B224BC144B4EB2A189FF23 /* ClerkKitUI */,
-				F7A8AD791620432FAD7B117B /* ClerkKit */,
-				66881584185242A58455F0FF /* ClerkKitUI */,
+				71F7EF8321DC4B6A829D046C /* ClerkKit */,
+				EE35E473DE8045E989EA87DE /* ClerkKitUI */,
 			);
 			productName = Coconut;
 			productReference = 13B07F961A680F5B00A75B9A /* Coconut.app */;
@@ -209,8 +160,7 @@
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
-				4FFC8D16F928440BA8240CA6 /* XCRemoteSwiftPackageReference "clerk-ios" */,
-				5589BD35F26C4EEABC613DE0 /* XCRemoteSwiftPackageReference "clerk-ios" */,
+				B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
@@ -229,7 +179,6 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				810A8CC930A753578617E706 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -275,121 +224,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		33E95B05A9409C9503DE15C2 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-frameworks.sh",
-				"${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/ios/hermesvm.framework",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/Plaid/LinkKit.framework/LinkKit",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/StripeTerminal/StripeTerminal.framework/StripeTerminal",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/LinkKit.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/StripeTerminal.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-resources.sh",
-				"${PODS_CONFIGURATION_BUILD_DIR}/AppAuth/AppAuthCore_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXUpdates/EXUpdates.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoDevice/ExpoDevice_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoNotifications/ExpoNotifications_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GTMAppAuth/GTMAppAuth_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GTMSessionFetcher/GTMSessionFetcher_Core_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleSignIn/GoogleSignIn.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleUtilities/GoogleUtilities_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/PromisesObjC/FBLPromises_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/PurchasesHybridCommon/PurchasesHybridCommon.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/ReachabilitySwift/ReachabilitySwift.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RevenueCat/RevenueCat.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/SDWebImage/SDWebImage.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
-			);
-			name = "[CP] Copy Pods Resources";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AppAuthCore_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoApplication_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXUpdates.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoDevice_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoNotifications_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMAppAuth_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMSessionFetcher_Core_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleSignIn.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleUtilities_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/FBLPromises_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PurchasesHybridCommon.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReachabilitySwift.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RevenueCat.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SDWebImage.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		F9EC798BA9DAA8CDB00AA0CE /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Coconut/Coconut.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Coconut/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Coconut/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Coconut/expo-configure-project.sh\"\n";
-		};
-		FEFEE59F625D41F7AA838688 /* [Expo Dev Launcher] Strip Local Network Keys for Release */ = {
+		597A53D5CBDA4C929137C407 /* [Expo Dev Launcher] Strip Local Network Keys for Release */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -403,6 +238,28 @@
 			shellPath = /bin/sh;
 			shellScript = "# Strip dev-launcher-specific local network permission keys from non-Debug builds\n# This only removes _expo._tcp Bonjour services and the dev-launcher usage description.\n# Other Bonjour services and custom descriptions are preserved for production use.\n\nif [ \"$CONFIGURATION\" != \"Debug\" ]; then\n  PLIST_PATH=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  if [ -f \"$PLIST_PATH\" ]; then\n    # Check if NSBonjourServices exists\n    if /usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" >/dev/null 2>&1; then\n      # Get the count of services\n      COUNT=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null | grep \"^    \" | wc -l | tr -d ' ')\n\n      # Remove _expo._tcp\n      for ((i=COUNT-1; i>=0; i--)); do\n        SERVICE=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices:$i\" \"$PLIST_PATH\" 2>/dev/null || echo \"\")\n        if echo \"$SERVICE\" | grep -q \"_expo._tcp\"; then\n          /usr/libexec/PlistBuddy -c \"Delete :NSBonjourServices:$i\" \"$PLIST_PATH\" 2>/dev/null || true\n        fi\n      done\n\n      # If the array is now empty, remove it entirely\n      REMAINING=$(/usr/libexec/PlistBuddy -c \"Print :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null | grep \"^    \" | wc -l | tr -d ' ')\n      if [ \"$REMAINING\" -eq \"0\" ]; then\n        /usr/libexec/PlistBuddy -c \"Delete :NSBonjourServices\" \"$PLIST_PATH\" 2>/dev/null || true\n      fi\n    fi\n\n    # Only delete the description if it matches the dev-launcher default text\n    DESC=$(/usr/libexec/PlistBuddy -c \"Print :NSLocalNetworkUsageDescription\" \"$PLIST_PATH\" 2>/dev/null || echo \"\")\n    if echo \"$DESC\" | grep -q \"Expo Dev Launcher\"; then\n      /usr/libexec/PlistBuddy -c \"Delete :NSLocalNetworkUsageDescription\" \"$PLIST_PATH\" 2>/dev/null || true\n    fi\n  fi\nfi\n";
 		};
+		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-resources.sh",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXUpdates/EXUpdates.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/RCTI18nStrings.bundle",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXUpdates.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCTI18nStrings.bundle",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Coconut/Pods-Coconut-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -411,12 +268,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				AF175D4A1E93482693861CEC /* noop-file.swift in Sources */,
-				EA9DF3C9485E4ADB90ED55A2 /* ClerkViewFactory.swift in Sources */,
-				1DDD46D958B8DC4EF6ECAC53 /* ExpoModulesProvider.swift in Sources */,
-				A8C2284988C14BA997E566C1 /* ClerkViewFactory.swift in Sources */,
-				C0C0A1B2C3D4E5F6A7B8C9D3 /* ProximityReaderDiscoveryModule.swift in Sources */,
-				C0C0A1B2C3D4E5F6A7B8C9D4 /* ProximityReaderDiscoveryBridge.m in Sources */,
+				A8E1E612946146F794FC3365 /* noop-file.swift in Sources */,
+				B31064A3979D4BA5AFEACE91 /* ClerkViewFactory.swift in Sources */,
+				A29A4BA6C611D7859A9293C6 /* ProximityReaderDiscoveryModule.swift in Sources */,
+				1AF52D6BA9DD328AAF7D4E3C /* ProximityReaderDiscoveryBridge.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -425,13 +280,11 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 6DE6B83D6AC72D655D5986BE /* Pods-Coconut.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Coconut/Coconut.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 82W9K9LWP9;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -451,7 +304,6 @@
 					"-weak_framework",
 					ProximityReader,
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
 				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
@@ -464,13 +316,11 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 9FF7363E27421DDC076879D0 /* Pods-Coconut.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Coconut/Coconut.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 82W9K9LWP9;
 				INFOPLIST_FILE = Coconut/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -485,7 +335,6 @@
 					"-weak_framework",
 					ProximityReader,
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
 				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
@@ -547,15 +396,10 @@
 					/usr/lib/swift,
 					"$(inherited)",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
+				LIBRARY_SEARCH_PATHS = "\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_CFLAGS = "$(inherited)";
-				OTHER_CPLUSPLUSFLAGS = "$(inherited)";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				USE_HERMES = true;
 			};
 			name = Debug;
 		};
@@ -604,13 +448,9 @@
 					/usr/lib/swift,
 					"$(inherited)",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
+				LIBRARY_SEARCH_PATHS = "\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = NO;
-				OTHER_CFLAGS = "$(inherited)";
-				OTHER_CPLUSPLUSFLAGS = "$(inherited)";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -639,15 +479,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		4FFC8D16F928440BA8240CA6 /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/clerk/clerk-ios.git";
-			requirement = {
-				kind = exactVersion;
-				version = 1.0.0;
-			};
-		};
-		5589BD35F26C4EEABC613DE0 /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
+		B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/clerk/clerk-ios.git";
 			requirement = {
@@ -658,25 +490,15 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		45B224BC144B4EB2A189FF23 /* ClerkKitUI */ = {
+		71F7EF8321DC4B6A829D046C /* ClerkKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 4FFC8D16F928440BA8240CA6 /* XCRemoteSwiftPackageReference "clerk-ios" */;
-			productName = ClerkKitUI;
-		};
-		66881584185242A58455F0FF /* ClerkKitUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 5589BD35F26C4EEABC613DE0 /* XCRemoteSwiftPackageReference "clerk-ios" */;
-			productName = ClerkKitUI;
-		};
-		6810C398120B485CBA578E11 /* ClerkKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 4FFC8D16F928440BA8240CA6 /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			package = B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */;
 			productName = ClerkKit;
 		};
-		F7A8AD791620432FAD7B117B /* ClerkKit */ = {
+		EE35E473DE8045E989EA87DE /* ClerkKitUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5589BD35F26C4EEABC613DE0 /* XCRemoteSwiftPackageReference "clerk-ios" */;
-			productName = ClerkKit;
+			package = B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKitUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

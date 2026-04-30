@@ -42,7 +42,14 @@ yarn-error.*
 *.apk
 *.aab
 
-# generated native folders
-/ios
+# Native build artifacts (commit the rest of /ios for EAS bare workflow)
+/ios/Pods/
+/ios/build/
+/ios/Podfile.lock
+/ios/.xcode.env.local
+/ios/*.xcworkspace
+/ios/**/xcuserdata/
+
+# Android still managed via prebuild
 /android
 .claude/worktrees/
