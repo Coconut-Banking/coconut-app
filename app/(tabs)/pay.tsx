@@ -260,7 +260,7 @@ function PayScreenInner() {
     prefetchingPi.current = true;
     (async () => {
       try {
-        const body: Record<string, unknown> = { amount: Math.round(lockedAmount * 100) };
+        const body: Record<string, unknown> = { amount: lockedAmount };
         if (params.currency) body.currency = params.currency;
         if (params.groupId && params.payerMemberId && params.receiverMemberId) {
           body.groupId = params.groupId;
@@ -525,7 +525,7 @@ function PayScreenInner() {
         directPayout = cached.directPayout;
         if (__DEV__) console.log("[Pay] Using pre-fetched PaymentIntent:", cached.paymentIntentId);
       } else {
-        const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
+        const body: Record<string, unknown> = { amount: amt };
         if (params.currency) body.currency = params.currency;
         if (params.groupId && params.payerMemberId && params.receiverMemberId) {
           body.groupId = params.groupId;
