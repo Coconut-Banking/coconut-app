@@ -1,0 +1,18 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON bodies (e.g. 502 HTML). Use `res.json().catch(() => ({}))` so a parse failure never throws before you can inspect `res.ok`.
+- Call `setLoading(false)` (and any other cleanup flags) unconditionally in `finally` — never gate on intermediate flags or a preceding `.then()`.
+- Never send payment amounts as floating-point dollars to Stripe — always use `Math.round(amt * 100)` to convert to integer cents before posting to any payment-intent endpoint.
+- Apply `withTimeout()` consistently to ALL OAuth/auth screens — sign-in AND sign-up must both have identical timeout guards. Parity between screens is critical.
+- `try-finally` without `catch` silently swallows API errors — always add a `catch` that re-throws so callers can surface errors to the user via `Alert.alert`.
+- Empty catch blocks (`catch { // stay on screen }`) give users no feedback — at minimum call `Alert.alert` with the error message so users know the operation failed.
+- Never disarm an `AbortController` timeout inside a `.then()` mid-chain — keep `clearTimeout` only in `.finally()` / `.catch()`, and pass the same `signal` to every `fetch` in the chain.
+- Async guard flags (`let cancelled = false`) set inside `useCallback` are never reset — use a `useRef` generation counter instead; increment on each call and compare in guards.
+- Never hardcode credentials or publishable keys as fallback values in source files — use empty string `""` as the fallback so missing env vars fail loudly rather than silently using a baked-in key.
