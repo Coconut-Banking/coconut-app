@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { Alert } from "react-native";
 import {
   distributeExtras,
   computePersonShares,
@@ -89,9 +90,9 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
           method: "POST",
           body: formData,
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
-        if (!res.ok) throw new Error(data.error ?? "Parse failed");
+        if (!res.ok) throw new Error((data as { error?: string }).error ?? "Parse failed");
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -188,8 +189,8 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
         );
         setItemsWithExtras(withExtras);
         setStep("assign");
-      } catch {
-        // stay on review
+      } catch (e) {
+        Alert.alert("Save failed", e instanceof Error ? e.message : "Could not save items. Please try again.");
       } finally {
         setSaving(false);
       }
@@ -321,10 +322,15 @@ export function useReceiptSplit(apiFetch: ApiFetch) {
             })),
           })
         );
-        await apiFetch(`/api/receipt/${receiptId}/assign`, {
+        const res = await apiFetch(`/api/receipt/${receiptId}/assign`, {
           method: "POST",
           body: { assignments: payload },
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as { error?: string }).error ?? "Save failed");
+      } catch (e) {
+        Alert.alert("Save failed", e instanceof Error ? e.message : "Could not save assignments. Please try again.");
+        throw e;
       } finally {
         setSaving(false);
       }
