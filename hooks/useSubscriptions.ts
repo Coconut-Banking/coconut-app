@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/expo";
 import { useApiFetch } from "../lib/api";
 
 export interface Subscription {
@@ -13,6 +14,7 @@ export interface Subscription {
 }
 
 export function useSubscriptions() {
+  const { isLoaded, isSignedIn } = useAuth();
   const apiFetch = useApiFetch();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,8 +32,9 @@ export function useSubscriptions() {
   }, [apiFetch]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     fetchSubs();
-  }, [fetchSubs]);
+  }, [fetchSubs, isLoaded, isSignedIn]);
 
   return { subscriptions, loading, refetch: fetchSubs };
 }
