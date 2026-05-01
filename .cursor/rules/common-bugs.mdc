@@ -1,0 +1,34 @@
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+## Network / API
+
+- Always check `res.ok` BEFORE calling `res.json()` — server errors (502, 503, 504) often return HTML bodies. Use `res.json().catch(() => ({}))` on the error path only.
+- Never discard the return value of `apiFetch()` — always inspect `res.ok` and throw on failure so callers know the request failed.
+- Never use `try { ... } finally { ... }` without a `catch` for user-visible operations — add a `catch` that shows an `Alert` and re-throws.
+- Empty catch blocks (`catch { // stay on screen }`) give users zero feedback. Show an `Alert` and re-throw if the caller needs to react.
+
+## Auth / OAuth
+
+- Apply `withTimeout()` consistently to ALL auth screens — both sign-in AND sign-up. Missing timeout on either leaves `loading` permanently `true` if the OAuth flow hangs.
+- Wrap BOTH `startGoogleAuthenticationFlow()` AND `setActive()` with `withTimeout` — a hung `setActive` call is just as bad as a hung flow.
+
+## Payments
+
+- Stripe Terminal requires the payment amount in the **smallest currency unit (cents for USD)**. Always use `Math.round(amt * 100)` — never send a raw float dollar value.
+
+## State / Async
+
+- `let cancelled = false` inside a `useCallback` is useless as a stale-fetch guard — it is never set to `true`. Use a `useRef` generation counter instead: increment on each new fetch and in the `useEffect` cleanup return function.
+- `setLoading(false)` must be in a `finally` block — never gate it on a condition inside `catch` only.
+- `useEffect` that calls an async fetch must return a cleanup function that cancels the in-flight request (increment generation counter or call `AbortController.abort()`).
+
+## Secrets
+
+- Never commit API keys or secrets as hardcoded fallbacks in `app.config.js` or any source file — use environment variables only, and let the app fail loudly if they are missing.
