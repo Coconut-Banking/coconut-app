@@ -121,7 +121,7 @@ export default function PayScreen() {
 
     setCollecting(true);
     try {
-      const body: Record<string, unknown> = { amount: amt };
+      const body: Record<string, unknown> = { amount: Math.round(amt * 100) };
       if (params.groupId && params.payerMemberId && params.receiverMemberId) {
         body.groupId = params.groupId;
         body.payerMemberId = params.payerMemberId;
