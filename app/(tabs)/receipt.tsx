@@ -15,9 +15,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import { receiptImagePickerOptions } from "../../lib/receipt-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams, type Href } from "expo-router";
 import { useApiFetch } from "../../lib/api";
 import { useReceiptSplitWithOptions, type Step } from "../../hooks/useReceiptSplit";
 import { useTheme } from "../../lib/theme-context";
@@ -26,6 +27,11 @@ import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { sfx } from "../../lib/sounds";
 import { exportReceiptPdf } from "../../lib/receipt-pdf";
+import {
+  createPaymentLink,
+  findSettlementForPerson,
+  sharePaymentLink,
+} from "../../lib/payment-link";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -107,6 +113,11 @@ type Contact = {
 };
 
 export default function ReceiptScreen() {
+  const { pendingScanUri, pendingScanMime, pendingScanName } = useLocalSearchParams<{
+    pendingScanUri?: string;
+    pendingScanMime?: string;
+    pendingScanName?: string;
+  }>();
   const { theme } = useTheme();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
@@ -114,6 +125,15 @@ export default function ReceiptScreen() {
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
   const scrollRef = useRef<ScrollView>(null);
+  const pendingUploadDone = useRef(false);
+
+  useEffect(() => {
+    if (!pendingScanUri || pendingUploadDone.current || rs.uploading) return;
+    pendingUploadDone.current = true;
+    const mimeType = pendingScanMime ?? "image/jpeg";
+    const name = pendingScanName ?? (mimeType === "application/pdf" ? "receipt.pdf" : "receipt.jpg");
+    void rs.uploadReceipt(pendingScanUri, { mimeType, name });
+  }, [pendingScanUri, pendingScanMime, pendingScanName, rs.uploading, rs.uploadReceipt]);
 
   return (
     <SafeAreaView style={[st.safe, { backgroundColor: theme.background }]} edges={["top"]}>
@@ -166,30 +186,26 @@ export default function ReceiptScreen() {
 
 /* ═══════════════════ Step 1: Upload ═══════════════════ */
 
-function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> }) {
+function UploadStep({
+  rs,
+}: {
+  rs: ReturnType<typeof useReceiptSplitWithOptions>;
+}) {
   const { theme } = useTheme();
+
   const pick = async (camera: boolean) => {
     if (camera) {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") { Alert.alert("Permission needed", "Allow camera access."); return; }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+      router.push("/scan-receipt" as Href);
+      return;
     }
-    const pickerOpts: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ["images"],
-      quality: 0.85,
-      exif: false,
-    };
-    const result = camera
-      ? await ImagePicker.launchCameraAsync(pickerOpts)
-      : await ImagePicker.launchImageLibraryAsync(pickerOpts);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") { Alert.alert("Permission needed", "Allow photo access."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync(receiptImagePickerOptions());
     if (result.canceled) return;
     const asset = result.assets[0];
     if (!asset?.uri) return;
-    const raw = asset.mimeType ?? "image/jpeg";
-    const mimeType = (raw === "image/heic" || raw === "image/heif") ? "image/jpeg" : raw;
-    const ext = mimeType.split("/")[1] ?? "jpg";
+    const mimeType = asset.mimeType ?? "image/jpeg";
+    const ext = (mimeType.split("/")[1] ?? "jpg").replace("heif", "heic");
     await rs.uploadReceipt(asset.uri, { mimeType, name: `receipt.${ext}` });
   };
 
@@ -736,6 +752,7 @@ function SummaryStep({
   const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
   const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
+  const [linkLoadingFor, setLinkLoadingFor] = useState<string | null>(null);
 
   const detectedGroupId = useMemo(() => {
     const ids = rs.people.map(p => p.groupId).filter(Boolean) as string[];
@@ -894,6 +911,45 @@ function SummaryStep({
     showToast(`Added to everyone's tab`);
   };
 
+  const handleSendPaymentLink = async (person: typeof rs.personShares[0]) => {
+    if (isDemoOn) {
+      Alert.alert("Demo", `Would send payment link to ${person.name}`);
+      return;
+    }
+    if (!resolvedGroupId || !finished) {
+      Alert.alert("Please wait", "Saving receipt split…");
+      return;
+    }
+    const settlement = findSettlementForPerson(person.name, person.totalOwed, suggestions);
+    if (!settlement) {
+      Alert.alert("Payment link", "Could not find settlement for this person. Try again in a moment.");
+      return;
+    }
+    const key = person.name.toLowerCase();
+    setLinkLoadingFor(key);
+    try {
+      const result = await createPaymentLink(apiFetch, {
+        amount: person.totalOwed,
+        currency: "USD",
+        groupId: resolvedGroupId,
+        payerMemberId: settlement.fromMemberId,
+        receiverMemberId: settlement.toMemberId,
+      });
+      if (!result.ok) {
+        Alert.alert("Payment link", result.error);
+        return;
+      }
+      sfx.pop();
+      await sharePaymentLink(result.url, {
+        personName: person.name,
+        amount: person.totalOwed,
+        currency: "USD",
+      });
+    } finally {
+      setLinkLoadingFor(null);
+    }
+  };
+
   if (finishing) {
     return (
       <View style={st.center}>
@@ -966,27 +1022,57 @@ function SummaryStep({
             </View>
 
             {/* Action buttons */}
-            <View style={smst.personActions}>
+            <View style={{ gap: 8 }}>
               <TouchableOpacity
-                style={[smst.settleBtn, { backgroundColor: theme.text }]}
-                onPress={() => { sfx.paymentTap(); router.push({ pathname: "/(tabs)/pay", params: { amount: person.totalOwed.toFixed(2), currency: "USD", groupId: resolvedGroupId ?? "" } }); }}
+                style={[smst.payLinkBtn, { backgroundColor: theme.text }, (!finished || linkLoadingFor === person.name.toLowerCase()) && { opacity: 0.7 }]}
+                onPress={() => handleSendPaymentLink(person)}
+                disabled={!finished || linkLoadingFor === person.name.toLowerCase()}
                 activeOpacity={0.8}
               >
-                <Ionicons name="wifi" size={14} color={theme.surface} style={{ transform: [{ rotate: "90deg" }] }} />
-                <Text style={[smst.settleBtnText, { color: theme.surface }]}>Settle</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
-                onPress={() => handleTabPerson(person)}
-                disabled={isTabbed}
-                activeOpacity={0.7}
-              >
-                {isTabbed ? (
-                  <><Ionicons name="checkmark" size={14} color={theme.success} /><Text style={[smst.tabBtnText, { color: theme.success }]}>Tabbed</Text></>
+                {linkLoadingFor === person.name.toLowerCase() ? (
+                  <ActivityIndicator size="small" color={theme.surface} />
                 ) : (
-                  <Text style={[smst.tabBtnText, { color: theme.textSecondary }]}>Tab it</Text>
+                  <>
+                    <Ionicons name="link-outline" size={15} color={theme.surface} />
+                    <Text style={[smst.payLinkBtnText, { color: theme.surface }]}>Send payment link</Text>
+                  </>
                 )}
               </TouchableOpacity>
+              <View style={smst.personActions}>
+                <TouchableOpacity
+                  style={[smst.settleBtn, { backgroundColor: theme.surface, borderWidth: 1.5, borderColor: theme.border }]}
+                  onPress={() => {
+                    sfx.paymentTap();
+                    const settlement = findSettlementForPerson(person.name, person.totalOwed, suggestions);
+                    router.push({
+                      pathname: "/(tabs)/pay",
+                      params: {
+                        amount: person.totalOwed.toFixed(2),
+                        currency: "USD",
+                        groupId: resolvedGroupId ?? "",
+                        payerMemberId: settlement?.fromMemberId ?? "",
+                        receiverMemberId: settlement?.toMemberId ?? "",
+                      },
+                    });
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="wifi" size={14} color={theme.text} style={{ transform: [{ rotate: "90deg" }] }} />
+                  <Text style={[smst.settleBtnText, { color: theme.text }]}>Tap to Pay</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
+                  onPress={() => handleTabPerson(person)}
+                  disabled={isTabbed}
+                  activeOpacity={0.7}
+                >
+                  {isTabbed ? (
+                    <><Ionicons name="checkmark" size={14} color={theme.success} /><Text style={[smst.tabBtnText, { color: theme.success }]}>Tabbed</Text></>
+                  ) : (
+                    <Text style={[smst.tabBtnText, { color: theme.textSecondary }]}>Tab it</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         );
@@ -1183,7 +1269,9 @@ const smst = StyleSheet.create({
   personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
   personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
   personItems: { paddingLeft: 44, gap: 2 },
-  personActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  payLinkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, borderRadius: radii.xl },
+  payLinkBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
+  personActions: { flexDirection: "row", gap: 10 },
   settleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flex: 1, paddingVertical: 12, borderRadius: radii.xl },
   settleBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
   tabBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flex: 1, paddingVertical: 12, borderRadius: radii.xl, borderWidth: 1.5 },

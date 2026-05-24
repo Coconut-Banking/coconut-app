@@ -7,6 +7,7 @@ import {
   type Assignee,
   type PersonShare,
 } from "../lib/receipt-split";
+import { prepareReceiptImageForUpload } from "../lib/prepare-receipt-image";
 
 export type Step = "upload" | "review" | "assign" | "summary";
 
@@ -122,15 +123,17 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         return;
       }
 
-      const mimeType = opts?.mimeType ?? "image/jpeg";
-      const fileName = opts?.name ?? "receipt.jpg";
-
       try {
+        const prepared = await prepareReceiptImageForUpload(uri, {
+          mimeType: opts?.mimeType,
+          name: opts?.name,
+        });
+
         const formData = new FormData();
         formData.append("image", {
-          uri,
-          type: mimeType,
-          name: fileName,
+          uri: prepared.uri,
+          type: prepared.mimeType,
+          name: prepared.name,
         } as unknown as Blob);
 
         const res = await apiFetch("/api/receipt/parse", {
