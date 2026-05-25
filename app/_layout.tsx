@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
 import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ClerkProvider, useAuth, useClerk } from "@clerk/expo";
@@ -382,6 +383,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#F6F0E2" }}>
+      <SafeAreaProvider>
       <ThemeProvider>
         <ClerkProvider
           publishableKey={publishableKey ?? ""}
@@ -406,6 +408,7 @@ export default function RootLayout() {
           </DemoModeProvider>
         </ClerkProvider>
       </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

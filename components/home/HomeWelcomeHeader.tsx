@@ -9,7 +9,13 @@ import { useHasUnseenActivity } from "../../hooks/useGroups";
 import { CoconutNotificationButton } from "./CoconutNotificationButton";
 import { HOME_HERO_WAVE_HEIGHT } from "./HomeHeroBackdrop";
 
-export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader() {
+export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
+  topInset = 0,
+  horizontalPad = 22,
+}: {
+  topInset?: number;
+  horizontalPad?: number;
+}) {
   const { user } = useUser();
   const hasUnseen = useHasUnseenActivity();
 
@@ -20,8 +26,16 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader() {
     "there";
 
   return (
-    <Animated.View entering={FadeInDown.duration(380).delay(40)} style={styles.wrap}>
-      <View style={styles.notifRow}>
+    <Animated.View
+      entering={FadeInDown.duration(380).delay(40)}
+      style={[styles.wrap, { minHeight: HOME_HERO_WAVE_HEIGHT }]}
+    >
+      <View
+        style={[
+          styles.notifRow,
+          { top: topInset + 6, right: horizontalPad },
+        ]}
+      >
         <CoconutNotificationButton
           hasNotification={hasUnseen}
           onPress={() => router.navigate("/(tabs)/activity")}
@@ -30,7 +44,7 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader() {
 
       <SnapPress
         onPress={() => router.navigate("/(tabs)/settings")}
-        style={styles.avatarWrap}
+        style={[styles.avatarWrap, { marginTop: topInset + 28 }]}
         haptic="light"
       >
         <MemberAvatar
@@ -47,18 +61,12 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader() {
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
-    paddingTop: 4,
-    paddingBottom: 8,
-    minHeight: HOME_HERO_WAVE_HEIGHT - 48,
+    paddingBottom: 10,
     zIndex: 1,
   },
   notifRow: {
     position: "absolute",
-    top: 4,
-    right: 2,
     zIndex: 2,
   },
-  avatarWrap: {
-    marginTop: 36,
-  },
+  avatarWrap: {},
 });

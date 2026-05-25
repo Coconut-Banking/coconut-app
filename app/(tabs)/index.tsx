@@ -53,6 +53,10 @@ import type { HomeTransactionListItem } from "../../components/home/HomeBankTran
 import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
 import { resolvePurchaseLocation } from "../../lib/transaction-location";
 import { afterUiSettled } from "../../lib/after-ui-settled";
+import {
+  homeHorizontalPadding,
+  homeListPaddingRight,
+} from "../../lib/home-screen-insets";
 import { HomeBankTransactionRow } from "../../components/home/HomeBankTransactionRow";
 import type { DateFilterPreset } from "../../components/home/HomeSpeedDialSearch";
 import { FlatList } from "react-native-gesture-handler";
@@ -335,6 +339,7 @@ export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const home = useHomePalette();
   const insets = useSafeAreaInsets();
+  const homePad = homeHorizontalPadding(insets);
   const homeScrollBottom = 112 + Math.max(insets.bottom, 12);
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
@@ -799,8 +804,8 @@ export default function BalancesPrototypeScreen() {
     () => (
       <View style={styles.homeHeader}>
         <HomeHeroBackdrop topInset={insets.top} />
-        <View style={{ paddingTop: insets.top }}>
-          <HomeWelcomeHeader />
+        <View style={{ paddingHorizontal: homePad }}>
+          <HomeWelcomeHeader topInset={insets.top} horizontalPad={homePad} />
           <BalanceOverviewCard summary={summary} />
           <HomeCoconutBalanceStrip />
         {showContactsBanner ? (
@@ -860,6 +865,7 @@ export default function BalancesPrototypeScreen() {
     ),
     [
       insets.top,
+      homePad,
       summary,
       showContactsBanner,
       theme,
@@ -878,8 +884,20 @@ export default function BalancesPrototypeScreen() {
   );
 
   const screenEdgeStyle = useMemo(
-    () => [styles.screenRoot, { marginTop: -insets.top, backgroundColor: CANVAS_BOTTOM }],
-    [insets.top],
+    () => [styles.screenRoot, { backgroundColor: CANVAS_BOTTOM }],
+    [],
+  );
+
+  const listContentStyle = useMemo(
+    () => [
+      styles.scrollContent,
+      {
+        paddingHorizontal: homePad,
+        paddingRight: homeListPaddingRight(homePad),
+        paddingBottom: homeScrollBottom,
+      },
+    ],
+    [homePad, homeScrollBottom],
   );
 
   if (initialHomeLoading) {
@@ -924,7 +942,7 @@ export default function BalancesPrototypeScreen() {
           ListHeaderComponent={homeListHeader}
           ListFooterComponent={filteredHomeTx.length > 0 ? HomeTransactionsFooter : null}
           ItemSeparatorComponent={HomeTxSeparator}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: homeScrollBottom }]}
+          contentContainerStyle={listContentStyle}
           style={styles.flex1}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1510,8 +1528,6 @@ const styles = StyleSheet.create({
   },
   homeHeader: {
     position: "relative",
-    marginHorizontal: -22,
-    paddingHorizontal: 22,
     marginBottom: 4,
     overflow: "visible",
   },

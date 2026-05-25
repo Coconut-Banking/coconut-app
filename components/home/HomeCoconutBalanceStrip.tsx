@@ -79,7 +79,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginHorizontal: 18,
     marginBottom: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -94,6 +93,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     flex: 1,
+    minWidth: 0,
   },
   iconWrap: {
     width: 36,
@@ -119,13 +119,16 @@ const styles = StyleSheet.create({
   right: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
+    flexShrink: 0,
+    maxWidth: "42%",
   },
   amount: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: font.bold,
     fontWeight: "700",
     letterSpacing: -0.3,
+    flexShrink: 1,
   },
   pending: {
     fontSize: 10,

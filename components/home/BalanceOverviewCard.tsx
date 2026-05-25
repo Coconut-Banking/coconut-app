@@ -279,10 +279,13 @@ export const BalanceOverviewCard = React.memo(function BalanceOverviewCard({
 
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 18,
-    paddingTop: 4,
+    paddingHorizontal: 4,
+    paddingTop: 0,
     paddingBottom: 4,
-    marginBottom: 16,
+    marginBottom: 12,
+    maxWidth: 322,
+    alignSelf: "center",
+    width: "100%",
   },
   cardLabel: {
     fontSize: 16,
