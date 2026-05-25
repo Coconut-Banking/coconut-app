@@ -22,6 +22,7 @@ import {
   Keyboard,
   Platform,
   PanResponder,
+  useWindowDimensions,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,7 +47,6 @@ import { HomeWelcomeHeader } from "../../components/home/HomeWelcomeHeader";
 import { HomeHeroBackdrop } from "../../components/home/HomeHeroBackdrop";
 import { HomeScreenBackground, CANVAS_BOTTOM } from "../../components/home/HomeScreenBackground";
 import { BalanceOverviewCard } from "../../components/home/BalanceOverviewCard";
-import { HomeCoconutBalanceStrip } from "../../components/home/HomeCoconutBalanceStrip";
 import { HomeBankTransactionsSection, HomeTransactionsFooter } from "../../components/home/HomeBankTransactionsSection";
 import { HomeTransactionSearchHeader } from "../../components/home/HomeTransactionSearchHeader";
 import type { HomeTransactionListItem } from "../../components/home/HomeBankTransactionRow";
@@ -54,8 +54,9 @@ import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transact
 import { resolvePurchaseLocation } from "../../lib/transaction-location";
 import { afterUiSettled } from "../../lib/after-ui-settled";
 import {
-  homeHorizontalPadding,
+  homeBalanceSideInset,
   homeListPaddingRight,
+  HOME_TX_HORIZONTAL,
 } from "../../lib/home-screen-insets";
 import { HomeBankTransactionRow } from "../../components/home/HomeBankTransactionRow";
 import type { DateFilterPreset } from "../../components/home/HomeSpeedDialSearch";
@@ -339,7 +340,9 @@ export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const home = useHomePalette();
   const insets = useSafeAreaInsets();
-  const homePad = homeHorizontalPadding(insets);
+  const { width: screenWidth } = useWindowDimensions();
+  const balancePad = homeBalanceSideInset(screenWidth);
+  const txPad = HOME_TX_HORIZONTAL;
   const homeScrollBottom = 112 + Math.max(insets.bottom, 12);
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
@@ -804,10 +807,11 @@ export default function BalancesPrototypeScreen() {
     () => (
       <View style={styles.homeHeader}>
         <HomeHeroBackdrop topInset={insets.top} />
-        <View style={{ paddingHorizontal: homePad }}>
-          <HomeWelcomeHeader topInset={insets.top} horizontalPad={homePad} />
+        <HomeWelcomeHeader topInset={insets.top} />
+        <View style={[styles.balanceBlock, { paddingHorizontal: balancePad }]}>
           <BalanceOverviewCard summary={summary} />
-          <HomeCoconutBalanceStrip />
+        </View>
+        <View style={{ paddingHorizontal: txPad }}>
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
@@ -865,7 +869,8 @@ export default function BalancesPrototypeScreen() {
     ),
     [
       insets.top,
-      homePad,
+      balancePad,
+      txPad,
       summary,
       showContactsBanner,
       theme,
@@ -892,12 +897,12 @@ export default function BalancesPrototypeScreen() {
     () => [
       styles.scrollContent,
       {
-        paddingHorizontal: homePad,
-        paddingRight: homeListPaddingRight(homePad),
+        paddingHorizontal: txPad,
+        paddingRight: homeListPaddingRight(txPad),
         paddingBottom: homeScrollBottom,
       },
     ],
-    [homePad, homeScrollBottom],
+    [txPad, homeScrollBottom],
   );
 
   if (initialHomeLoading) {
@@ -1530,6 +1535,11 @@ const styles = StyleSheet.create({
     position: "relative",
     marginBottom: 4,
     overflow: "visible",
+  },
+  balanceBlock: {
+    marginTop: 4,
+    marginBottom: 4,
+    alignItems: "center",
   },
   sLabel: {
     fontSize: 11,

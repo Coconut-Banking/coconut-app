@@ -90,6 +90,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderRadius: 4,
     overflow: "hidden",
+    width: "100%",
   },
   row: {
     flexDirection: "row",

@@ -7,14 +7,17 @@ import { MemberAvatar } from "../MemberAvatar";
 import { SnapPress } from "../ui";
 import { useHasUnseenActivity } from "../../hooks/useGroups";
 import { CoconutNotificationButton } from "./CoconutNotificationButton";
-import { HOME_HERO_WAVE_HEIGHT } from "./HomeHeroBackdrop";
+import {
+  HOME_NOTIF_RIGHT,
+  homeAvatarTopOffset,
+  homeNotifTopOffset,
+} from "../../lib/home-screen-insets";
 
+/** Figma 138:1934 — 64pt avatar centered; 138:2180 — bell top-right (48pt shell). */
 export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
   topInset = 0,
-  horizontalPad = 22,
 }: {
   topInset?: number;
-  horizontalPad?: number;
 }) {
   const { user } = useUser();
   const hasUnseen = useHasUnseenActivity();
@@ -28,12 +31,12 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
   return (
     <Animated.View
       entering={FadeInDown.duration(380).delay(40)}
-      style={[styles.wrap, { minHeight: HOME_HERO_WAVE_HEIGHT }]}
+      style={[styles.wrap, { minHeight: topInset + 74 }]}
     >
       <View
         style={[
           styles.notifRow,
-          { top: topInset + 6, right: horizontalPad },
+          { top: homeNotifTopOffset(topInset), right: HOME_NOTIF_RIGHT },
         ]}
       >
         <CoconutNotificationButton
@@ -44,7 +47,7 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
 
       <SnapPress
         onPress={() => router.navigate("/(tabs)/settings")}
-        style={[styles.avatarWrap, { marginTop: topInset + 28 }]}
+        style={[styles.avatarWrap, { marginTop: homeAvatarTopOffset(topInset) }]}
         haptic="light"
       >
         <MemberAvatar
@@ -61,7 +64,6 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
-    paddingBottom: 10,
     zIndex: 1,
   },
   notifRow: {

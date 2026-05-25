@@ -234,9 +234,6 @@ export const BalanceOverviewCard = React.memo(function BalanceOverviewCard({
   return (
     <View style={styles.card}>
       <Text style={[styles.cardLabel, { color: home.balanceLabel }]}>BALANCE OVERVIEW</Text>
-      <Text style={[styles.splitHint, { color: theme.textTertiary }]}>
-        Net from splits with friends — not cash in your account
-      </Text>
 
       {settled ? (
         <Text style={[styles.netAmount, homeMoneyType, { color: home.inkMuted }]}>
@@ -279,10 +276,10 @@ export const BalanceOverviewCard = React.memo(function BalanceOverviewCard({
 
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 0,
     paddingTop: 0,
-    paddingBottom: 4,
-    marginBottom: 12,
+    paddingBottom: 0,
+    marginBottom: 8,
     maxWidth: 322,
     alignSelf: "center",
     width: "100%",
@@ -295,20 +292,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 2,
   },
-  splitHint: {
-    fontSize: 12,
-    fontFamily: font.regular,
-    textAlign: "center",
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    lineHeight: 16,
-  },
   netAmount: {
     fontSize: 32,
     textAlign: "center",
     letterSpacing: 0.96,
     lineHeight: 45,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   netCaption: {
     fontSize: 13,
@@ -319,8 +308,6 @@ const styles = StyleSheet.create({
   },
   bands: {
     gap: 8,
-    maxWidth: 322,
-    alignSelf: "center",
     width: "100%",
   },
   bandWrap: {
