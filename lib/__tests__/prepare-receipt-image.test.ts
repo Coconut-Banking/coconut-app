@@ -1,5 +1,11 @@
 import { prepareReceiptImageForUpload } from "../prepare-receipt-image";
 
+const mockManipulateAsync = jest.fn(async (uri: string) => ({
+  uri: `file:///resized-${uri.split("/").pop()}`,
+  width: 1280,
+  height: 960,
+}));
+
 jest.mock("react-native", () => ({
   Image: {
     getSize: (
@@ -12,14 +18,14 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-image-manipulator", () => ({
   SaveFormat: { JPEG: "jpeg", PNG: "png" },
-  manipulateAsync: jest.fn(async (uri: string) => ({
-    uri: `file:///resized-${uri.split("/").pop()}`,
-    width: 1280,
-    height: 960,
-  })),
+  manipulateAsync: (...args: unknown[]) => mockManipulateAsync(...args),
 }));
 
 describe("prepareReceiptImageForUpload", () => {
+  beforeEach(() => {
+    mockManipulateAsync.mockClear();
+  });
+
   it("passes through PDF unchanged", async () => {
     const out = await prepareReceiptImageForUpload("file:///doc.pdf", {
       mimeType: "application/pdf",
@@ -30,6 +36,7 @@ describe("prepareReceiptImageForUpload", () => {
       mimeType: "application/pdf",
       name: "receipt.pdf",
     });
+    expect(mockManipulateAsync).not.toHaveBeenCalled();
   });
 
   it("resizes images to JPEG for faster upload", async () => {
@@ -42,5 +49,6 @@ describe("prepareReceiptImageForUpload", () => {
       mimeType: "image/jpeg",
       name: "receipt.jpg",
     });
+    expect(mockManipulateAsync).toHaveBeenCalled();
   });
 });

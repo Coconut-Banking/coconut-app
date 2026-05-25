@@ -1,13 +1,35 @@
 /**
  * Normalize receipt upload metadata before POST /api/receipt/parse.
- * Resizes on-device (web does this in useReceiptSplit; mobile was uploading full resolution).
+ * Resizes on-device when expo-image-manipulator is linked in the dev build.
+ * Falls back to original uri if the native module is missing (rebuild with `npm run ios`).
  * HEIC→JPEG conversion still runs on coconut-web when needed.
  */
 import { Image } from "react-native";
-import * as ImageManipulator from "expo-image-manipulator";
 
 const MAX_EDGE = 1280;
 const JPEG_QUALITY = 0.82;
+
+type ManipulatorModule = typeof import("expo-image-manipulator");
+
+let manipulatorCache: ManipulatorModule | null | undefined;
+
+async function loadImageManipulator(): Promise<ManipulatorModule | null> {
+  if (manipulatorCache !== undefined) return manipulatorCache;
+  try {
+    // Defer loading so missing native module does not break receipt tab at startup.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    manipulatorCache = require("expo-image-manipulator") as ManipulatorModule;
+    return manipulatorCache;
+  } catch {
+    try {
+      manipulatorCache = await import("expo-image-manipulator");
+      return manipulatorCache;
+    } catch {
+      manipulatorCache = null;
+      return null;
+    }
+  }
+}
 
 function getImageDimensions(
   uri: string
@@ -28,10 +50,15 @@ export async function prepareReceiptImageForUpload(
     return { uri, mimeType, name };
   }
 
+  const ImageManipulator = await loadImageManipulator();
+  if (!ImageManipulator) {
+    return { uri, mimeType, name };
+  }
+
   try {
     const { width, height } = await getImageDimensions(uri);
     const maxEdge = Math.max(width, height);
-    const actions: ImageManipulator.Action[] =
+    const actions: ManipulatorModule["Action"][] =
       maxEdge <= MAX_EDGE
         ? []
         : width >= height
