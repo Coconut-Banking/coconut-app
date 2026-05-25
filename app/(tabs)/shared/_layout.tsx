@@ -9,6 +9,7 @@ function SharedStack() {
         gestureEnabled: true,
         gestureDirection: "horizontal",
         animation: "slide_from_right",
+        animationDuration: 280,
       }}
     />
   );

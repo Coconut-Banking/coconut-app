@@ -186,6 +186,8 @@ function AuthSwitch() {
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="pay/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="scan-receipt" options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
       </Stack>
     );
   }
@@ -202,7 +204,14 @@ function AuthSwitch() {
 
   return (
     <BiometricLockProvider isSignedIn={!showAuth}>
-      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }} initialRouteName="(auth)">
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: "#F6F0E2" },
+        }}
+        initialRouteName="(auth)"
+      >
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="auth-handoff" options={{ headerShown: false }} />
         <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
@@ -211,6 +220,8 @@ function AuthSwitch() {
         <Stack.Screen name="connected" options={{ headerShown: false }} />
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="pay/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="scan-receipt" options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
       </Stack>
       <NavigateOnChange target={target} />
       {signedInAndReady && <RealtimeSyncWrapper />}
@@ -370,7 +381,7 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#F6F0E2" }}>
       <ThemeProvider>
         <ClerkProvider
           publishableKey={publishableKey ?? ""}

@@ -8,6 +8,10 @@ import {
   type PersonShare,
 } from "../lib/receipt-split";
 import { prepareReceiptImageForUpload } from "../lib/prepare-receipt-image";
+import {
+  parseReceiptUploadError,
+  type ReceiptUploadErrorCode,
+} from "../lib/receipt-upload-errors";
 
 export type Step = "upload" | "review" | "assign" | "summary";
 
@@ -44,6 +48,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     "uploading" | "reading" | "extracting" | "cleaning"
   >("uploading");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorCode, setUploadErrorCode] =
+    useState<ReceiptUploadErrorCode | null>(null);
 
   // Progress stages while parsing (upload → OCR → clean) — same as web
   useEffect(() => {
@@ -84,7 +90,8 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     ) => {
       setUploading(true);
       setUploadError(null);
-      setImageUri(uri);
+      setUploadErrorCode(null);
+      setImageUri(null);
       setIsPdf(opts?.mimeType === "application/pdf");
 
       if (demoMode) {
@@ -149,7 +156,11 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         } catch {
           throw new Error(`Server error (${res.status})`);
         }
-        if (!res.ok) throw new Error(data?.error ?? `Server error (${res.status})`);
+        if (!res.ok) {
+          const parsed = parseReceiptUploadError(data);
+          setUploadErrorCode(parsed.code);
+          throw new Error(parsed.message);
+        }
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -182,7 +193,14 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         setEditMerchant(data.merchant_name ?? "");
         setStep("review");
       } catch (e) {
-        setUploadError(e instanceof Error ? e.message : "Upload failed");
+        setImageUri(uri);
+        if (e instanceof Error) {
+          setUploadError(e.message);
+          setUploadErrorCode((code) => code ?? "generic");
+        } else {
+          setUploadError("Upload failed");
+          setUploadErrorCode("generic");
+        }
       } finally {
         setUploading(false);
       }
@@ -457,12 +475,29 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     [receiptId, apiFetch, assignments, demoMode]
   );
 
+  const clearUploadFailure = useCallback(() => {
+    setUploadError(null);
+    setUploadErrorCode(null);
+    setImageUri(null);
+    setIsPdf(false);
+  }, []);
+
+  /** Clear stale preview/errors before camera, gallery, or PDF. */
+  const prepareForNewScan = useCallback(() => {
+    setUploadError(null);
+    setUploadErrorCode(null);
+    setImageUri(null);
+    setIsPdf(false);
+    setStep("upload");
+  }, []);
+
   const reset = useCallback(() => {
     setStep("upload");
     setReceiptId(null);
     setImageUri(null);
     setIsPdf(false);
     setUploadError(null);
+    setUploadErrorCode(null);
     setEditItems([]);
     setEditSubtotal(0);
     setEditTax(0);
@@ -485,6 +520,9 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     uploading,
     uploadStage,
     uploadError,
+    uploadErrorCode,
+    clearUploadFailure,
+    prepareForNewScan,
     uploadReceipt,
     editItems,
     setEditItems,

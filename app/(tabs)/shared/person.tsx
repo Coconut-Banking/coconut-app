@@ -17,12 +17,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
-import { useApiFetch, invalidateApiCache } from "../../../lib/api";
+import { useApiFetch } from "../../../lib/api";
+import { invalidateSharedData } from "../../../lib/invalidate-shared-data";
 import { usePersonDetail, applyOptimisticSettlementUpdate } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 import { sfx } from "../../../lib/sounds";
+import { createPaymentLink, openPaymentLink, sharePaymentLink } from "../../../lib/payment-link";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { colors, font, radii, prototype } from "../../../lib/theme";
@@ -56,6 +58,7 @@ export default function PersonScreen() {
   const [settleSheetOpen, setSettleSheetOpen] = useState(false);
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false);
   const [settleModalOpen, setSettleModalOpen] = useState(false);
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
   const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
@@ -137,7 +140,12 @@ export default function PersonScreen() {
   const pillGreen = hasPos && !hasNeg;
   const pillRed = hasNeg && !hasPos;
   const singleOwedYou = balLines.length === 1 && balLines[0].amount > EPS;
+  const singleYouOwe = balLines.length === 1 && balLines[0].amount < -EPS;
   const firstLine = balLines[0];
+  const canPayLinkUsd =
+    (detail.settlements ?? []).length === 1 &&
+    firstLine?.currency === "USD" &&
+    Math.abs(firstLine?.amount ?? 0) >= EPS;
   const canStripeUsd = singleOwedYou && firstLine.currency === "USD";
 
   const handleMarkPaid = () => {
@@ -223,11 +231,11 @@ export default function PersonScreen() {
         });
       }
 
-      // ALWAYS bust caches so every screen shows the latest balance
-      invalidateApiCache("/api/groups/summary");
-      invalidateApiCache("/api/groups/person");
-      invalidateApiCache("/api/groups/recent-activity");
-      DeviceEventEmitter.emit("groups-updated");
+      invalidateSharedData([
+        "/api/groups/summary",
+        "/api/groups/person",
+        "/api/groups/recent-activity",
+      ]);
       void refetch(true);
 
       if (anyRealFailure && !anySucceeded) {
@@ -238,10 +246,11 @@ export default function PersonScreen() {
         goBack();
       }
     } catch {
-      invalidateApiCache("/api/groups/summary");
-      invalidateApiCache("/api/groups/person");
-      invalidateApiCache("/api/groups/recent-activity");
-      DeviceEventEmitter.emit("groups-updated");
+      invalidateSharedData([
+        "/api/groups/summary",
+        "/api/groups/person",
+        "/api/groups/recent-activity",
+      ]);
       Alert.alert("Error", "Could not record settlement");
     } finally {
       setRecordingSettlement(false);
@@ -288,6 +297,41 @@ export default function PersonScreen() {
   const settleNote = topExpenses.length > 0
     ? `Coconut – ${topExpenses.join(", ")}`
     : `Coconut – ${detail.displayName}`;
+
+  const handlePaymentLink = async (mode: "pay" | "share") => {
+    const se = (detail.settlements ?? [])[0];
+    if (!se || !firstLine || !canPayLinkUsd) return;
+    if (isDemoOn) {
+      Alert.alert("Demo", mode === "pay" ? "Opening payment link…" : "Sharing payment link…");
+      return;
+    }
+    setPaymentLinkLoading(true);
+    try {
+      const result = await createPaymentLink(apiFetch, {
+        amount: Math.abs(firstLine.amount),
+        currency: firstLine.currency,
+        groupId: se.groupId,
+        payerMemberId: se.fromMemberId,
+        receiverMemberId: se.toMemberId,
+      });
+      if (!result.ok) {
+        Alert.alert("Payment link", result.error);
+        return;
+      }
+      setSettleSheetOpen(false);
+      if (mode === "pay") {
+        openPaymentLink(result.token);
+      } else {
+        await sharePaymentLink(result.url, {
+          personName: detail.displayName,
+          amount: Math.abs(firstLine.amount),
+          currency: firstLine.currency,
+        });
+      }
+    } finally {
+      setPaymentLinkLoading(false);
+    }
+  };
 
   const handleP2P = async (platform: "venmo" | "paypal" | "cashapp") => {
     if (isDemoOn) {
@@ -502,6 +546,36 @@ export default function PersonScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={s.sheetBtnAccentText}>Tap to Pay</Text>
                   <Text style={s.sheetBtnAccentSub}>Collect in person with NFC</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {singleOwedYou && canPayLinkUsd && (
+              <TouchableOpacity
+                style={s.sheetBtnOutline}
+                onPress={() => handlePaymentLink("share")}
+                disabled={paymentLinkLoading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="link-outline" size={18} color="#1F2328" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnOutlineText}>Send payment link</Text>
+                  <Text style={s.sheetBtnOutlineSub}>Apple Pay or card — no app required</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {singleYouOwe && canPayLinkUsd && (
+              <TouchableOpacity
+                style={s.sheetBtnAccent}
+                onPress={() => handlePaymentLink("pay")}
+                disabled={paymentLinkLoading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="logo-apple" size={20} color="#fff" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sheetBtnAccentText}>Pay with Apple Pay</Text>
+                  <Text style={s.sheetBtnAccentSub}>Secure link · card also accepted</Text>
                 </View>
               </TouchableOpacity>
             )}

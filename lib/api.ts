@@ -20,7 +20,7 @@ export { getCacheGeneration } from "./api-cache";
 export const invalidateApiCache = _invalidateApiCache;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
-const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
+export const SKIP_AUTH = process.env.EXPO_PUBLIC_SKIP_AUTH === "true";
 
 function unauthResponse() {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -31,7 +31,8 @@ function unauthResponse() {
 
 let _tokenPromise: Promise<string | null> | null = null;
 let _lastGoodToken: string | null = null;
-let _refreshPromise: Promise<string | null> | null = null;
+type TokenRefreshResult = { token: string | null; offline: boolean };
+let _refreshPromise: Promise<TokenRefreshResult> | null = null;
 let _consecutive401s = 0;
 const MAX_CONSECUTIVE_401S = 4;
 
@@ -98,12 +99,36 @@ function isOfflineError(e: unknown): boolean {
   return msg.includes("offline") || msg.includes("network request failed") || msg.includes("clerk_offline");
 }
 
+/** True when JWT `exp` is in the past (60s skew). */
+function isJwtExpired(token: string, skewSec = 60): boolean {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return true;
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(padded)) as { exp?: number };
+    if (typeof json.exp !== "number") return false;
+    return Date.now() >= (json.exp - skewSec) * 1000;
+  } catch {
+    return true;
+  }
+}
+
+function offlineFallbackToken(): string | null {
+  if (!_lastGoodToken || isJwtExpired(_lastGoodToken)) return null;
+  return _lastGoodToken;
+}
+
 /** Track when we last got a 401 so we can skip redundant calls with a known-bad token. */
 let _tokenKnownBadUntil = 0;
+let _lastMarkBadAt = 0;
 
-/** Call this when a 401 is received — suppresses redundant calls for a short window. */
+/** Call after a 401 and a failed token refresh — not on every parallel 401. */
 export function markTokenBad() {
   _tokenKnownBadUntil = Date.now() + 3000;
+  const now = Date.now();
+  // Parallel requests can all 401 at once; count one failure per burst.
+  if (now - _lastMarkBadAt < 2000) return;
+  _lastMarkBadAt = now;
   _consecutive401s++;
   if (_consecutive401s >= MAX_CONSECUTIVE_401S) {
     if (__DEV__) console.warn(`[api] ${_consecutive401s} consecutive 401s — session likely dead, clearing cached token`);
@@ -132,9 +157,10 @@ async function getTokenWithRetry(
         return cached;
       }
     } catch (e) {
-      if (isOfflineError(e) && _lastGoodToken) {
+      const fallback = offlineFallbackToken();
+      if (isOfflineError(e) && fallback) {
         if (__DEV__) console.warn("[api] offline — using cached token");
-        return _lastGoodToken;
+        return fallback;
       }
     }
 
@@ -146,13 +172,15 @@ async function getTokenWithRetry(
         return token;
       }
     } catch (e) {
-      if (isOfflineError(e) && _lastGoodToken) {
+      const fallback = offlineFallbackToken();
+      if (isOfflineError(e) && fallback) {
         if (__DEV__) console.warn("[api] offline — using cached token after retry");
-        return _lastGoodToken;
+        return fallback;
       }
     }
 
-    return _lastGoodToken ?? null;
+    const fallback = offlineFallbackToken();
+    return fallback ?? null;
   })();
 
   try {
@@ -160,6 +188,44 @@ async function getTokenWithRetry(
   } finally {
     _tokenPromise = null;
   }
+}
+
+/** Last known-good JWT for Terminal / native SDKs when Clerk is slow to refresh. */
+export function getCachedSessionBearer(): string | null {
+  return offlineFallbackToken();
+}
+
+/** Clerk JWT for API fetch (serialized via getTokenWithRetry). */
+export async function fetchClerkBearerToken(
+  getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
+): Promise<string | null> {
+  return getTokenWithRetry(getToken);
+}
+
+/**
+ * Terminal connection token must not block on _tokenPromise (API may hold the lock).
+ * Uses cached JWT from a recent API call when available.
+ */
+export async function fetchClerkBearerTokenForTerminal(
+  getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
+): Promise<string | null> {
+  const cached = getCachedSessionBearer();
+  if (cached) return cached;
+
+  for (let i = 0; i < 10; i++) {
+    try {
+      const token = await getToken({ skipCache: i > 0 });
+      if (token) {
+        _lastGoodToken = token;
+        return token;
+      }
+    } catch (e) {
+      const fallback = offlineFallbackToken();
+      if (isOfflineError(e) && fallback) return fallback;
+    }
+    await new Promise((r) => setTimeout(r, 350 * (i + 1)));
+  }
+  return getCachedSessionBearer();
 }
 
 export function useApiFetch() {
@@ -326,42 +392,45 @@ export function useApiFetch() {
           }
 
           if (response.status === 401) {
-            markTokenBad();
             _tokenPromise = null;
             let refreshed = false;
+            const runRefresh = async (): Promise<TokenRefreshResult> => {
+              try {
+                const t = await gt({ skipCache: true });
+                if (t) _lastGoodToken = t;
+                return { token: t, offline: false };
+              } catch (e) {
+                return { token: null, offline: isOfflineError(e) };
+              }
+            };
+
             const pending = _refreshPromise;
-            if (pending) {
-              const freshToken = await pending;
-              if (freshToken && freshToken !== token) {
-                if (__DEV__) console.log(`[api] 401 retry (shared refresh) → ${path}`);
-                const retry = await doFetch(freshToken);
-                if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
-                if (retry.ok) markTokenGood();
-                refreshed = retry.ok;
-                return retry;
-              }
-            } else {
-              const p = (async () => {
-                try {
-                  const t = await gt({ skipCache: true });
-                  if (t) _lastGoodToken = t;
-                  return t;
-                } catch { return null; }
-              })();
+            const refreshResult = pending ?? (() => {
+              const p = runRefresh();
               _refreshPromise = p;
-              const freshToken = await p;
-              if (_refreshPromise === p) _refreshPromise = null;
-              if (freshToken && freshToken !== token) {
-                if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
-                const retry = await doFetch(freshToken);
-                if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
-                if (retry.ok) markTokenGood();
-                refreshed = retry.ok;
-                return retry;
-              }
+              void p.finally(() => {
+                if (_refreshPromise === p) _refreshPromise = null;
+              });
+              return p;
+            })();
+
+            const { token: freshToken, offline: refreshBlockedOffline } = await refreshResult;
+            if (freshToken && freshToken !== token) {
+              if (__DEV__) console.log(`[api] 401 retry with fresh token → ${path}`);
+              const retry = await doFetch(freshToken);
+              if (__DEV__) console.log(`[api] ← retry ${path} ${retry.status}`);
+              if (retry.ok) markTokenGood();
+              refreshed = retry.ok;
+              if (refreshed) return retry;
             }
+
             if (!refreshed) {
-              _lastGoodToken = null;
+              if (refreshBlockedOffline) {
+                if (__DEV__) console.warn(`[api] 401 while offline — skipping sign-out (${path})`);
+              } else {
+                markTokenBad();
+                _lastGoodToken = null;
+              }
             }
           }
 

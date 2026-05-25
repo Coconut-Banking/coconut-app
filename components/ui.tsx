@@ -259,11 +259,11 @@ export function PersonSkeletonScreen() {
   );
 }
 
-export function HomeSkeletonScreen() {
+export function HomeSkeletonScreen({ topInset = 0 }: { topInset?: number }) {
   const { theme } = useTheme();
   return (
-    <View style={[sk.container, { backgroundColor: theme.background }]}>
-      <View style={sk.pad}>
+    <View style={[sk.container, { backgroundColor: "transparent" }]}>
+      <View style={[sk.pad, topInset > 0 ? { paddingTop: topInset + 20 } : null]}>
         <Skeleton width={200} height={40} borderRadius={8} style={{ marginBottom: 6 }} />
         <Skeleton width={260} height={14} borderRadius={6} style={{ marginBottom: 20 }} />
 

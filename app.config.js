@@ -19,9 +19,14 @@ const scheme = isDev ? "coconut-dev" : "coconut";
  * Set ENABLE_TAP_TO_PAY_IOS=true in EAS env (or local .env) only when your profile includes that entitlement.
  * @see docs/TAP_TO_PAY_BUILD.md
  */
-const ENABLE_TAP_TO_PAY_IOS =
+const tapToPayExplicitlyOff = process.env.ENABLE_TAP_TO_PAY_IOS === "false";
+const tapToPayExplicitlyOn =
   process.env.ENABLE_TAP_TO_PAY_IOS === "true" ||
   process.env.EXPO_PUBLIC_ENABLE_TAP_TO_PAY_IOS === "true";
+/** Local `expo run:ios` dev builds enable Tap to Pay unless opted out; EAS uses explicit env per profile. */
+const ENABLE_TAP_TO_PAY_IOS =
+  tapToPayExplicitlyOn ||
+  (isDev && !process.env.EAS_BUILD && !tapToPayExplicitlyOff);
 
 export default {
   expo: {
@@ -60,6 +65,15 @@ export default {
           "Coconut uses your contacts to help you quickly add friends to split expenses with.",
         NSFaceIDUsageDescription:
           "Coconut uses Face ID to securely unlock the app and protect your financial data.",
+        NSAppTransportSecurity: {
+          NSAllowsLocalNetworking: true,
+          NSExceptionDomains: {
+            "exp.direct": {
+              NSIncludesSubdomains: true,
+              NSExceptionAllowsInsecureHTTPLoads: true,
+            },
+          },
+        },
       },
       entitlements: {
         "com.apple.developer.associated-domains": ["applinks:coconut-app.dev"],
@@ -102,6 +116,12 @@ export default {
         {
           faceIDPermission:
             "Coconut uses Face ID to securely unlock the app and protect your financial data.",
+        },
+      ],
+      [
+        "expo-camera",
+        {
+          cameraPermission: "Coconut uses your camera to scan receipts for bill splitting.",
         },
       ],
       ["expo-build-properties", { android: { minSdkVersion: 26 } }],

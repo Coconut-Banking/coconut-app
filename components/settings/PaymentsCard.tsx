@@ -15,6 +15,7 @@ import Constants from "expo-constants";
 import { useTheme } from "../../lib/theme-context";
 import { useApiFetch } from "../../lib/api";
 import { settingsStyles as s } from "./styles";
+import { CoconutWalletCard } from "./CoconutWalletCard";
 
 export function PaymentsCard() {
   const { theme } = useTheme();
@@ -120,6 +121,11 @@ export function PaymentsCard() {
   }, [params?.stripe_connect, user, fetchConnectStatus, startConnectOnboarding, router]);
 
   return (
+    <>
+      <CoconutWalletCard
+        onSetupPayouts={startConnectOnboarding}
+        setupLoading={connectActionLoading}
+      />
     <View
       style={[
         s.card,
@@ -251,5 +257,6 @@ export function PaymentsCard() {
         </View>
       )}
     </View>
+    </>
   );
 }

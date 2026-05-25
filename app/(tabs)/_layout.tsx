@@ -7,6 +7,8 @@ import { FloatingActionButtons } from "../../components/FloatingActionButtons";
 import { TapToPayHeroModal } from "../../components/TapToPayHeroModal";
 import { usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { usePrefetchTransactions } from "../../hooks/useTransactions";
+import { CANVAS_BOTTOM } from "../../components/home/HomeScreenBackground";
+import { NavigationThemeBridge } from "../../components/NavigationThemeBridge";
 
 export default function TabLayout() {
   const { theme } = useTheme();
@@ -29,22 +31,39 @@ export default function TabLayout() {
   return (
     <>
       <Wrapper>
+        <NavigationThemeBridge>
         <TapToPayHeroModal />
         <Tabs
           tabBar={(props) => <CoconutTabBar {...props} />}
+          detachInactiveScreens
           screenOptions={{
+            lazy: true,
+            freezeOnBlur: true,
+            headerShown: false,
             headerStyle: { backgroundColor: theme.primaryLight },
             headerTintColor: theme.text,
             headerTitleStyle: { fontFamily: font.semibold },
+            animation: "shift",
             tabBarStyle: {
               backgroundColor: "transparent",
               borderTopWidth: 0,
               elevation: 0,
               shadowOpacity: 0,
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
             },
           }}
         >
-          <Tabs.Screen name="index" options={{ title: "Home", headerShown: false }} />
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: "Home",
+              headerShown: false,
+              sceneStyle: { backgroundColor: CANVAS_BOTTOM },
+            }}
+          />
           <Tabs.Screen name="bank" options={{ title: "Bank", headerShown: false }} />
           <Tabs.Screen name="shared" options={{ title: "Shared", headerShown: false }} />
           <Tabs.Screen name="activity" options={{ title: "Activity", headerShown: false }} />
@@ -58,6 +77,7 @@ export default function TabLayout() {
           <Tabs.Screen name="email-receipts" options={{ href: null, headerShown: false }} />
         </Tabs>
         <FloatingActionButtons />
+        </NavigationThemeBridge>
       </Wrapper>
     </>
   );

@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { useDemoMode } from "../../lib/demo-mode-context";
@@ -32,6 +32,10 @@ import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { useApiFetch } from "../../lib/api";
 import type { ReceiptItem } from "../../lib/receipt-split";
+import { FLAT_LIST_PERF } from "../../lib/list-performance";
+import { TransactionSourceTabs } from "../../components/transactions/TransactionSourceTabs";
+import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
+import { resolvePurchaseLocation } from "../../lib/transaction-location";
 
 const EMPTY_TX_LIST: Transaction[] = [];
 
@@ -246,12 +250,17 @@ function AccountFilterMenu({
 
 export default function BankTabScreen() {
   const { theme } = useTheme();
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
   const { isDemoOn } = useDemoMode();
   const { transactions, linked, loading, refetch, runFullSync } = useTransactions();
   const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } =
     useSearch();
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
+
+  useEffect(() => {
+    if (tabParam === "receipts") setTxSource("receipts");
+  }, [tabParam]);
 
   useEffect(() => {
     const wasFocused = prevFocused.current;
@@ -268,7 +277,8 @@ export default function BankTabScreen() {
   const [bankSearch, setBankSearch] = useState("");
   const [committedSearch, setCommittedSearch] = useState("");
   const [searchMode, setSearchMode] = useState<"keyword" | "natural">("keyword");
-  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom" | "receipts">("all");
+  const [txSource, setTxSource] = useState<TxSourceTab>("all");
+  const [datePreset, setDatePreset] = useState<"all" | "week" | "month" | "custom">("all");
   const [customDateStart, setCustomDateStart] = useState<Date | null>(null);
   const [customDateEnd, setCustomDateEnd] = useState<Date | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -321,7 +331,7 @@ export default function BankTabScreen() {
   }, [selectedStrip, apiFetch]);
 
   const dateFilterRange = useMemo((): { start: Date; end: Date } | null => {
-    if (datePreset === "all" || datePreset === "receipts") return null;
+    if (datePreset === "all") return null;
     if (datePreset === "custom" && customDateStart && customDateEnd) {
       return { start: customDateStart, end: customDateEnd };
     }
@@ -361,7 +371,7 @@ export default function BankTabScreen() {
     const q = committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (accountFilter && tx.accountMask !== accountFilter) return false;
-      if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
+      if (txSource === "receipts" && !transactionHasEmailReceipt(tx)) return false;
       if (dateFilterRange) {
         const txDate = new Date(tx.date || "");
         if (!Number.isNaN(txDate.getTime())) {
@@ -383,13 +393,14 @@ export default function BankTabScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, committedSearch, dateFilterRange, datePreset, accountFilter]);
+  }, [allLinkedBankRows, committedSearch, dateFilterRange, datePreset, accountFilter, txSource]);
 
   const resetFiltersForModeSwitch = useCallback(() => {
     setBankSearch("");
     setCommittedSearch("");
     askClear();
     setDatePreset("all");
+    setTxSource("all");
     setCustomDateStart(null);
     setCustomDateEnd(null);
     setShowCalendar(false);
@@ -420,7 +431,7 @@ export default function BankTabScreen() {
   }, [askResults]);
 
   const hasNoData = allLinkedBankRows.length === 0;
-  const showInitialLoading = !isDemoOn && loading && hasNoData;
+  const showInitialLoading = !isDemoOn && loading && hasNoData && transactions.length === 0;
   const showConnectBank = !isDemoOn && !loading && !linked;
 
   const flatListData = useMemo(() => {
@@ -437,6 +448,13 @@ export default function BankTabScreen() {
     ({ item: tx, index }: { item: Transaction; index: number }) => {
       const isFirst = index === 0;
       const isLast = index === flatListData.length - 1;
+      const purchaseLocation = resolvePurchaseLocation({
+        city: tx.city,
+        region: tx.region,
+        country: tx.country,
+        rawName: tx.rawDescription,
+        merchantName: tx.merchant || tx.rawDescription,
+      });
       return (
         <View
           style={[
@@ -470,10 +488,21 @@ export default function BankTabScreen() {
               </Text>
               <Text style={[styles.friendMeta, { color: theme.textTertiary }]} numberOfLines={1}>
                 {tx.dateStr || tx.date || "—"}
+                {purchaseLocation ? ` · ${purchaseLocation}` : ""}
+                {transactionHasEmailReceipt(tx) ? " · receipt" : ""}
                 {tx.alreadySplit ? " · split" : ""}
               </Text>
             </View>
-            <Text style={[styles.friendAmt, styles.balAmtOut]}>
+            {transactionHasEmailReceipt(tx) ? (
+              <Ionicons name="mail" size={16} color={theme.textSecondary} style={{ marginRight: 6 }} />
+            ) : null}
+            <Text
+              style={[
+                styles.friendAmt,
+                styles.balAmtOut,
+                tx.isPending && { color: theme.textTertiary },
+              ]}
+            >
               ${Math.abs(Number(tx.amount)).toFixed(2)}
             </Text>
             {!tx.alreadySplit ? (
@@ -534,7 +563,13 @@ export default function BankTabScreen() {
               {askResults.transactions.map((tx: SearchTransaction, i: number) => {
                 const merchant = tx.merchant_name || tx.normalized_merchant || tx.raw_name || "Purchase";
                 const category = tx.detailed_category || tx.primary_category || undefined;
-                const location = [tx.city, tx.region].filter(Boolean).join(", ");
+                const purchaseLocation = resolvePurchaseLocation({
+                  city: tx.city,
+                  region: tx.region,
+                  country: tx.country,
+                  rawName: tx.raw_name,
+                  merchantName: tx.merchant_name || tx.raw_name,
+                });
                 return (
                   <View key={tx.id}>
                     <TouchableOpacity
@@ -554,6 +589,7 @@ export default function BankTabScreen() {
                           sheetDateLine: tx.date,
                           showReceiptBox: false,
                           receiptId: null,
+                          purchaseLocation,
                         });
                       }}
                     >
@@ -573,7 +609,7 @@ export default function BankTabScreen() {
                         <Text style={[styles.friendMeta, { color: theme.textTertiary }]} numberOfLines={1}>
                           {tx.date}
                           {category ? ` · ${category}` : ""}
-                          {location ? ` · ${location}` : ""}
+                          {purchaseLocation ? ` · ${purchaseLocation}` : ""}
                         </Text>
                       </View>
                       <Text style={[styles.friendAmt, tx.amount > 0 ? { color: "#4ade80" } : styles.balAmtOut]}>
@@ -607,6 +643,7 @@ export default function BankTabScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <FlatList
+          {...FLAT_LIST_PERF}
           data={flatListData}
           keyExtractor={bankRowKeyExtractor}
           renderItem={renderBankRow}
@@ -614,9 +651,6 @@ export default function BankTabScreen() {
           contentContainerStyle={[styles.page, showConnectBank && styles.pageLoading]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={5}
           extraData={flatListData.length}
           refreshControl={
             isDemoOn ? undefined : (
@@ -626,10 +660,18 @@ export default function BankTabScreen() {
           ListEmptyComponent={
             searchMode === "keyword" && !showInitialLoading && !showConnectBank ? (
               <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Ionicons name="card-outline" size={32} color={theme.textTertiary} />
-                <Text style={[styles.emptyTitle, { color: theme.text }]}>No charges found</Text>
+                <Ionicons
+                  name={txSource === "receipts" ? "mail-outline" : "card-outline"}
+                  size={32}
+                  color={theme.textTertiary}
+                />
+                <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                  {txSource === "receipts" ? "No email receipts" : "No charges found"}
+                </Text>
                 <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-                  Try another search or date filter.
+                  {txSource === "receipts"
+                    ? "Charges matched to Gmail receipts appear here."
+                    : "Try another search or date filter."}
                 </Text>
               </View>
             ) : undefined
@@ -706,6 +748,8 @@ export default function BankTabScreen() {
                 ))}
               </View>
 
+              <TransactionSourceTabs value={txSource} onChange={setTxSource} />
+
               <View
                 style={[
                   styles.searchBox,
@@ -775,7 +819,6 @@ export default function BankTabScreen() {
                     ["all", "All time"],
                     ["week", "Last 7 days"],
                     ["month", "Last 30 days"],
-                    ["receipts", "Email Receipts"],
                   ] as const
                 ).map(([preset, label]) => (
                   <TouchableOpacity
@@ -792,14 +835,6 @@ export default function BankTabScreen() {
                       datePreset === preset && searchStyles.dateChipActive,
                     ]}
                   >
-                    {preset === "receipts" ? (
-                      <Ionicons
-                        name="mail-outline"
-                        size={13}
-                        color={datePreset === "receipts" ? "#fff" : theme.textTertiary}
-                        style={{ marginRight: 4 }}
-                      />
-                    ) : null}
                     <Text
                       style={[
                         searchStyles.dateChipText,
@@ -905,8 +940,19 @@ export default function BankTabScreen() {
                 </View>
               ) : null}
 
-              {(selectedStrip.isRecurring || selectedStrip.accountIndicator || selectedStrip.category) ? (
+              {(selectedStrip.isRecurring ||
+                selectedStrip.accountIndicator ||
+                selectedStrip.category ||
+                selectedStrip.purchaseLocation) ? (
                 <View style={sheetStyles.metaBadgeRow}>
+                  {selectedStrip.purchaseLocation ? (
+                    <View style={[sheetStyles.metaBadge, { backgroundColor: "#E8F4FD" }]}>
+                      <Ionicons name="location-outline" size={12} color="#1565C0" />
+                      <Text style={[sheetStyles.metaBadgeText, { color: "#1565C0" }]}>
+                        {selectedStrip.purchaseLocation}
+                      </Text>
+                    </View>
+                  ) : null}
                   {selectedStrip.isRecurring ? (
                     <View style={[sheetStyles.metaBadge, { backgroundColor: "#EDE7F6" }]}>
                       <Ionicons name="refresh-outline" size={12} color="#5E35B1" />

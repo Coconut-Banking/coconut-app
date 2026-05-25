@@ -4,10 +4,12 @@ To ensure your iOS build includes Tap to Pay when you run it:
 
 ## 1. App ID Must Have Tap to Pay (Apple Developer)
 
-Your **App ID** (com.coconut.app) must have the capability. You already have it on an Ad hoc profile, which means the App ID likely has it—but verify:
+Your **App ID** must have the capability. **Local dev builds use `com.coconut.app.dev`** (see `app.config.js` when `APP_VARIANT=dev`). TestFlight/production use `com.coconut.app`. Enable Tap to Pay on **whichever bundle ID you are actually installing**.
+
+For `npm run ios:dev:device*`, verify:
 
 1. [developer.apple.com/account](https://developer.apple.com/account/) → **Certificates, Identifiers & Profiles**
-2. **Identifiers** → **App IDs** → find `com.coconut.app`
+2. **Identifiers** → **App IDs** → find **`com.coconut.app.dev`** (dev) or `com.coconut.app` (store)
 3. Click it → under **Capabilities**, confirm **Tap to Pay on iPhone** is enabled
 4. If not: **Edit** → enable **Tap to Pay on iPhone** under Additional Capabilities → Save
 
@@ -29,8 +31,11 @@ Xcode will use this profile when you run `expo run:ios --device` with automatic 
 
 ```bash
 cd /Users/harsh/coconut-app
-npx expo run:ios --device
+npm run ios:dev:device:install
+# or: npx expo run:ios --device -- -allowProvisioningUpdates -allowProvisioningDeviceRegistration
 ```
+
+After changing the bundle ID to `com.coconut.app.dev`, Xcode must create a new **Development** profile — the `-allowProvisioningUpdates` flags let it do that automatically.
 
 Make sure:
 - Your iPhone is connected via USB

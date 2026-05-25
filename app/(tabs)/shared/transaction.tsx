@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useApiFetch } from "../../../lib/api";
+import { sharedMutation } from "../../../lib/shared-mutations";
 import { useTransactionDetail } from "../../../hooks/useGroups";
 import { colors, font, radii, prototype } from "../../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
@@ -70,9 +71,10 @@ export default function TransactionScreen() {
           onPress: async () => {
             setDeleting(true);
             try {
-              const res = await apiFetch(`/api/split-transactions/${id}`, { method: "DELETE" });
+              const res = await sharedMutation(apiFetch, `/api/split-transactions/${id}`, {
+                method: "DELETE",
+              });
               if (res.ok) {
-                DeviceEventEmitter.emit("groups-updated");
                 router.back();
               } else {
                 Alert.alert("Error", "Couldn't delete expense. Try again.");
@@ -129,9 +131,11 @@ export default function TransactionScreen() {
     if (Object.keys(body).length === 0) { setEditing(false); return; }
 
     try {
-      const res = await apiFetch(`/api/split-transactions/${id}`, { method: "PATCH", body });
+      const res = await sharedMutation(apiFetch, `/api/split-transactions/${id}`, {
+        method: "PATCH",
+        body,
+      });
       if (res.ok) {
-        DeviceEventEmitter.emit("groups-updated");
         setEditing(false);
         await refetch();
       } else {

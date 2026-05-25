@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  InteractionManager,
   ScrollView,
   Switch,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -45,6 +45,7 @@ import { useToast } from "../components/Toast";
 import { sendEmailInvite, shareInvite, type InviteLink } from "../lib/invite";
 import { font, radii, shadow } from "../lib/theme";
 import { CoconutMark } from "../components/brand/CoconutMark";
+import { afterUiSettledAsync } from "../lib/after-ui-settled";
 
 export const PENDING_FULL_RESET_KEY = "coconut.pending_full_reset";
 
@@ -339,6 +340,7 @@ function BankStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }
           invalidateApiCache("/api/plaid/status");
           invalidateApiCache("/api/plaid/transactions");
           invalidateApiCache("/api/plaid/accounts");
+          DeviceEventEmitter.emit("bank-connected");
           setSuccess(true);
           setConnecting(false);
           setLinkedCount((c) => c + 1);
@@ -551,7 +553,7 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
         }
 
         const callbackUrl = `${scheme}://splitwise-callback`;
-        await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
+        await afterUiSettledAsync();
 
         let result: WebBrowser.WebBrowserAuthSessionResult;
         try {

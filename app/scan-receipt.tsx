@@ -6,16 +6,18 @@ import * as ImagePicker from "expo-image-picker";
 import { receiptImagePickerOptions } from "../lib/receipt-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { ReceiptScanCamera } from "../components/receipt/ReceiptScanCamera";
+import { setPendingReceiptScan } from "../lib/pending-receipt-scan";
 
 function goToReceiptWithFile(uri: string, mimeType: string, name: string) {
-  router.replace({
-    pathname: "/(tabs)/receipt",
-    params: {
-      pendingScanUri: uri,
-      pendingScanMime: mimeType,
-      pendingScanName: name,
-    },
-  });
+  setPendingReceiptScan({ uri, mimeType, name });
+  // replace() from a stack modal resets the tab navigator to Home; dismiss + push keeps receipt visible.
+  const openReceipt = () => router.push("/(tabs)/receipt");
+  if (router.canDismiss()) {
+    router.dismiss();
+    setTimeout(openReceipt, 0);
+  } else {
+    openReceipt();
+  }
 }
 
 export default function ScanReceiptScreen() {

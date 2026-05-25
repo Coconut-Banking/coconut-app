@@ -13,7 +13,6 @@ import {
   DeviceEventEmitter,
   Platform,
   AppState,
-  InteractionManager,
   Modal,
   Pressable,
   type AppStateStatus,
@@ -43,6 +42,8 @@ import { useDeviceContacts } from "../../hooks/useDeviceContacts";
 import { useCurrency, SUPPORTED_CURRENCIES, type CurrencyCode } from "../../hooks/useCurrency";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
+import { afterUiSettledAsync } from "../../lib/after-ui-settled";
+import { CoconutWalletCard } from "../../components/settings/CoconutWalletCard";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -671,9 +672,7 @@ export default function SettingsScreen() {
       }
 
       // Defer so ASWebAuthenticationSession / Custom Tabs can attach a valid window (avoids no-op opens).
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
+      await afterUiSettledAsync();
 
       let result: WebBrowser.WebBrowserAuthSessionResult;
       try {
@@ -1215,11 +1214,16 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
+        <CoconutWalletCard
+          onSetupPayouts={startConnectOnboarding}
+          setupLoading={connectActionLoading}
+        />
+
         {/* Payments (Stripe Connect) */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Payments</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Payout setup</Text>
           <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Set up payments to receive Tap to Pay funds directly in your bank account.
+            Link your bank so Coconut balance can cash out to you (required once for Tap to Pay deposits).
           </Text>
 
           {connectLoading && connectStatus === null ? (

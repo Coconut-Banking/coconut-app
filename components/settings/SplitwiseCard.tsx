@@ -7,7 +7,6 @@ import {
   Alert,
   DeviceEventEmitter,
   Linking,
-  InteractionManager,
   AppState,
   Platform,
   type AppStateStatus,
@@ -18,6 +17,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
 import { useTheme } from "../../lib/theme-context";
+import { afterUiSettledAsync } from "../../lib/after-ui-settled";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import {
   clearMemSummaryCache,
@@ -323,9 +323,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         return;
       }
 
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
+      await afterUiSettledAsync();
 
       let result: WebBrowser.WebBrowserAuthSessionResult;
       try {

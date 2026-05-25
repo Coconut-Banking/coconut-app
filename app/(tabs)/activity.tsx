@@ -24,6 +24,7 @@ import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { font, radii, prototype, colors } from "../../lib/theme";
 import { useTheme } from "../../lib/theme-context";
+import { FLAT_LIST_PERF } from "../../lib/list-performance";
 
 type ActivityFilter = "all" | "get_back" | "owe" | "settled";
 
@@ -177,7 +178,7 @@ export default function ActivityTabScreen() {
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
-      DeviceEventEmitter.addListener("groups-updated", () => { if (focusedRef.current) refetch(); }),
+      DeviceEventEmitter.addListener("groups-updated", () => { void refetch(true); }),
       DeviceEventEmitter.addListener("expense-added", () => { refetch(true); }),
     ];
     return () => subs.forEach((s) => s.remove());
@@ -263,6 +264,7 @@ export default function ActivityTabScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <FlatList
+        {...FLAT_LIST_PERF}
         data={filteredActivity}
         keyExtractor={keyExtractor}
         renderItem={renderActivityItem}
@@ -324,9 +326,6 @@ export default function ActivityTabScreen() {
           </>
         }
         ListEmptyComponent={listEmptyComponent}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
-        windowSize={5}
       />
       </KeyboardAvoidingView>
     </SafeAreaView>

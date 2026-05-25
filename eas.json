@@ -11,7 +11,8 @@
         "simulator": false
       },
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "ENABLE_TAP_TO_PAY_IOS": "true"
       }
     },
     "preview": {
@@ -25,16 +26,18 @@
     },
     "production": {
       "autoIncrement": true,
+      "prebuildCommand": "npx expo prebuild --platform ios --no-install",
       "ios": {
         "scheme": "Coconut"
       },
       "env": {
         "APP_VARIANT": "production",
+        "EAS_BUILD_PROFILE": "production",
         "EXPO_PUBLIC_API_URL": "https://coconut-app.dev",
         "EXPO_PUBLIC_SKIP_AUTH": "false",
         "EXPO_PUBLIC_FORCE_SIGN_OUT": "false",
         "EXPO_PUBLIC_FORCE_SETUP": "false",
-        "ENABLE_TAP_TO_PAY_IOS": "false"
+        "ENABLE_TAP_TO_PAY_IOS": "true"
       }
     }
   },

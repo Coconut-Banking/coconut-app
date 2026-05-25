@@ -54,10 +54,18 @@
     <true/>
     <key>NSAppTransportSecurity</key>
     <dict>
-      <key>NSAllowsArbitraryLoads</key>
-      <false/>
       <key>NSAllowsLocalNetworking</key>
       <true/>
+      <key>NSExceptionDomains</key>
+      <dict>
+        <key>exp.direct</key>
+        <dict>
+          <key>NSIncludesSubdomains</key>
+          <true/>
+          <key>NSExceptionAllowsInsecureHTTPLoads</key>
+          <true/>
+        </dict>
+      </dict>
     </dict>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>This app uses Bluetooth to connect to supported card readers.</string>
@@ -68,7 +76,7 @@
       <string>_expo._tcp</string>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your camera</string>
+    <string>Coconut uses your camera to scan receipts for bill splitting.</string>
     <key>NSContactsUsageDescription</key>
     <string>Coconut uses your contacts to help you quickly add friends to split expenses with.</string>
     <key>NSFaceIDUsageDescription</key>
@@ -85,8 +93,11 @@
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
     </array>
+    <key>RCTNewArchEnabled</key>
+    <true/>
     <key>UIBackgroundModes</key>
     <array>
+      <string>bluetooth-central</string>
       <string>bluetooth-central</string>
     </array>
     <key>UILaunchStoryboardName</key>

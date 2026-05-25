@@ -24,13 +24,19 @@ import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth, useUser } from "@clerk/expo";
 import { sendSmsInvite, sendEmailInvite, shareInvite } from "../../lib/invite";
-import { useApiFetch, invalidateApiCache } from "../../lib/api";
-import { useGroupsSummary, clearMemSummaryCache, clearMemActivityCache } from "../../hooks/useGroups";
+import { useApiFetch } from "../../lib/api";
+import { useGroupsSummary } from "../../hooks/useGroups";
+import { invalidateSharedDataWithExpense } from "../../lib/invalidate-shared-data";
+import { createPaymentLink, sharePaymentLink } from "../../lib/payment-link";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { font, radii, prototype } from "../../lib/theme";
 import { useTheme } from "../../lib/theme-context";
+import { CoconutScreen } from "../../components/shell/CoconutScreen";
+import { CoconutFlowHeader } from "../../components/shell/CoconutFlowHeader";
+import { ExpensePathPicker } from "../../components/expense/ExpensePathPicker";
+import { useCoconutShell } from "../../lib/coconut-shell";
 import type { ThemeColors } from "../../lib/colors";
 import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
@@ -188,7 +194,8 @@ export default function AddExpenseScreen() {
   const { contacts: deviceContacts, permissionStatus: contactsPerm, requestAccess: requestContactsAccess } = useDeviceContacts();
   const { currencyCode, symbol: currSymbol } = useCurrency();
   const { theme, isDark } = useTheme();
-  const s = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const shell = useCoconutShell();
+  const s = useMemo(() => createStyles(theme, isDark, shell), [theme, isDark, shell]);
   const tint = isDark ? theme.accent : theme.primary;
 
   // ── State ──
@@ -215,6 +222,7 @@ export default function AddExpenseScreen() {
   const [dupWarning, setDupWarning] = useState(false);
   const [splitExpanded, setSplitExpanded] = useState(false);
   const [showSettlement, setShowSettlement] = useState(false);
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
 
   // Step management (3-step flow)
   const [step, setStep] = useState<1 | 3>(1);
@@ -907,6 +915,9 @@ export default function AddExpenseScreen() {
       sfx.coin();
       toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
       DeviceEventEmitter.emit("expense-added");
+      if (tapToPaySuggestion && currencyCode === "USD") {
+        setShowSettlement(true);
+      }
       return;
     }
 
@@ -931,13 +942,13 @@ export default function AddExpenseScreen() {
     // Optimistic: give instant feedback, fire the POST in the background
     sfx.coin();
     toast.show(`Expense saved · ${currSymbol}${total.toFixed(2)} with ${targetLabel}`);
-    invalidateApiCache("/api/groups/summary");
-    invalidateApiCache(`/api/groups/${resolvedGroupId}`);
-    invalidateApiCache("/api/groups/recent-activity");
-    if (targets.some((t) => t.type === "friend")) invalidateApiCache("/api/groups/person");
-    clearMemSummaryCache();
-    clearMemActivityCache();
-    DeviceEventEmitter.emit("expense-added", {
+    const expensePaths = [
+      "/api/groups/summary",
+      `/api/groups/${resolvedGroupId}`,
+      "/api/groups/recent-activity",
+    ];
+    if (targets.some((t) => t.type === "friend")) expensePaths.push("/api/groups/person");
+    invalidateSharedDataWithExpense(expensePaths, {
       groupId: resolvedGroupId,
       amount: total,
       description: desc,
@@ -945,8 +956,14 @@ export default function AddExpenseScreen() {
       payerMemberId: effPayer,
       shares: shares.filter((sh) => sh.share > 0.001).map((sh) => ({ memberId: sh.key, amount: sh.share })),
     });
-    if (nav.canGoBack()) nav.back();
-    else nav.replace("/(tabs)");
+    const shouldCollect = tapToPaySuggestion && currencyCode === "USD";
+    if (shouldCollect) {
+      setShowSettlement(true);
+    } else if (nav.canGoBack()) {
+      nav.back();
+    } else {
+      nav.replace("/(tabs)");
+    }
     // Reset the guard so a second save in the same session works if navigation
     // doesn't fully unmount the screen (e.g. replace stays on same stack level).
     savedRef.current = false;
@@ -1026,6 +1043,38 @@ export default function AddExpenseScreen() {
     });
   };
 
+  const sendPaymentLink = async () => {
+    const s = tapToPaySuggestion;
+    if (!s) return;
+    if (isDemoOn) {
+      Alert.alert("Demo", "Would share payment link…");
+      return;
+    }
+    if (currencyCode !== "USD") {
+      Alert.alert("Payment link", "Payment links are available for USD only.");
+      return;
+    }
+    setPaymentLinkLoading(true);
+    try {
+      const result = await createPaymentLink(apiFetch, {
+        amount: s.amount,
+        currency: currencyCode,
+        groupId: s.groupId,
+        payerMemberId: s.payerMemberId,
+        receiverMemberId: s.receiverMemberId,
+      });
+      if (!result.ok) {
+        Alert.alert("Payment link", result.error);
+        return;
+      }
+      sfx.pop();
+      setShowSettlement(false);
+      await sharePaymentLink(result.url, { amount: s.amount, currency: currencyCode });
+    } finally {
+      setPaymentLinkLoading(false);
+    }
+  };
+
   const openVenmo = () => {
     const u = venmoOther?.venmo_username?.replace(/^@/, "");
     if (!u) { Alert.alert("No Venmo on file", "Ask them to add Venmo in group settings."); return; }
@@ -1050,9 +1099,11 @@ export default function AddExpenseScreen() {
   const hasAnyData = summaryFriends.length > 0 || summaryGroups.length > 0 || fallbackGroups.length > 0 || optimisticGroups.length > 0;
   if (loading && !summary && !hasAnyData) {
     return (
-      <View style={s.center}>
-        <ActivityIndicator size="large" color={tint} />
-      </View>
+      <CoconutScreen>
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={tint} />
+        </View>
+      </CoconutScreen>
     );
   }
 
@@ -1069,33 +1120,20 @@ export default function AddExpenseScreen() {
 
   // ── 3-step render ──
   return (
-    <SafeAreaView style={s.root}>
+    <CoconutScreen edges={["top", "bottom"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
 
         {/* ══════════ COMPOSE VIEW (unified picker + form) ══════════ */}
         {step < 3 && (
           <>
-            {/* Header: X | Title | Save */}
-            <View style={s.header}>
-              <TouchableOpacity onPress={() => nav.replace("/(tabs)")} hitSlop={12} style={s.headerSide}>
-                <Ionicons name="close" size={22} color={theme.textSecondary} />
-              </TouchableOpacity>
-              <Text style={s.headerTitle}>Add an expense</Text>
-              <TouchableOpacity
-                onPress={() => save()}
-                hitSlop={12}
-                style={s.headerSide}
-                disabled={!canSave || saving || justSaved}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color={tint} />
-                ) : justSaved ? (
-                  <Ionicons name="checkmark-circle" size={22} color={theme.success} />
-                ) : (
-                  <Text style={{ fontFamily: font.bold, fontSize: 15, color: canSave ? tint : theme.textTertiary }}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            <CoconutFlowHeader
+              title="Add expense"
+              onClose={() => nav.replace("/(tabs)")}
+              onSave={() => save()}
+              saving={saving}
+              saveDisabled={!canSave || justSaved}
+              saved={justSaved}
+            />
 
             {/* Person row: With you and: [chips] [inline search input] */}
             <View style={s.withRow}>
@@ -1143,6 +1181,7 @@ export default function AddExpenseScreen() {
             {/* Body: contact picker OR expense form */}
             {showPicker ? (
               <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+                {targets.length === 0 && !q ? <ExpensePathPicker /> : null}
                 {loading && !summary && (
                   <View style={{ alignItems: "center", paddingVertical: 32 }}>
                     <ActivityIndicator size="small" color={theme.textTertiary} />
@@ -1292,57 +1331,63 @@ export default function AddExpenseScreen() {
                     </View>
                   ) : null}
 
-                  {/* Description row with icon */}
-                  <View style={s.compactRow}>
-                    <View style={s.compactIcon}>
-                      <Ionicons name="receipt-outline" size={20} color={theme.textTertiary} />
+                  <View style={s.expenseFormCard}>
+                    <View style={s.amountHero}>
+                      <Text style={s.amountCurrency}>{currSymbol}</Text>
+                      <TextInput
+                        style={s.amountHeroInput}
+                        value={amount}
+                        onChangeText={(t) => {
+                          setAmount(t.replace(/[^0-9.]/g, ""));
+                          setError(null);
+                        }}
+                        onFocus={() => setSearchFocused(false)}
+                        placeholder="0"
+                        placeholderTextColor={theme.textTertiary}
+                        keyboardType="decimal-pad"
+                        returnKeyType="next"
+                        onSubmitEditing={() => descInputRef.current?.focus()}
+                        maxLength={20}
+                      />
                     </View>
-                    <TextInput
-                      ref={descInputRef}
-                      style={s.compactDescInput}
-                      value={description}
-                      onChangeText={(t) => { setDescription(t); setError(null); }}
-                      onFocus={() => setSearchFocused(false)}
-                      placeholder="Enter a description"
-                      placeholderTextColor={theme.textTertiary}
-                      returnKeyType="next"
-                      maxLength={500}
-                    />
-                  </View>
-                  <View style={s.compactSep} />
 
-                  {/* Amount row */}
-                  <View style={s.compactRow}>
-                    <View style={s.compactIcon}>
-                      <Text style={{ fontSize: 18, fontFamily: font.bold, color: theme.textTertiary }}>{currSymbol}</Text>
+                    <View style={s.formDivider} />
+
+                    <View style={s.descBlock}>
+                      <Text style={s.fieldLabel}>Description</Text>
+                      <TextInput
+                        ref={descInputRef}
+                        style={s.descInput}
+                        value={description}
+                        onChangeText={(t) => {
+                          setDescription(t);
+                          setError(null);
+                        }}
+                        onFocus={() => setSearchFocused(false)}
+                        placeholder="What was it for?"
+                        placeholderTextColor={theme.textTertiary}
+                        returnKeyType="done"
+                        maxLength={500}
+                      />
                     </View>
-                    <TextInput
-                      style={s.compactAmountInput}
-                      value={amount}
-                      onChangeText={(t) => { setAmount(t.replace(/[^0-9.]/g, "")); setError(null); }}
-                      onFocus={() => setSearchFocused(false)}
-                      placeholder="0.00"
-                      placeholderTextColor={theme.textTertiary}
-                      keyboardType="decimal-pad"
-                      returnKeyType="done"
-                      maxLength={20}
-                    />
-                  </View>
-                  <View style={s.compactSep} />
 
-                  {/* Paid by + split chip — always show defaults immediately */}
-                  <TouchableOpacity
-                    style={s.splitChipRow}
-                    onPress={() => { if (!resolving) setShowSplitMethodPicker(true); }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={s.splitChipText}>
-                      Paid by{" "}
-                      <Text style={{ fontFamily: font.bold, color: theme.text }}>{payerDisplay}</Text>
-                      {" "}and{" "}
-                      <Text style={{ fontFamily: font.bold, color: theme.text }}>{splitDisplay}</Text>
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.splitMetaRow}
+                      onPress={() => {
+                        if (!resolving) setShowSplitMethodPicker(true);
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name="people-outline" size={16} color={theme.textSecondary} />
+                      <Text style={s.splitMetaText} numberOfLines={2}>
+                        Paid by{" "}
+                        <Text style={s.splitMetaBold}>{payerDisplay}</Text>
+                        {" · "}
+                        <Text style={s.splitMetaBold}>{splitDisplay}</Text>
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
 
                   {total > 0 && splitPeople.length > 0 && splitMethod === "equal" && (
                     <Text style={s.eqHint}>{currSymbol}{(total / splitPeople.length).toFixed(2)} per person</Text>
@@ -1979,11 +2024,28 @@ export default function AddExpenseScreen() {
 
             <Text style={s.sheetHint}>Collect payment</Text>
 
-            <TouchableOpacity style={s.sheetBtn} onPress={goTapToPay} activeOpacity={0.85}>
-              <Ionicons name="phone-portrait-outline" size={20} color={isDark ? theme.background : "#fff"} />
-              <Text style={s.sheetBtnTxt}>Tap to Pay</Text>
-              {tapToPaySuggestion && (
+            {tapToPaySuggestion && currencyCode === "USD" && (
+              <TouchableOpacity
+                style={[s.sheetBtn, paymentLinkLoading && { opacity: 0.7 }]}
+                onPress={sendPaymentLink}
+                disabled={paymentLinkLoading}
+                activeOpacity={0.85}
+              >
+                {paymentLinkLoading ? (
+                  <ActivityIndicator size="small" color={isDark ? theme.background : "#fff"} />
+                ) : (
+                  <Ionicons name="link-outline" size={20} color={isDark ? theme.background : "#fff"} />
+                )}
+                <Text style={s.sheetBtnTxt}>Send payment link</Text>
                 <Text style={s.sheetBtnAmt}>${tapToPaySuggestion.amount.toFixed(2)}</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={[s.sheetBtnOutline, !tapToPaySuggestion && { opacity: 0.4 }]} onPress={goTapToPay} disabled={!tapToPaySuggestion} activeOpacity={0.85}>
+              <Ionicons name="phone-portrait-outline" size={20} color={theme.text} />
+              <Text style={s.sheetBtnOutlineTxt}>Tap to Pay</Text>
+              {tapToPaySuggestion && (
+                <Text style={[s.sheetBtnAmt, { color: theme.textSecondary }]}>${tapToPaySuggestion.amount.toFixed(2)}</Text>
               )}
             </TouchableOpacity>
 
@@ -2012,13 +2074,13 @@ export default function AddExpenseScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </CoconutScreen>
   );
 }
 
-function createStyles(theme: ThemeColors, isDark: boolean) {
+function createStyles(theme: ThemeColors, isDark: boolean, shell: ReturnType<typeof useCoconutShell>) {
 return StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.background },
+  root: { flex: 1, backgroundColor: "transparent" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.background },
 
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
@@ -2038,7 +2100,18 @@ return StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, fontFamily: font.regular, color: theme.text },
 
   // List card (shared)
-  listCard: { backgroundColor: theme.card, borderRadius: radii["2xl"], borderWidth: 1, borderColor: theme.cardBorder, overflow: "hidden" },
+  listCard: {
+    backgroundColor: theme.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: shell.cardBorder,
+    overflow: "hidden",
+    shadowColor: "#493D32",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: isDark ? 0 : 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   listRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
   listRowBorder: { borderBottomWidth: 1, borderBottomColor: theme.borderLight },
   listRowTitle: { fontSize: 15, fontFamily: font.semibold, color: theme.text },
@@ -2083,19 +2156,89 @@ return StyleSheet.create({
   inlineSearchInput: { flex: 1, minWidth: 80, fontSize: 14, fontFamily: font.regular, color: theme.text, paddingVertical: 2 },
   withDivider: { height: 1, backgroundColor: theme.borderLight, marginHorizontal: 20 },
 
-  // Unified compose: compact form
+  // Unified compose: expense form card
   compactForm: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
-  compactRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
-  compactIcon: { width: 32, alignItems: "center", justifyContent: "center" },
-  compactDescInput: { flex: 1, fontSize: 16, fontFamily: font.semibold, color: theme.text },
-  compactSep: { height: 1, backgroundColor: theme.borderLight, marginLeft: 44 },
-  compactAmountInput: { flex: 1, fontSize: 28, fontFamily: font.bold, color: theme.text },
-
-  splitChipRow: {
-    alignSelf: "center", marginTop: 20, paddingVertical: 10, paddingHorizontal: 16,
-    backgroundColor: theme.card, borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
+  expenseFormCard: {
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: shell.cardBorder,
+    overflow: "hidden",
+    shadowColor: "#493D32",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: isDark ? 0 : 0.1,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  splitChipText: { fontSize: 13, fontFamily: font.medium, color: theme.textSecondary },
+  amountHero: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    backgroundColor: isDark ? theme.surfaceSecondary : shell.mintWash,
+    gap: 4,
+  },
+  amountCurrency: {
+    fontSize: 32,
+    fontFamily: font.medium,
+    color: theme.textTertiary,
+    marginTop: 8,
+  },
+  amountHeroInput: {
+    fontSize: 48,
+    fontFamily: font.bold,
+    color: theme.text,
+    letterSpacing: -1.5,
+    minWidth: 80,
+    textAlign: "center",
+    padding: 0,
+  },
+  formDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: theme.borderLight,
+  },
+  descBlock: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontFamily: font.semibold,
+    color: theme.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  descInput: {
+    fontSize: 17,
+    fontFamily: font.medium,
+    color: theme.text,
+    padding: 0,
+    minHeight: 26,
+  },
+  splitMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: theme.surfaceSecondary,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.borderLight,
+  },
+  splitMetaText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: font.regular,
+    color: theme.textSecondary,
+    lineHeight: 20,
+  },
+  splitMetaBold: {
+    fontFamily: font.semibold,
+    color: theme.text,
+  },
 
   // Repeat toggle
   repeatRow: {
@@ -2156,12 +2299,13 @@ return StyleSheet.create({
   categoryChipsContent: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2, paddingHorizontal: 4 },
   categoryChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: radii.lg, borderWidth: 1, borderColor: theme.cardBorder,
+    paddingVertical: 10, paddingHorizontal: 14,
+    borderRadius: 16, borderWidth: 1, borderColor: shell.cardBorder,
     backgroundColor: theme.card, flexShrink: 0,
   },
   categoryChipSelected: {
-    borderColor: isDark ? theme.accent : theme.primary, backgroundColor: theme.surfaceSecondary,
+    borderColor: shell.cta,
+    backgroundColor: isDark ? theme.surfaceSecondary : shell.mintWash,
   },
   categoryChipLabel: { fontSize: 13, fontFamily: font.semibold, color: theme.textSecondary, maxWidth: 140 },
   categoryChipLabelSelected: { color: theme.text },

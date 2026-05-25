@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   ScrollView,
   Alert,
@@ -12,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Share,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -19,10 +19,15 @@ import { receiptImagePickerOptions } from "../../lib/receipt-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, type Href } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useApiFetch } from "../../lib/api";
 import { useReceiptSplitWithOptions, type Step } from "../../hooks/useReceiptSplit";
 import { useTheme } from "../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
+import { CoconutScreen } from "../../components/shell/CoconutScreen";
+import { CoconutFlowHeader } from "../../components/shell/CoconutFlowHeader";
+import { CoconutProgressSteps } from "../../components/shell/CoconutProgressSteps";
+import { useCoconutShell } from "../../lib/coconut-shell";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { sfx } from "../../lib/sounds";
@@ -32,6 +37,13 @@ import {
   findSettlementForPerson,
   sharePaymentLink,
 } from "../../lib/payment-link";
+import { takePendingReceiptScan } from "../../lib/pending-receipt-scan";
+import {
+  TAP_TO_PAY_SETTLED_EVENT,
+  type TapToPaySettledPayload,
+} from "../../lib/tap-to-pay-events";
+import { dedupePeopleList } from "../../lib/group-people-dedupe";
+import { ReceiptUploadFailure } from "../../components/receipt/ReceiptUploadFailure";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -125,44 +137,44 @@ export default function ReceiptScreen() {
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
   const scrollRef = useRef<ScrollView>(null);
-  const pendingUploadDone = useRef(false);
 
-  useEffect(() => {
-    if (!pendingScanUri || pendingUploadDone.current || rs.uploading) return;
-    pendingUploadDone.current = true;
-    const mimeType = pendingScanMime ?? "image/jpeg";
-    const name = pendingScanName ?? (mimeType === "application/pdf" ? "receipt.pdf" : "receipt.jpg");
-    void rs.uploadReceipt(pendingScanUri, { mimeType, name });
-  }, [pendingScanUri, pendingScanMime, pendingScanName, rs.uploading, rs.uploadReceipt]);
+  useFocusEffect(
+    useCallback(() => {
+      if (rs.uploading) return;
+      const handoff = takePendingReceiptScan();
+      const uri = handoff?.uri ?? pendingScanUri;
+      if (!uri) return;
+      const mimeType = handoff?.mimeType ?? pendingScanMime ?? "image/jpeg";
+      const name =
+        handoff?.name ??
+        pendingScanName ??
+        (mimeType === "application/pdf" ? "receipt.pdf" : "receipt.jpg");
+      if (pendingScanUri) {
+        router.setParams({
+          pendingScanUri: undefined,
+          pendingScanMime: undefined,
+          pendingScanName: undefined,
+        });
+      }
+      void rs.uploadReceipt(uri, { mimeType, name });
+    }, [
+      rs.uploading,
+      rs.uploadReceipt,
+      pendingScanUri,
+      pendingScanMime,
+      pendingScanName,
+    ])
+  );
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  };
 
   return (
-    <SafeAreaView style={[st.safe, { backgroundColor: theme.background }]} edges={["top"]}>
-      {/* Clean top bar: back + title */}
-      <View style={st.receiptTopBar}>
-        <TouchableOpacity
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace("/(tabs)");
-          }}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="chevron-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[st.topBarTitle, { color: theme.text }]}>Split Receipt</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      {/* Minimal progress bar */}
-      <View style={st.progressRow}>
-        {STEPS.map((s, i) => (
-          <View key={s.key} style={st.progressSegWrap}>
-            <View style={[st.progressSeg, { backgroundColor: theme.surfaceTertiary }, i <= stepIdx && { backgroundColor: theme.primary }]} />
-            <Text style={[st.progressSegLabel, { color: theme.textQuaternary }, i === stepIdx && { color: theme.text, fontFamily: font.bold, fontWeight: "700" }]}>{s.label}</Text>
-          </View>
-        ))}
-      </View>
+    <CoconutScreen edges={["top", "bottom"]}>
+      <CoconutFlowHeader title="Split receipt" onClose={goBack} leftIcon="back" />
+      <CoconutProgressSteps steps={STEPS} currentIndex={stepIdx} />
 
       <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
         <ScrollView
@@ -174,13 +186,13 @@ export default function ReceiptScreen() {
           automaticallyAdjustKeyboardInsets
         >
 
-        {rs.step === "upload" && <UploadStep rs={rs} />}
+        {rs.step === "upload" && <UploadStep rs={rs} onGoBack={goBack} />}
         {rs.step === "review" && <ReviewStep rs={rs} />}
         {rs.step === "assign" && <AssignStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
         {rs.step === "summary" && <SummaryStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
       </ScrollView>
     </KeyboardAvoidingView>
-    </SafeAreaView>
+    </CoconutScreen>
   );
 }
 
@@ -188,12 +200,16 @@ export default function ReceiptScreen() {
 
 function UploadStep({
   rs,
+  onGoBack,
 }: {
   rs: ReturnType<typeof useReceiptSplitWithOptions>;
+  onGoBack: () => void;
 }) {
   const { theme } = useTheme();
+  const shell = useCoconutShell();
 
   const pick = async (camera: boolean) => {
+    rs.prepareForNewScan();
     if (camera) {
       router.push("/scan-receipt" as Href);
       return;
@@ -210,6 +226,7 @@ function UploadStep({
   };
 
   const pickPdf = async () => {
+    rs.prepareForNewScan();
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
       if (result.canceled) return;
@@ -219,16 +236,34 @@ function UploadStep({
   };
 
   if (rs.uploading) {
-    const msg = rs.uploadStage === "uploading" ? "Uploading image…" : rs.uploadStage === "reading" ? "Reading receipt…" : rs.uploadStage === "extracting" ? "Extracting items…" : "Cleaning up…";
-    return <View style={st.center}><ActivityIndicator size="large" color={theme.primary} /><Text style={[st.centerText, { color: theme.textTertiary }]}>{msg}</Text></View>;
+    const msg = rs.uploadStage === "uploading" ? "Uploading…" : rs.uploadStage === "reading" ? "Reading receipt…" : rs.uploadStage === "extracting" ? "Extracting items…" : "Cleaning up…";
+    return (
+      <View style={st.uploadProgress}>
+        <View style={[st.uploadProgressCard, { backgroundColor: shell.card, borderColor: shell.cardBorder }]}>
+          <ActivityIndicator size="large" color={shell.cta} />
+          <Text style={[st.uploadProgressTitle, { color: theme.text }]}>Scanning receipt</Text>
+          <Text style={[st.uploadProgressSub, { color: theme.textTertiary }]}>{msg}</Text>
+        </View>
+      </View>
+    );
   }
 
   if (rs.uploadError) {
     return (
-      <View style={st.center}>
-        <Text style={[st.errorText, { color: theme.error }]}>{rs.uploadError}</Text>
-        <TouchableOpacity style={[st.btn, { backgroundColor: theme.primary }]} onPress={() => pick(false)}><Text style={st.btnText}>Try again</Text></TouchableOpacity>
-      </View>
+      <ReceiptUploadFailure
+        code={rs.uploadErrorCode ?? "generic"}
+        message={rs.uploadError}
+        imageUri={rs.imageUri}
+        onScanAgain={() => {
+          rs.prepareForNewScan();
+          router.push("/scan-receipt" as Href);
+        }}
+        onPickPhoto={() => {
+          rs.prepareForNewScan();
+          void pick(false);
+        }}
+        onGoBack={onGoBack}
+      />
     );
   }
 
@@ -238,44 +273,60 @@ function UploadStep({
     <View style={{ gap: 16 }}>
       {hasSavedReceipt && (
         <TouchableOpacity
-          style={[st.savedReceiptBanner, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}
+          style={[st.savedReceiptBanner, { backgroundColor: shell.moneyInSoft, borderColor: shell.moneyInShadow }]}
           onPress={() => rs.setStep("review")}
           activeOpacity={0.7}
         >
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[st.savedReceiptTitle, { color: theme.primary }]}>
+            <Text style={[st.savedReceiptTitle, { color: shell.moneyInText }]}>
               {rs.editMerchant || "Receipt"} · {rs.editItems.length} item{rs.editItems.length !== 1 ? "s" : ""}
             </Text>
-            <Text style={[st.savedReceiptSub, { color: theme.primary }]}>
+            <Text style={[st.savedReceiptSub, { color: shell.moneyInText }]}>
               Tap to continue where you left off
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+          <Ionicons name="chevron-forward" size={20} color={shell.moneyInText} />
         </TouchableOpacity>
       )}
-      <TouchableOpacity style={[st.uploadArea, { borderColor: theme.inputBorder, backgroundColor: theme.surface }]} onPress={() => pick(false)} activeOpacity={0.8}>
-        <View style={[st.uploadIcon, { backgroundColor: theme.primaryLight }]}>
-          <Ionicons name="cloud-upload-outline" size={26} color={theme.primary} />
+      <View style={[st.uploadCard, { backgroundColor: shell.card, borderColor: shell.cardBorder }]}>
+        <View style={[st.uploadIcon, { backgroundColor: shell.mintWash }]}>
+          <Ionicons name="receipt-outline" size={30} color={shell.cta} />
         </View>
         <Text style={[st.uploadTitle, { color: theme.text }]}>
-          {hasSavedReceipt ? "Scan a different receipt" : "Tap to scan or pick a photo"}
+          {hasSavedReceipt ? "Scan another receipt" : "Add your receipt"}
         </Text>
-        <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>PNG, JPG, or PDF</Text>
-      </TouchableOpacity>
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.primary }]} onPress={() => pick(true)} activeOpacity={0.8}>
-          <Ionicons name="camera" size={16} color="#fff" />
-          <Text style={[st.uploadBtnText, { color: "#fff" }]}>Camera</Text>
+        <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>
+          Paper receipt, e-receipt screenshot, or PDF
+        </Text>
+
+        <TouchableOpacity
+          style={[st.uploadPrimary, { backgroundColor: shell.cta }]}
+          onPress={() => pick(true)}
+          activeOpacity={0.88}
+        >
+          <Ionicons name="camera" size={20} color="#fff" />
+          <Text style={[st.uploadPrimaryText, { color: "#fff" }]}>Take photo</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[st.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickPdf} activeOpacity={0.8}>
-          <Ionicons name="document-text-outline" size={16} color={theme.text} />
-          <Text style={[st.uploadBtnText, { color: theme.text }]}>PDF</Text>
-        </TouchableOpacity>
+
+        <View style={st.uploadSecondaryRow}>
+          <TouchableOpacity
+            style={[st.uploadSecondary, { backgroundColor: shell.mintWash, borderColor: shell.cardBorder }]}
+            onPress={() => pick(false)}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="images-outline" size={18} color={shell.cta} />
+            <Text style={[st.uploadSecondaryText, { color: shell.cta }]}>Photos</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[st.uploadSecondary, { backgroundColor: shell.mintWash, borderColor: shell.cardBorder }]}
+            onPress={pickPdf}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="document-text-outline" size={18} color={shell.cta} />
+            <Text style={[st.uploadSecondaryText, { color: shell.cta }]}>PDF</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      {rs.imageUri && !rs.isPdf && <Image source={{ uri: rs.imageUri }} style={st.preview} resizeMode="contain" />}
-      {rs.imageUri && rs.isPdf && (
-        <View style={[st.pdfPreview, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="document-text" size={40} color={theme.primary} /><Text style={[st.pdfText, { color: theme.textSecondary }]}>PDF selected</Text></View>
-      )}
     </View>
   );
 }
@@ -513,10 +564,13 @@ function AssignStep({
           });
         }
       }
-      setContacts(contactsBuilt);
+      setContacts(dedupePeopleList(contactsBuilt));
       return;
     }
-    apiFetch("/api/groups/people").then(r => r.json()).then(d => setContacts(d.people ?? [])).catch(() => {});
+    apiFetch("/api/groups/people")
+      .then((r) => r.json())
+      .then((d) => setContacts(dedupePeopleList((d.people ?? []) as Contact[])))
+      .catch(() => {});
   }, [apiFetch, isDemoOn, demo]);
 
   const filtered = useMemo(() => {
@@ -576,8 +630,8 @@ function AssignStep({
         </View>
         {filtered.length > 0 && search.length > 0 && (
           <View style={[st.dropdown, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {filtered.map(c => (
-              <TouchableOpacity key={`${c.groupId}-${c.memberId}`} style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => addFromContact(c)}>
+            {filtered.map((c, i) => (
+              <TouchableOpacity key={`${c.memberId}-${c.email ?? c.displayName}-${i}`} style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => addFromContact(c)}>
                 <Text style={[st.dropdownName, { color: theme.text }]}>{c.displayName}</Text>
                 {c.email && <Text style={[st.dropdownEmail, { color: theme.textQuaternary }]} numberOfLines={1}>{c.email}</Text>}
               </TouchableOpacity>
@@ -752,7 +806,24 @@ function SummaryStep({
   const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
   const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
+  const [tapPaidPeople, setTapPaidPeople] = useState<Set<string>>(new Set());
   const [linkLoadingFor, setLinkLoadingFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      TAP_TO_PAY_SETTLED_EVENT,
+      (payload: TapToPaySettledPayload) => {
+        if (!resolvedGroupId || payload.groupId !== resolvedGroupId) return;
+        const name =
+          payload.payerName ??
+          members.find((m) => m.id === payload.payerMemberId)?.displayName;
+        if (name) {
+          setTapPaidPeople((prev) => new Set(prev).add(name.toLowerCase()));
+        }
+      }
+    );
+    return () => sub.remove();
+  }, [resolvedGroupId, members]);
 
   const detectedGroupId = useMemo(() => {
     const ids = rs.people.map(p => p.groupId).filter(Boolean) as string[];
@@ -920,9 +991,16 @@ function SummaryStep({
       Alert.alert("Please wait", "Saving receipt split…");
       return;
     }
-    const settlement = findSettlementForPerson(person.name, person.totalOwed, suggestions);
+    const settlement = findSettlementForPerson(
+      { name: person.name, memberId: person.memberId, totalOwed: person.totalOwed },
+      suggestions,
+      members,
+    );
     if (!settlement) {
-      Alert.alert("Payment link", "Could not find settlement for this person. Try again in a moment.");
+      Alert.alert(
+        "Payment link",
+        "Still saving this split. Wait a moment and try again, or make sure this person is in the group.",
+      );
       return;
     }
     const key = person.name.toLowerCase();
@@ -997,7 +1075,9 @@ function SummaryStep({
       </View>
 
       {rs.personShares.map((person, idx) => {
-        const isTabbed = tabbedPeople.has(person.name.toLowerCase());
+        const personKey = person.name.toLowerCase();
+        const isTabbed = tabbedPeople.has(personKey);
+        const isTapPaid = tapPaidPeople.has(personKey);
         return (
           <View key={person.name} style={[smst.personCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             <View style={smst.personHeader}>
@@ -1040,25 +1120,60 @@ function SummaryStep({
               </TouchableOpacity>
               <View style={smst.personActions}>
                 <TouchableOpacity
-                  style={[smst.settleBtn, { backgroundColor: theme.surface, borderWidth: 1.5, borderColor: theme.border }]}
+                  style={[
+                    smst.settleBtn,
+                    {
+                      backgroundColor: isTapPaid ? theme.successLight : theme.surface,
+                      borderWidth: 1.5,
+                      borderColor: isTapPaid ? theme.success : theme.border,
+                    },
+                  ]}
                   onPress={() => {
+                    if (isTapPaid) return;
                     sfx.paymentTap();
-                    const settlement = findSettlementForPerson(person.name, person.totalOwed, suggestions);
+                    if (!finished || !resolvedGroupId) {
+                      Alert.alert("Please wait", "Saving receipt split…");
+                      return;
+                    }
+                    const settlement = findSettlementForPerson(
+                      { name: person.name, memberId: person.memberId, totalOwed: person.totalOwed },
+                      suggestions,
+                      members,
+                    );
+                    if (!settlement) {
+                      Alert.alert(
+                        "Tap to Pay",
+                        "Still saving this split. Wait a moment and try again.",
+                      );
+                      return;
+                    }
                     router.push({
                       pathname: "/(tabs)/pay",
                       params: {
                         amount: person.totalOwed.toFixed(2),
                         currency: "USD",
-                        groupId: resolvedGroupId ?? "",
-                        payerMemberId: settlement?.fromMemberId ?? "",
-                        receiverMemberId: settlement?.toMemberId ?? "",
+                        groupId: resolvedGroupId,
+                        payerMemberId: settlement.fromMemberId,
+                        receiverMemberId: settlement.toMemberId,
+                        returnTo: "receipt-split",
+                        payerName: person.name,
                       },
                     });
                   }}
                   activeOpacity={0.8}
+                  disabled={isTapPaid}
                 >
-                  <Ionicons name="wifi" size={14} color={theme.text} style={{ transform: [{ rotate: "90deg" }] }} />
-                  <Text style={[smst.settleBtnText, { color: theme.text }]}>Tap to Pay</Text>
+                  {isTapPaid ? (
+                    <>
+                      <Ionicons name="checkmark" size={14} color={theme.success} />
+                      <Text style={[smst.settleBtnText, { color: theme.success }]}>Paid</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="wifi" size={14} color={theme.text} style={{ transform: [{ rotate: "90deg" }] }} />
+                      <Text style={[smst.settleBtnText, { color: theme.text }]}>Tap to Pay</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
@@ -1136,15 +1251,58 @@ const st = StyleSheet.create({
   savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
   savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
   savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
-  uploadArea: { borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.border, borderRadius: 20, paddingVertical: 40, paddingHorizontal: 24, alignItems: "center", backgroundColor: colors.surface },
-  uploadIcon: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  uploadTitle: { fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, textAlign: "center" },
-  uploadSub: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 4 },
-  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
-  uploadBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
-  preview: { width: "100%", height: 180, borderRadius: radii.md, backgroundColor: colors.borderLight },
-  pdfPreview: { height: 120, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", gap: 8 },
-  pdfText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
+  uploadCard: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    gap: 10,
+  },
+  uploadIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  uploadTitle: { fontSize: 18, fontFamily: font.bold, textAlign: "center" },
+  uploadSub: { fontSize: 13, fontFamily: font.regular, textAlign: "center", marginBottom: 8 },
+  uploadPrimary: {
+    alignSelf: "stretch",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: radii.lg,
+    marginTop: 4,
+  },
+  uploadPrimaryText: { fontSize: 16, fontFamily: font.semibold },
+  uploadSecondaryRow: { flexDirection: "row", alignSelf: "stretch", gap: 10, marginTop: 4 },
+  uploadSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+  },
+  uploadSecondaryText: { fontSize: 14, fontFamily: font.semibold },
+  uploadProgress: { paddingVertical: 32, alignItems: "center" },
+  uploadProgressCard: {
+    alignSelf: "stretch",
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    gap: 10,
+  },
+  uploadProgressTitle: { fontSize: 17, fontFamily: font.bold, marginTop: 8 },
+  uploadProgressSub: { fontSize: 14, fontFamily: font.regular },
 
   label: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
   input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: font.regular, color: colors.text },

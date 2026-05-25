@@ -29,19 +29,10 @@ const BiometricLockContext = createContext<BiometricLockContextValue>({
   unlock: () => {},
 });
 
-let _LocalAuthentication: typeof import("expo-local-authentication") | null = null;
+import { getLocalAuthenticationModule } from "./local-auth-module";
 
 async function getLocalAuth() {
-  if (_LocalAuthentication) return _LocalAuthentication;
-  try {
-    const mod = await import("expo-local-authentication");
-    // Verify the native module is actually functional (not stubbed in Expo Go)
-    if (typeof mod.hasHardwareAsync !== "function") return null;
-    _LocalAuthentication = mod;
-    return _LocalAuthentication;
-  } catch {
-    return null;
-  }
+  return getLocalAuthenticationModule();
 }
 
 export function BiometricLockProvider({

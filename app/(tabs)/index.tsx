@@ -10,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   Modal,
   Pressable,
   RefreshControl,
@@ -20,12 +19,14 @@ import {
   AppState,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   PanResponder,
-  InteractionManager,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { EDGE_TO_EDGE_SCROLL_PROPS } from "../../lib/edge-to-edge-scroll";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
@@ -36,14 +37,28 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity, clearMemSummaryCache } from "../../hooks/useGroups";
-import { MemberAvatar } from "../../components/MemberAvatar";
+import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
 import { useTheme } from "../../lib/theme-context";
-import { BalanceHero } from "../../components/split/BalanceHero";
+import { HomeWelcomeHeader } from "../../components/home/HomeWelcomeHeader";
+import { HomeHeroBackdrop } from "../../components/home/HomeHeroBackdrop";
+import { HomeScreenBackground, CANVAS_BOTTOM } from "../../components/home/HomeScreenBackground";
+import { BalanceOverviewCard } from "../../components/home/BalanceOverviewCard";
+import { HomeCoconutBalanceStrip } from "../../components/home/HomeCoconutBalanceStrip";
+import { HomeBankTransactionsSection, HomeTransactionsFooter } from "../../components/home/HomeBankTransactionsSection";
+import { HomeTransactionSearchHeader } from "../../components/home/HomeTransactionSearchHeader";
+import type { HomeTransactionListItem } from "../../components/home/HomeBankTransactionRow";
+import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
+import { resolvePurchaseLocation } from "../../lib/transaction-location";
+import { afterUiSettled } from "../../lib/after-ui-settled";
+import { HomeBankTransactionRow } from "../../components/home/HomeBankTransactionRow";
+import type { DateFilterPreset } from "../../components/home/HomeSpeedDialSearch";
+import { FlatList } from "react-native-gesture-handler";
+import { FLAT_LIST_PERF } from "../../lib/list-performance";
 import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
+import { useHomePalette } from "../../lib/home-theme";
 import { MerchantLogo } from "../../components/merchant/MerchantLogo";
 import { HomeSkeletonScreen } from "../../components/ui";
 import { PROTOTYPE_DEMO_BANK_CHARGES } from "../../lib/prototype-bank-demo";
@@ -55,7 +70,6 @@ import {
 } from "../../lib/home-bank-strip";
 import { useSearch, type SearchTransaction } from "../../hooks/useSearch";
 import { CalendarPicker } from "../../components/CalendarPicker";
-import { friendBalanceLines, formatSplitCurrencyAmount, groupBalanceLines } from "../../lib/format-split-money";
 import { sfx } from "../../lib/sounds";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
@@ -313,12 +327,24 @@ const AllBankListItem = React.memo(function AllBankListItem({
   );
 });
 
+const HomeTxSeparator = React.memo(function HomeTxSeparator() {
+  return <View style={styles.txGap} />;
+});
+
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
+  const home = useHomePalette();
+  const insets = useSafeAreaInsets();
+  const homeScrollBottom = 112 + Math.max(insets.bottom, 12);
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
-  const { summary: apiSummary, loading: summaryLoading, refetch } = useGroupsSummary();
+  const {
+    summary: apiSummary,
+    loading: summaryLoading,
+    refetch,
+    forceRefetch: refetchSummary,
+  } = useGroupsSummary();
   usePrefetchContactsSummary(500);
   usePrefetchActivity(500);
 
@@ -345,6 +371,39 @@ export default function BalancesPrototypeScreen() {
   const [showCalendar, setShowCalendar] = useState(false);
   const { results: askResults, loading: askLoading, error: askError, search: askSearch, clear: askClear } = useSearch();
   const [refreshing, setRefreshing] = useState(false);
+  const [homeSearch, setHomeSearch] = useState("");
+  const [homeSearchActive, setHomeSearchActive] = useState(false);
+  const [homeDateFilter, setHomeDateFilter] = useState<DateFilterPreset>("week");
+  const [homeTxSource, setHomeTxSource] = useState<TxSourceTab>("all");
+  const homeSearchInputRef = useRef<TextInput>(null);
+  const homeListRef = useRef<FlatList<HomeTransactionListItem>>(null);
+  const homeTxScrollAnchorRef = useRef(0);
+  const dismissHomeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setHomeSearchActive(false);
+  }, []);
+
+  const activateHomeSearch = useCallback(() => {
+    setHomeSearchActive(true);
+    afterUiSettled(() => {
+      homeListRef.current?.scrollToOffset({
+        offset: Math.max(0, homeTxScrollAnchorRef.current - 8),
+        animated: true,
+      });
+      requestAnimationFrame(() => {
+        homeSearchInputRef.current?.focus();
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!homeSearchActive) return;
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      setHomeSearchActive(false);
+    });
+    return () => sub.remove();
+  }, [homeSearchActive]);
+
   const apiFetch = useApiFetch();
   const [itemizedReceipt, setItemizedReceipt] = useState<{
     items: ReceiptItem[];
@@ -398,7 +457,8 @@ export default function BalancesPrototypeScreen() {
     isSignedIn &&
     !summary &&
     summaryLoading &&
-    txLoading;
+    txLoading &&
+    transactions.length === 0;
 
   const demoStripRows = useMemo(() => {
     if (!useDemoBankUi) return [];
@@ -460,6 +520,102 @@ export default function BalancesPrototypeScreen() {
       },
     });
   }, []);
+
+  const homeTransactionItems = useMemo((): HomeTransactionListItem[] => {
+    if (useDemoBankUi) {
+      const rows =
+        homeTxSource === "receipts"
+          ? stripRows.filter((r) => r.hasMailBadge || r.receiptId)
+          : stripRows;
+      return rows.map((r) => ({
+        id: r.stripId,
+        merchant: r.merchant,
+        dateLine: r.cardDetailLine || r.sheetDateLine || "",
+        dateIso: "",
+        amount: r.amount,
+        logoUrl: r.logoUrl,
+        category: r.category,
+        alreadySplit: false,
+        hasEmailReceipt: Boolean(r.hasMailBadge || r.receiptId),
+      }));
+    }
+    if (!linked) return [];
+    const debits = bankVisibleTransactions.filter((tx) => Number(tx.amount) < 0);
+    const pool =
+      homeTxSource === "receipts"
+        ? debits.filter((tx) => transactionHasEmailReceipt(tx))
+        : debits;
+    const limit = homeTxSource === "receipts" ? 40 : 14;
+    return pool.slice(0, limit).map((tx) => ({
+      id: tx.id,
+      merchant: tx.merchant || tx.rawDescription || "Purchase",
+      dateLine: tx.dateStr || tx.date || "",
+      dateIso: tx.date || "",
+      amount: Math.abs(Number(tx.amount)),
+      logoUrl: tx.logoUrl ?? null,
+      category: tx.category ?? null,
+      alreadySplit: Boolean(tx.alreadySplit),
+      isPending: Boolean(tx.isPending),
+      hasEmailReceipt: transactionHasEmailReceipt(tx),
+      purchaseLocation: resolvePurchaseLocation({
+        city: tx.city,
+        region: tx.region,
+        country: tx.country,
+        rawName: tx.rawDescription,
+        merchantName: tx.merchant || tx.rawDescription,
+      }),
+    }));
+  }, [useDemoBankUi, stripRows, linked, bankVisibleTransactions, homeTxSource]);
+
+  const filteredHomeTx = useMemo(() => {
+    let list = homeTransactionItems;
+    const q = homeSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (item) =>
+          item.merchant.toLowerCase().includes(q) ||
+          item.dateLine.toLowerCase().includes(q) ||
+          (item.purchaseLocation?.toLowerCase().includes(q) ?? false) ||
+          item.amount.toFixed(2).includes(q),
+      );
+    }
+    if (homeDateFilter !== "all") {
+      const days = homeDateFilter === "week" ? 7 : 30;
+      const cutoff = Date.now() - days * 86_400_000;
+      list = list.filter((item) => {
+        if (!item.dateIso) return true;
+        const t = new Date(item.dateIso).getTime();
+        return !Number.isNaN(t) && t >= cutoff;
+      });
+    }
+    return list;
+  }, [homeTransactionItems, homeSearch, homeDateFilter]);
+
+  const handleHomeTxPress = useCallback(
+    (item: HomeTransactionListItem) => {
+      if (useDemoBankUi) {
+        const row = stripRows.find((r) => r.stripId === item.id);
+        if (row) handleBankCardPress(row);
+        return;
+      }
+      const tx = bankVisibleTransactions.find((t) => t.id === item.id);
+      if (tx) handleAllBankItemPress(tx);
+    },
+    [useDemoBankUi, stripRows, bankVisibleTransactions, handleBankCardPress, handleAllBankItemPress],
+  );
+
+  const handleHomeTxSplit = useCallback(
+    (item: HomeTransactionListItem) => {
+      if (useDemoBankUi) {
+        const row = stripRows.find((r) => r.stripId === item.id);
+        if (row) handleBankCardSplit(row);
+        return;
+      }
+      const tx = bankVisibleTransactions.find((t) => t.id === item.id);
+      if (tx) handleAllBankItemSplit(tx);
+    },
+    [useDemoBankUi, stripRows, bankVisibleTransactions, handleBankCardSplit, handleAllBankItemSplit],
+  );
 
   const renderBankCardItem = useCallback(({ item }: { item: HomeBankStripRow }) => (
     <BankCardItem item={item} onPress={handleBankCardPress} onSplit={handleBankCardSplit} />
@@ -587,16 +743,14 @@ export default function BalancesPrototypeScreen() {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => {
-        void refetch();
+        void refetchSummary();
       }),
       DeviceEventEmitter.addListener("expense-added", () => {
-        invalidateApiCache("/api/groups/summary");
-        clearMemSummaryCache();
-        void refetch();
+        void refetchSummary();
       }),
     ];
     return () => subs.forEach((s) => s.remove());
-  }, [isDemoOn, refetch]);
+  }, [isDemoOn, refetchSummary]);
 
   useEffect(() => {
     if (isDemoOn) return;
@@ -630,34 +784,25 @@ export default function BalancesPrototypeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askResults]);
 
-  const friends = summary?.friends ?? [];
-  const groups = summary?.groups ?? [];
-  const hasFriendsOrGroups = friends.length > 0 || groups.length > 0;
-  const friendExpenseCount = (key: string) =>
-    isDemoOn ? (demo.personDetails[key]?.activity.length ?? 0) : undefined;
+  const renderHomeTx = useCallback(
+    ({ item }: { item: HomeTransactionListItem }) => (
+      <HomeBankTransactionRow
+        item={item}
+        onPress={() => handleHomeTxPress(item)}
+        onSplit={() => handleHomeTxSplit(item)}
+      />
+    ),
+    [handleHomeTxPress, handleHomeTxSplit],
+  );
 
-  if (initialHomeLoading) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
-        <HomeSkeletonScreen />
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top"]}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          isDemoOn ? undefined : (
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-          )
-        }
-      >
-        <BalanceHero summary={summary} />
-
+  const homeListHeader = useMemo(
+    () => (
+      <View style={styles.homeHeader}>
+        <HomeHeroBackdrop topInset={insets.top} />
+        <View style={{ paddingTop: insets.top }}>
+          <HomeWelcomeHeader />
+          <BalanceOverviewCard summary={summary} />
+          <HomeCoconutBalanceStrip />
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
@@ -683,185 +828,114 @@ export default function BalancesPrototypeScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
-
-        {useDemoBankUi && stripRows.length > 0 ? (
-          <View style={{ marginBottom: 18 }}>
-            <View style={styles.sectionRow}>
-              <SLabel>From your bank</SLabel>
-              <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
-                <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              horizontal
-              data={stripRows}
-              keyExtractor={(t) => t.stripId}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-              renderItem={renderBankCardItem}
-            />
-          </View>
-        ) : !useDemoBankUi && !txLoading && linked && stripRows.length > 0 ? (
-          <View style={{ marginBottom: 18 }}>
-            <View style={styles.sectionRow}>
-              <SLabel>From your bank</SLabel>
-              <TouchableOpacity onPress={() => setShowAllBank(true)} hitSlop={8}>
-                <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              horizontal
-              data={stripRows}
-              keyExtractor={(t) => t.stripId}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingRight: 8 }}
-              renderItem={renderLiveBankCardItem}
-            />
-          </View>
-        ) : null}
-
-
-        <View style={{ marginBottom: 12 }}>
-          <View style={styles.sectionRow}>
-            <SLabel>Friends</SLabel>
-            <TouchableOpacity onPress={() => router.navigate("/(tabs)/shared")} hitSlop={8}>
-              <Text style={[styles.seeAll, { color: theme.text }]}>See all</Text>
-            </TouchableOpacity>
-          </View>
-          {!hasFriendsOrGroups ? (
-            <View style={[styles.emptyFriend, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Ionicons name="people-outline" size={28} color={theme.textTertiary} />
-              <Text style={[styles.emptyFriendTitle, { color: theme.text }]}>No friends or groups yet</Text>
-              <Text style={[styles.emptyFriendSub, { color: theme.textTertiary }]}>Open See all to add people and groups.</Text>
-            </View>
-          ) : (
-            <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {friends.map((f, i) => {
-                const nExp = friendExpenseCount(f.key);
-                const lines = friendBalanceLines(f);
-                const settled = lines.length === 0;
-                const pos =
-                  !settled &&
-                  lines.some((l) => l.amount > 0.005) &&
-                  lines.every((l) => l.amount >= -0.005);
-                const neg =
-                  !settled &&
-                  lines.some((l) => l.amount < -0.005) &&
-                  lines.every((l) => l.amount <= 0.005);
-                const mixed = !settled && !pos && !neg;
-                const expSuffix =
-                  nExp != null ? ` · ${nExp} expense${nExp !== 1 ? "s" : ""}` : "";
-                const meta = settled
-                  ? "settled up"
-                  : mixed
-                    ? `balances${expSuffix}`
-                    : pos
-                      ? `owes you${expSuffix}`
-                      : `you owe${expSuffix}`;
-                return (
-                  <View key={f.key}>
-                    <TouchableOpacity
-                      style={styles.friendRow}
-                      onPress={() => router.navigate({ pathname: "/(tabs)/shared/person", params: { key: f.key, source: "home" } })}
-                      activeOpacity={0.75}
-                    >
-                      <MemberAvatar name={f.displayName} size={42} imageUrl={f.image_url ?? null} variant="soft" />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={[styles.friendName, { color: theme.text }]}>{f.displayName}</Text>
-                        <Text style={[styles.friendMeta, { color: theme.textTertiary }]}>{meta}</Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        {settled ? (
-                          <Text style={[styles.friendAmt, { color: darkUI.labelMuted }]}>—</Text>
-                        ) : (
-                          lines.map((b) => {
-                            const p = b.amount > 0.005;
-                            const n = b.amount < -0.005;
-                            return (
-                              <Text
-                                key={b.currency}
-                                style={[
-                                  styles.friendAmt,
-                                  p && { color: prototype.green },
-                                  n && { color: prototype.red },
-                                ]}
-                              >
-                                {p ? "+" : n ? "−" : ""}
-                                {formatSplitCurrencyAmount(b.amount, b.currency)}
-                              </Text>
-                            );
-                          })
-                        )}
-                      </View>
-                      <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
-                    </TouchableOpacity>
-                    {i < friends.length - 1 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
-                  </View>
-                );
-              })}
-              {friends.length > 0 && groups.length > 0 ? <View style={[styles.sectionDivider, { backgroundColor: theme.borderLight }]} /> : null}
-              {groups.length > 0 ? (
-                <>
-                  <View
-                    style={[
-                      styles.inlineSectionLabel,
-                      friends.length > 0 ? styles.inlineSectionLabelAfterFriends : styles.inlineSectionLabelFirst,
-                    ]}
-                  >
-                    <Text style={styles.inlineSectionLabelText}>Groups</Text>
-                  </View>
-                  {groups.map((g, i) => {
-                    const balLines = groupBalanceLines(g);
-                    return (
-                    <View key={g.id}>
-                      {i > 0 ? <View style={styles.rowSep} /> : null}
-                      <TouchableOpacity
-                        style={styles.groupRow}
-                        onPress={() => router.navigate({ pathname: "/(tabs)/shared/group", params: { id: g.id, source: "home" } })}
-                        activeOpacity={0.75}
-                      >
-                        {g.imageUrl ? (
-                          <ExpoImage source={{ uri: g.imageUrl }} cachePolicy="disk" style={styles.groupIconImg} />
-                        ) : (
-                          <View style={styles.groupIcon}>
-                            <Ionicons name="people" size={18} color="#1F2937" />
-                          </View>
-                        )}
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.groupRowName}>{g.name}</Text>
-                          <Text style={styles.groupRowSub}>
-                            {g.memberCount} members · {timeAgo(g.lastActivityAt)}
-                          </Text>
-                        </View>
-                        {balLines.length > 0 ? (
-                          <View style={{ alignItems: "flex-end" }}>
-                            {balLines.map((b) => (
-                              <Text
-                                key={b.currency}
-                                style={[
-                                  styles.groupRowBal,
-                                  b.amount > 0 ? styles.balAmtIn : styles.balAmtOut,
-                                ]}
-                              >
-                                {b.amount > 0 ? "+" : "−"}
-                                {formatSplitCurrencyAmount(b.amount, b.currency)}
-                              </Text>
-                            ))}
-                          </View>
-                        ) : (
-                          <Text style={[styles.groupRowBal, styles.balMuted]}>—</Text>
-                        )}
-                        <Ionicons name="chevron-forward" size={14} color={darkUI.labelMuted} style={{ marginLeft: 6, opacity: 0.5 }} />
-                      </TouchableOpacity>
-                    </View>
-                    );
-                  })}
-                </>
-              ) : null}
-            </View>
-          )}
+        <View
+          onLayout={(e) => {
+            homeTxScrollAnchorRef.current = e.nativeEvent.layout.y;
+          }}
+        >
+          <HomeBankTransactionsSection
+            transactionCount={filteredHomeTx.length}
+            loading={!useDemoBankUi && txLoading && transactions.length === 0}
+            linked={linked}
+            useDemoUi={useDemoBankUi}
+            searchQuery={homeSearch}
+            onSearchQueryChange={setHomeSearch}
+            dateFilter={homeDateFilter}
+            onDateFilterChange={setHomeDateFilter}
+            txSource={homeTxSource}
+            onTxSourceChange={setHomeTxSource}
+            searchActive={homeSearchActive}
+            onSearchActivate={activateHomeSearch}
+            onSubmitSearch={() =>
+              router.navigate({
+                pathname: "/(tabs)/bank",
+                params: homeTxSource === "receipts" ? { tab: "receipts" } : {},
+              })
+            }
+            onConnectBank={() => router.push("/setup")}
+          />
         </View>
-      </ScrollView>
+        </View>
+      </View>
+    ),
+    [
+      insets.top,
+      summary,
+      showContactsBanner,
+      theme,
+      dismissContactsBanner,
+      handleConnectContacts,
+      filteredHomeTx.length,
+      useDemoBankUi,
+      txLoading,
+      linked,
+      homeSearch,
+      homeSearchActive,
+      homeDateFilter,
+      homeTxSource,
+      activateHomeSearch,
+    ],
+  );
+
+  const screenEdgeStyle = useMemo(
+    () => [styles.screenRoot, { marginTop: -insets.top, backgroundColor: CANVAS_BOTTOM }],
+    [insets.top],
+  );
+
+  if (initialHomeLoading) {
+    return (
+      <View style={screenEdgeStyle}>
+        <StatusBar style="dark" />
+        <HomeScreenBackground />
+        <HomeSkeletonScreen topInset={insets.top} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={screenEdgeStyle}>
+      <StatusBar style="dark" />
+      <HomeScreenBackground />
+      <KeyboardAvoidingView
+        style={styles.flex1}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
+      >
+        {homeSearchActive ? (
+          <HomeTransactionSearchHeader
+            searchInputRef={homeSearchInputRef}
+            query={homeSearch}
+            onQueryChange={setHomeSearch}
+            dateFilter={homeDateFilter}
+            onDateFilterChange={setHomeDateFilter}
+            txSource={homeTxSource}
+            onTxSourceChange={setHomeTxSource}
+            onSubmitSearch={dismissHomeSearch}
+            onDone={dismissHomeSearch}
+          />
+        ) : null}
+        <FlatList
+          ref={homeListRef}
+          {...FLAT_LIST_PERF}
+          {...EDGE_TO_EDGE_SCROLL_PROPS}
+          data={filteredHomeTx}
+          keyExtractor={(item) => item.id}
+          renderItem={renderHomeTx}
+          ListHeaderComponent={homeListHeader}
+          ListFooterComponent={filteredHomeTx.length > 0 ? HomeTransactionsFooter : null}
+          ItemSeparatorComponent={HomeTxSeparator}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: homeScrollBottom }]}
+          style={styles.flex1}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          refreshControl={
+            isDemoOn ? undefined : (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            )
+          }
+        />
+      </KeyboardAvoidingView>
 
       {selectedStrip && !showAllBank ? <Modal visible={true} transparent animationType="slide" onRequestClose={closeDetail}>
         <Pressable style={styles.sheetOverlay} onPress={closeDetail}>
@@ -1421,14 +1495,26 @@ export default function BalancesPrototypeScreen() {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal> : null}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F5F3F2" },
+  screenRoot: { flex: 1 },
+  safe: { flex: 1, backgroundColor: "transparent" },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 132 },
+  flex1: { flex: 1 },
+  scrollContent: { paddingHorizontal: 22, paddingRight: 76 },
+  txGap: {
+    height: 0,
+  },
+  homeHeader: {
+    position: "relative",
+    marginHorizontal: -22,
+    paddingHorizontal: 22,
+    marginBottom: 4,
+    overflow: "visible",
+  },
   sLabel: {
     fontSize: 11,
     fontFamily: font.extrabold,

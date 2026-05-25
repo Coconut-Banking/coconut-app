@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState, Platform } from "react-native";
+import { getContactsModule } from "../lib/contacts-module";
 
 export type DeviceContact = {
   id: string;
@@ -13,25 +14,17 @@ export type DeviceContact = {
 type PermissionStatus = "undetermined" | "granted" | "denied";
 type AccessPrivileges = "all" | "limited" | "none" | null;
 
-let _Contacts: typeof import("expo-contacts") | null = null;
 let _unavailable = false;
 
 async function getContacts() {
-  if (_Contacts) return _Contacts;
   if (_unavailable) return null;
-  if (Platform.OS === "web") { _unavailable = true; return null; }
-  try {
-    const mod = await import("expo-contacts");
-    const available = typeof mod.isAvailableAsync === "function"
-      ? await mod.isAvailableAsync().catch(() => false)
-      : true;
-    if (!available) { _unavailable = true; return null; }
-    _Contacts = mod;
-    return _Contacts;
-  } catch {
+  if (Platform.OS === "web") {
     _unavailable = true;
     return null;
   }
+  const mod = await getContactsModule();
+  if (!mod) _unavailable = true;
+  return mod;
 }
 
 let _permStatus: PermissionStatus = "undetermined";
@@ -90,15 +83,19 @@ async function _loadContactsList() {
 }
 
 async function _checkPermission() {
-  const mod = await getContacts();
-  if (!mod) return;
-  const result = await mod.getPermissionsAsync();
-  const mapped: PermissionStatus = result.status === "granted" ? "granted" : result.status === "denied" ? "denied" : "undetermined";
-  const access = (result as { accessPrivileges?: string }).accessPrivileges as AccessPrivileges ?? null;
-  _broadcastPerm(mapped, access);
-  if (mapped === "granted" && !_contactsFetched) {
-    _contactsFetched = true;
-    setTimeout(() => { _loadContactsList(); }, 600);
+  try {
+    const mod = await getContacts();
+    if (!mod || typeof mod.getPermissionsAsync !== "function") return;
+    const result = await mod.getPermissionsAsync();
+    const mapped: PermissionStatus = result.status === "granted" ? "granted" : result.status === "denied" ? "denied" : "undetermined";
+    const access = (result as { accessPrivileges?: string }).accessPrivileges as AccessPrivileges ?? null;
+    _broadcastPerm(mapped, access);
+    if (mapped === "granted" && !_contactsFetched) {
+      _contactsFetched = true;
+      setTimeout(() => { _loadContactsList(); }, 600);
+    }
+  } catch {
+    _unavailable = true;
   }
 }
 

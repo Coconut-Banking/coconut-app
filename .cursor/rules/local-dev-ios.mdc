@@ -34,6 +34,35 @@ Then on the phone: open **Coconut Dev**, scan the QR code from the terminal (or 
 
 Tunnel URL example from terminal: `https://….exp.direct` (also in the QR code).
 
+### Tap to Pay on iPhone (error 2900)
+
+If Pay shows **“Tap to Pay not in this build”** / Stripe `nativeErrorCode: 2900`, the installed app was signed **without** the proximity-reader entitlement. Metro reload cannot fix this — you need a **native rebuild**:
+
+```bash
+cd ~/coconut-app
+npm run ios:dev:device:install
+npm run ios:dev:device:tunnel
+```
+
+Also verify in [Apple Developer](https://developer.apple.com/account/) → Identifiers → **`com.coconut.app.dev`** → **Tap to Pay on iPhone** is enabled, and your **Development** provisioning profile includes that entitlement for your device.
+
+### “No profiles for com.coconut.app.dev were found”
+
+First install after switching bundle ID needs Xcode to **create** a Development profile. Run:
+
+```bash
+npm run ios:dev:device:install
+```
+
+`ios:dev:device:install` runs `xcodebuild` with `-allowProvisioningUpdates` (Expo alone skips this when `DEVELOPMENT_TEAM` is already in the project). Approve any Xcode / Apple ID prompts for team **942BUGUD75**.
+
+If it still fails:
+
+1. Open `ios/Coconut.xcworkspace` in Xcode → **Signing & Capabilities** → enable **Automatically manage signing** for team **942BUGUD75**, then build once (⌘B).
+2. Or create **Profiles → + → iOS App Development** for `com.coconut.app.dev`, include your iPhone, download, retry.
+
+Optional: `export COCONUT_DEVICE_UDID=00008140-001A28601E83801C` if auto-detection picks the wrong device.
+
 ### After adding a native Expo module
 
 If you see `Cannot find native module 'Expo…'` (e.g. after `expo install expo-image-manipulator`):
@@ -56,7 +85,7 @@ Until then, receipt scan can still work if `coconut-app.dev` has the latest API 
 
 Update these if your phone UDID changes (`xcrun xctrace list devices`):
 
-- **Expo / expo run:ios**: pick device in prompt (e.g. `00008140-001A28601E83801C`)
+- **Expo / install script**: `00008140-001A28601E83801C` (Harshil’s iPhone) — or `export COCONUT_DEVICE_UDID=…` if detection fails
 - **xcodebuild destination** (legacy doc): `id=00008150-000C5C8E3601401C`
 - **Bundle ID (dev build)**: `com.coconut.app.dev` (see `app.config.js` with `APP_VARIANT=dev`)
 
@@ -75,11 +104,14 @@ Usually `npm run ios:dev:device:install` is enough. Manual build:
 
 ```bash
 cd ~/coconut-app/ios
-RCT_HERMES_V1_ENABLED=1 xcodebuild \
+xcodebuild \
   -workspace Coconut.xcworkspace \
   -scheme Coconut \
   -configuration Debug \
   -destination 'id=YOUR_DEVICE_UDID' \
+  DEVELOPMENT_TEAM=942BUGUD75 \
+  -allowProvisioningUpdates \
+  -allowProvisioningDeviceRegistration \
   build
 ```
 

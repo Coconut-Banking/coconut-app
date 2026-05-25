@@ -10,7 +10,6 @@ import {
   RefreshControl,
   DeviceEventEmitter,
   Image,
-  Animated,
   Modal,
   TextInput,
   KeyboardAvoidingView,
@@ -20,13 +19,15 @@ import {
   ActionSheetIOS,
   AppState,
 } from "react-native";
-import { Swipeable } from "react-native-gesture-handler";
+import { EditDeleteSwipeRow } from "../../../components/gestures/EditDeleteSwipeRow";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import * as ImagePicker from "expo-image-picker";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
+import { sharedMutation } from "../../../lib/shared-mutations";
+import { invalidateSharedData } from "../../../lib/invalidate-shared-data";
 import { clearMemSummaryCache } from "../../../hooks/useGroups";
 import { applyOptimisticSettlementUpdate, useGroupDetail, useGroupsSummary, type FriendBalance, type GroupMember } from "../../../hooks/useGroups";
 import { useDemoMode } from "../../../lib/demo-mode-context";
@@ -110,7 +111,6 @@ export default function GroupScreen() {
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const swipeableRefs = useRef(new Map<string, Swipeable>()).current;
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [localIconUrl, setLocalIconUrl] = useState<string | null>(localImage ?? null);
 
@@ -256,16 +256,17 @@ export default function GroupScreen() {
       "Delete expense",
       `Remove "${merchant}" from this group? This can't be undone.`,
       [
-        { text: "Cancel", style: "cancel", onPress: () => swipeableRefs.get(txId)?.close() },
+        { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
             setDeleting(txId);
             try {
-              const res = await apiFetch(`/api/split-transactions/${txId}`, { method: "DELETE" });
+              const res = await sharedMutation(apiFetch, `/api/split-transactions/${txId}`, {
+                method: "DELETE",
+              });
               if (res.ok) {
-                DeviceEventEmitter.emit("groups-updated");
                 await Promise.all([refetch(true), refetchSummary()]);
               } else {
                 Alert.alert("Error", "Couldn't delete expense. Try again.");
@@ -277,42 +278,7 @@ export default function GroupScreen() {
         },
       ]
     );
-  }, [apiFetch, refetch, refetchSummary, swipeableRefs]);
-
-  const renderRightActions = useCallback(
-    (txId: string, merchant: string) =>
-      (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
-        const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0.5], extrapolate: "clamp" });
-        return (
-          <View style={s.swipeActions}>
-            <TouchableOpacity
-              style={s.swipeEdit}
-              onPress={() => {
-                swipeableRefs.get(txId)?.close();
-                router.push({ pathname: "/(tabs)/shared/transaction", params: { id: txId, edit: "1" } });
-              }}
-              activeOpacity={0.7}
-            >
-              <Animated.View style={{ transform: [{ scale }], alignItems: "center" }}>
-                <Ionicons name="pencil" size={18} color="#fff" />
-                <Text style={s.swipeActionText}>Edit</Text>
-              </Animated.View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={s.swipeDelete}
-              onPress={() => handleDeleteExpense(txId, merchant)}
-              activeOpacity={0.7}
-            >
-              <Animated.View style={{ transform: [{ scale }], alignItems: "center" }}>
-                <Ionicons name="trash" size={18} color="#fff" />
-                <Text style={s.swipeActionText}>Delete</Text>
-              </Animated.View>
-            </TouchableOpacity>
-          </View>
-        );
-      },
-    [handleDeleteExpense, swipeableRefs]
-  );
+  }, [apiFetch, refetch, refetchSummary]);
 
   const pickAndUploadIcon = useCallback(async (source: "library" | "camera") => {
     if (source === "camera") {
@@ -701,10 +667,11 @@ export default function GroupScreen() {
           }],
           counterpartyName: target.iPayThem ? target.toName : target.fromName,
         });
-        invalidateApiCache(`/api/groups/${id}`);
-        invalidateApiCache("/api/groups/summary");
-        invalidateApiCache("/api/groups/recent-activity");
-        DeviceEventEmitter.emit("groups-updated");
+        invalidateSharedData([
+          `/api/groups/${id}`,
+          "/api/groups/summary",
+          "/api/groups/recent-activity",
+        ]);
         haptic.success();
         sfx.coin();
         void refetch(true);
@@ -945,12 +912,13 @@ export default function GroupScreen() {
         ) : (
           <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             {(detail.activity ?? []).map((a, i) => (
-              <Swipeable
+              <EditDeleteSwipeRow
                 key={a.id}
-                ref={(ref) => { if (ref) swipeableRefs.set(a.id, ref); }}
-                renderRightActions={isDemoOn ? undefined : renderRightActions(a.id, a.merchant)}
-                overshootRight={false}
-                friction={2}
+                enabled={!isDemoOn}
+                onEdit={() =>
+                  router.push({ pathname: "/(tabs)/shared/transaction", params: { id: a.id, edit: "1" } })
+                }
+                onDelete={() => handleDeleteExpense(a.id, a.merchant)}
               >
                 <TouchableOpacity
                   style={[
@@ -985,7 +953,7 @@ export default function GroupScreen() {
                     </Text>
                   )}
                 </TouchableOpacity>
-              </Swipeable>
+              </EditDeleteSwipeRow>
             ))}
           </View>
         )}

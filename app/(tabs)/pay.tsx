@@ -18,13 +18,18 @@ import type { Reader, StripeError } from "@stripe/stripe-terminal-react-native";
 import { ErrorCode } from "@stripe/stripe-terminal-react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useApiFetch, invalidateApiCache } from "../../lib/api";
+import { useApiFetch, invalidateApiCache, SKIP_AUTH } from "../../lib/api";
+import { useAuth } from "@clerk/expo";
 import { TTP_ENABLE_REQUESTED_EVENT } from "../../components/StripeTerminalEagerConnect";
 import { useTheme } from "../../lib/theme-context";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
 import { waitForConnectLock } from "../../lib/terminal-connect-lock";
+import {
+  TAP_TO_PAY_SETTLED_EVENT,
+  type TapToPaySettledPayload,
+} from "../../lib/tap-to-pay-events";
 
 /**
  * iOS often returns UNSUPPORTED_OPERATION / native 2900 when the app binary was signed without
@@ -113,12 +118,17 @@ function readerDisplayMessageLabel(message: Reader.DisplayMessage): string {
 
 function PayScreenInner() {
   const { theme } = useTheme();
+  const { isLoaded, isSignedIn } = useAuth();
+  const authReady = SKIP_AUTH || (isLoaded && isSignedIn);
   const params = useLocalSearchParams<{
     amount?: string;
     currency?: string;
     groupId?: string;
     payerMemberId?: string;
     receiverMemberId?: string;
+    /** When set, success dismisses back to receipt split summary (collect next person). */
+    returnTo?: string;
+    payerName?: string;
   }>();
   const apiFetch = useApiFetch();
   const [amount, setAmount] = useState(params.amount ?? "");
@@ -131,6 +141,8 @@ function PayScreenInner() {
   type Phase = "idle" | "initializing" | "collecting" | "processing";
   const [paymentPhase, setPaymentPhase] = useState<Phase>("idle");
   const autoConnectAttempted = useRef(false);
+  const autoChargeStarted = useRef(false);
+  const ttpEnableEmitted = useRef(false);
   const readersRef = useRef<Reader.Type[]>([]);
   const connectedReaderRef = useRef<Reader.Type | null>(null);
   const collectingRef = useRef(false);
@@ -249,8 +261,9 @@ function PayScreenInner() {
     return () => { cancelled = true; };
   }, [params.receiverMemberId, apiFetch]);
 
-  // TODO: remove hardcode after demo — forces $1.00 regardless of passed amount
-  const lockedAmount = params.amount ? 1.00 : Math.round((parseFloat(amount) || 0) * 100) / 100;
+  const lockedAmount = params.amount
+    ? Math.round(parseFloat(params.amount) * 100) / 100
+    : Math.round((parseFloat(amount) || 0) * 100) / 100;
   const hasPrefilledCheckout = Boolean(params.amount) && lockedAmount > 0;
 
   // TODO: remove after demo (hardcoded $1.00 — prefetch disabled)
@@ -258,9 +271,6 @@ function PayScreenInner() {
   const prefetchingPi = useRef(false);
 
   useEffect(() => {
-    // TODO: re-enable prefetch after demo — disabled so stale $100 PI can't be used
-    return;
-    // eslint-disable-next-line no-unreachable
     if (!hasPrefilledCheckout || prefetchingPi.current || lockedAmount <= 0) return;
     prefetchingPi.current = true;
     (async () => {
@@ -291,13 +301,23 @@ function PayScreenInner() {
     })();
   }, [hasPrefilledCheckout, lockedAmount, params.groupId, params.payerMemberId, params.receiverMemberId, apiFetch]);
 
+  const returnToReceiptSplit = params.returnTo === "receipt-split";
+
   const handleClose = useCallback(() => {
+    if (returnToReceiptSplit) {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.replace("/(tabs)/receipt");
+      return;
+    }
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace("/");
-  }, []);
+  }, [returnToReceiptSplit]);
 
   /** One discovery at a time; skip when reader connected or payment in progress (avoids READER_BUSY). */
   const warmDiscoverReaders = useCallback(async () => {
@@ -347,7 +367,16 @@ function PayScreenInner() {
 
   useEffect(() => {
     autoConnectAttempted.current = false;
+    autoChargeStarted.current = false;
+    ttpEnableEmitted.current = false;
   }, [params.amount, params.groupId, params.payerMemberId, params.receiverMemberId]);
+
+  useEffect(() => {
+    if (!hasPrefilledCheckout || isInitialized || !authReady || ttpEnableEmitted.current) return;
+    ttpEnableEmitted.current = true;
+    const t = setTimeout(() => DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT), 400);
+    return () => clearTimeout(t);
+  }, [hasPrefilledCheckout, isInitialized, authReady]);
 
   useEffect(() => {
     if (connectedReader && !ttpSoftwareUpdate) {
@@ -384,9 +413,21 @@ function PayScreenInner() {
 
   const connectTapToPay = useCallback(async () => {
     if (!isInitialized) {
-      // Terminal not initialized yet — trigger explicit enable flow (shows T&C if needed)
-      DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
-      return;
+      if (!ttpEnableEmitted.current) {
+        ttpEnableEmitted.current = true;
+        DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
+      }
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && !isInitialized) {
+        await sleep(500);
+      }
+      if (!isInitialized) {
+        Alert.alert(
+          "Tap to Pay",
+          "Still setting up Tap to Pay. Open Home for a moment, then try again.",
+        );
+        return;
+      }
     }
 
     setConnecting(true);
@@ -504,9 +545,8 @@ function PayScreenInner() {
   );
 
   const collectPayment = useCallback(async () => {
-    // TODO: remove hardcode after demo
-    const amt = params.amount ? 1.00 : Math.round(parseFloat(amount) * 100) / 100;
-    // Clear any cached PI — it may have been pre-fetched with the wrong amount
+    const amt = lockedAmount;
+    const cachedPi = prefetchedPi.current;
     prefetchedPi.current = null;
     if (!Number.isFinite(amt) || amt <= 0) {
       Alert.alert("Invalid amount", "Enter a valid amount to collect");
@@ -520,18 +560,16 @@ function PayScreenInner() {
 
     setCollecting(true);
     setPaymentOutcome(null);
+    setLastPayment(null);
     setPaymentPhase("initializing");
     try {
       let clientSecret: string | undefined;
       let directPayout = false;
 
-      const cached = prefetchedPi.current;
-      prefetchedPi.current = null;
-
-      if (cached) {
-        clientSecret = cached.clientSecret;
-        directPayout = cached.directPayout;
-        if (__DEV__) console.log("[Pay] Using pre-fetched PaymentIntent:", cached.paymentIntentId);
+      if (cachedPi) {
+        clientSecret = cachedPi.clientSecret;
+        directPayout = cachedPi.directPayout;
+        if (__DEV__) console.log("[Pay] Using pre-fetched PaymentIntent:", cachedPi.paymentIntentId);
       } else {
         if (__DEV__) console.log(`[Pay] creating PI with amt=${amt} params.amount=${params.amount}`);
         const body: Record<string, unknown> = { amount: amt };
@@ -606,9 +644,7 @@ function PayScreenInner() {
       if (collectResult.error) {
         logTerminalError("collectPaymentMethod failed", collectResult.error);
         if (collectResult.error.code === ErrorCode.CANCELED) {
-          setPaymentOutcome("canceled");
-          setLastOutcomeAmount(amt);
-          setLastPayment("Canceled — hold the card steady until the phone vibrates, then tap Charge again.");
+          // User moved card early or canceled NFC — no error card; Try again is enough.
           setReaderPrepVisible(false);
           setCollecting(false);
           return;
@@ -677,7 +713,9 @@ function PayScreenInner() {
       if (processResult.error) {
         logTerminalError("processPaymentIntent failed", processResult.error);
         const code = processResult.error.code;
-        if (code === ErrorCode.DECLINED_BY_STRIPE_API || code === ErrorCode.DECLINED_BY_READER) {
+        if (code === ErrorCode.CANCELED) {
+          setReaderPrepVisible(false);
+        } else if (code === ErrorCode.DECLINED_BY_STRIPE_API || code === ErrorCode.DECLINED_BY_READER) {
           const extra = userFacingDeclineDetail(processResult.error);
           setPaymentOutcome("declined");
           setLastOutcomeAmount(amt);
@@ -723,12 +761,24 @@ function PayScreenInner() {
         invalidateApiCache("/api/groups/summary");
         invalidateApiCache("/api/groups/person");
         invalidateApiCache("/api/groups/recent-activity");
+        invalidateApiCache("/api/stripe/wallet");
+        invalidateApiCache("/api/stripe/connect/status");
         DeviceEventEmitter.emit("groups-updated");
+        if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+          DeviceEventEmitter.emit(TAP_TO_PAY_SETTLED_EVENT, {
+            groupId: params.groupId,
+            payerMemberId: params.payerMemberId,
+            receiverMemberId: params.receiverMemberId,
+            amount: amt,
+            payerName: params.payerName,
+          } satisfies TapToPaySettledPayload);
+        }
         setLastOutcomeAmount(amt);
+        setLastDirectPayout(directPayout);
         setLastPayment(
           directPayout
-            ? `Paid $${amt.toFixed(2)} — depositing to recipient's bank`
-            : `Paid $${amt.toFixed(2)} successfully`
+            ? `Depositing to their linked bank (Stripe Connect).`
+            : `Added to your Coconut balance — open Account to see balance and cash out.`
         );
       }
     } catch (e) {
@@ -739,9 +789,11 @@ function PayScreenInner() {
     }
   }, [
     amount,
+    lockedAmount,
     params.groupId,
     params.payerMemberId,
     params.receiverMemberId,
+    params.payerName,
     connectedReader,
     apiFetch,
     retrievePaymentIntent,
@@ -753,7 +805,7 @@ function PayScreenInner() {
   const isConnected = !!connectedReader;
 
   useEffect(() => {
-    if (!hasPrefilledCheckout) return;
+    if (!hasPrefilledCheckout || !authReady) return;
     if (!isInitialized || isConnected || connecting || collecting) return;
     if (autoConnectAttempted.current) return;
     autoConnectAttempted.current = true;
@@ -761,7 +813,39 @@ function PayScreenInner() {
       if (connectedReaderRef.current) return;
       void connectTapToPay();
     });
-  }, [hasPrefilledCheckout, isInitialized, isConnected, connecting, collecting, connectTapToPay]);
+  }, [hasPrefilledCheckout, authReady, isInitialized, isConnected, connecting, collecting, connectTapToPay]);
+
+  useEffect(() => {
+    if (!hasPrefilledCheckout || !authReady) return;
+    if (!connectedReader || collecting || connecting) return;
+    if (autoChargeStarted.current || paymentOutcome) return;
+    autoChargeStarted.current = true;
+    void collectPayment();
+  }, [
+    hasPrefilledCheckout,
+    authReady,
+    connectedReader,
+    collecting,
+    connecting,
+    paymentOutcome,
+    collectPayment,
+  ]);
+
+  const directStatusLine = !authReady
+    ? "Signing in…"
+    : collecting
+    ? paymentPhase === "processing"
+      ? "Processing payment…"
+      : paymentPhase === "collecting"
+        ? "Hold card near iPhone"
+        : "Starting payment…"
+    : connecting || readerPrepVisible
+      ? readerPrepMessage
+      : isConnected
+        ? "Starting Tap to Pay…"
+        : isInitialized
+          ? "Connecting reader…"
+          : "Enabling Tap to Pay…";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.surface }} edges={["top"]}>
@@ -828,58 +912,35 @@ function PayScreenInner() {
               </Text>
             ) : null}
 
-            <View style={[styles.checkoutCard, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
-          <Text style={[styles.checkoutAmount, { color: theme.text }]}>${lockedAmount.toFixed(2)}</Text>
-          <Text style={[styles.checkoutSub, { color: theme.textTertiary }]}>
-            {USE_SIMULATED_TERMINAL_READER
-              ? isConnected
-                ? "Simulated reader ready — tap Charge (no physical card)."
-                : "Preparing simulated reader…"
-              : isConnected
-                ? "Reader connected. Hold phone near card."
-                : "Preparing Tap to Pay reader..."}
-          </Text>
-          {tapToPayEntitlementHint && !USE_SIMULATED_TERMINAL_READER && Platform.OS === "ios" ? (
-            <Text style={[styles.entitlementHint, { color: theme.textSecondary }]}>
-              This build may be missing the Tap to Pay entitlement (Apple error 2900). Set{" "}
-              <Text style={[styles.hintCode, { backgroundColor: theme.surfaceTertiary }]}>ENABLE_TAP_TO_PAY_IOS=true</Text>{" "}
-              when you prebuild, run a clean native rebuild, and sign with a profile that includes Tap to Pay for your
-              bundle ID.
-            </Text>
-          ) : null}
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: theme.primary }]}
-            onPress={() => {
-              if (collecting || connecting) return;
-              if (!isInitialized) {
-                // Trigger the explicit enable flow (shows Apple T&C if not yet accepted — §3.7)
-                DeviceEventEmitter.emit(TTP_ENABLE_REQUESTED_EVENT);
-                return;
-              }
-              if (isConnected) void collectPayment();
-              else void connectTapToPay();
-            }}
-            disabled={collecting || connecting}
-          >
-            {collecting || connecting ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <View style={styles.buttonContent}>
-                <TapToPayButtonIcon color="#fff" size={22} />
-                <Text style={styles.buttonText}>
-                  {USE_SIMULATED_TERMINAL_READER
-                    ? "Connect simulated reader"
-                    : "Tap to Pay on iPhone"}
+            <View style={[styles.directCheckout, { backgroundColor: theme.primaryLight, borderColor: theme.border }]}>
+              <Text style={[styles.directAmount, { color: theme.text }]}>
+                ${lockedAmount.toFixed(2)}
+              </Text>
+              <Text style={[styles.directStatus, { color: theme.textTertiary }]}>
+                {directStatusLine}
+              </Text>
+              {(connecting || collecting || !isConnected) && !paymentOutcome ? (
+                <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
+              ) : null}
+              {tapToPayEntitlementHint && !USE_SIMULATED_TERMINAL_READER && Platform.OS === "ios" ? (
+                <Text style={[styles.entitlementHint, { color: theme.textSecondary, marginTop: 16 }]}>
+                  This build may be missing the Tap to Pay entitlement. See docs/TAP_TO_PAY_BUILD.md.
                 </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          {isConnected && receiverPayoutsEnabled === false && hasPrefilledCheckout && __DEV__ ? (
-            <Text style={[styles.payoutNote, { color: theme.textQuaternary }]}>
-              Recipient hasn't set up payments yet — balance will be recorded but funds won't transfer to their bank.
-            </Text>
-          ) : null}
-        </View>
+              ) : null}
+              {!collecting && !connecting && isConnected && !paymentOutcome ? (
+                <TouchableOpacity
+                  style={[styles.directRetryBtn, { borderColor: theme.border }]}
+                  onPress={() => {
+                    autoChargeStarted.current = false;
+                    void collectPayment();
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <TapToPayButtonIcon color={theme.primary} size={20} />
+                  <Text style={[styles.directRetryText, { color: theme.primary }]}>Try again</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
 
             {/* Reader prep / software update progress (Apple checklist 3.9.1 — PSP equivalent) */}
       {readerPrepVisible && (
@@ -944,34 +1005,27 @@ function PayScreenInner() {
               style={[styles.button, { backgroundColor: theme.primary, minWidth: 200 }]}
               onPress={() => {
                 setPaymentOutcome(null);
+                setLastPayment(null);
                 handleClose();
               }}
             >
-              <Text style={styles.buttonText}>Done</Text>
+              <Text style={styles.buttonText}>
+                {returnToReceiptSplit ? "Back to bill" : "Done"}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Non-approved outcomes (declined, timeout, canceled) */}
+      {/* Non-approved outcomes (declined, timeout) — canceled is silent */}
       {lastPayment && paymentOutcome !== "approved" && (
         <View style={[styles.result, { backgroundColor: theme.primaryLight }]}>
           <View style={styles.resultRow}>
             <Ionicons
-              name={
-                paymentOutcome === "declined"
-                  ? "close-circle"
-                  : paymentOutcome === "canceled"
-                  ? "alert-circle-outline"
-                  : "time-outline"
-              }
+              name={paymentOutcome === "declined" ? "close-circle" : "time-outline"}
               size={24}
               color={
-                paymentOutcome === "declined"
-                  ? theme.negative
-                  : paymentOutcome === "canceled"
-                  ? theme.textTertiary
-                  : theme.textQuaternary
+                paymentOutcome === "declined" ? theme.negative : theme.textQuaternary
               }
             />
             <Text style={[styles.resultLabel, { color: theme.textTertiary }]}>Last result</Text>
@@ -1090,6 +1144,44 @@ const styles = StyleSheet.create({
     fontFamily: font.medium,
     textAlign: "center",
     marginBottom: 16,
+  },
+  directCheckout: {
+    marginTop: 24,
+    paddingVertical: 48,
+    paddingHorizontal: 28,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    alignItems: "center",
+    alignSelf: "stretch",
+  },
+  directAmount: {
+    fontSize: 48,
+    lineHeight: 52,
+    fontFamily: font.black,
+    letterSpacing: -1.5,
+    textAlign: "center",
+  },
+  directStatus: {
+    fontSize: 15,
+    fontFamily: font.regular,
+    textAlign: "center",
+    marginTop: 10,
+    lineHeight: 22,
+    paddingHorizontal: 8,
+  },
+  directRetryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 28,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  directRetryText: {
+    fontSize: 15,
+    fontFamily: font.semibold,
   },
   entitlementHint: {
     fontSize: 12,

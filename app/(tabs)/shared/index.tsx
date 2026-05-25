@@ -11,7 +11,6 @@ import {
   RefreshControl,
   AppState,
   DeviceEventEmitter,
-  Animated,
   useWindowDimensions,
   Modal,
   Keyboard,
@@ -25,6 +24,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import Animated, {
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
@@ -288,8 +293,27 @@ export default function SharedIndex() {
   const { width: screenWidth } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<"friends" | "groups">("friends");
   const pagerRef = useRef<ScrollView>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const scrollX = useSharedValue(0);
   const [tabsWidth, setTabsWidth] = useState(0);
+
+  const pagerScrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollX.value = e.contentOffset.x;
+    },
+  });
+
+  const tabIndicatorStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          scrollX.value,
+          [0, screenWidth],
+          [0, tabsWidth / 2],
+          "clamp",
+        ),
+      },
+    ],
+  }));
 
   const handleTabPress = useCallback((tab: "friends" | "groups") => {
     setActiveTab(tab);
@@ -817,21 +841,18 @@ export default function SharedIndex() {
           <TouchableOpacity style={st.tab} onPress={() => handleTabPress("groups")} activeOpacity={0.8}>
             <Text style={[st.tabText, { color: activeTab === "groups" ? theme.text : theme.textTertiary }]}>Groups</Text>
           </TouchableOpacity>
-          {tabsWidth > 0 && (
+          {tabsWidth > 0 ? (
             <Animated.View
-              style={[st.tabIndicator, {
-                width: tabsWidth / 2,
-                backgroundColor: theme.text,
-                transform: [{
-                  translateX: scrollX.interpolate({
-                    inputRange: [0, screenWidth],
-                    outputRange: [0, tabsWidth / 2],
-                    extrapolate: "clamp",
-                  }),
-                }],
-              }]}
+              style={[
+                st.tabIndicator,
+                {
+                  width: tabsWidth / 2,
+                  backgroundColor: theme.text,
+                },
+                tabIndicatorStyle,
+              ]}
             />
-          )}
+          ) : null}
         </View>
         <TouchableOpacity style={[st.addPill, { backgroundColor: theme.text }]} onPress={handlePlusPress} activeOpacity={0.75}>
           <Ionicons name="add" size={16} color={theme.background} />
@@ -1074,17 +1095,15 @@ export default function SharedIndex() {
       </Modal>
 
       {/* Swipeable pages */}
-      <ScrollView
+      <Animated.ScrollView
         ref={pagerRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: false }
-        )}
+        onScroll={pagerScrollHandler}
         onMomentumScrollEnd={onPagerScrollEnd}
-        scrollEventThrottle={1}
+        scrollEventThrottle={16}
+        decelerationRate="fast"
         style={{ flex: 1 }}
       >
         {/* Friends page */}
@@ -1184,7 +1203,7 @@ export default function SharedIndex() {
             </View>
           ) : null}
         </ScrollView>
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }

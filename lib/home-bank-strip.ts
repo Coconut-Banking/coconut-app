@@ -3,6 +3,7 @@
  */
 import type { Transaction } from "../hooks/useTransactions";
 import type { PrototypeBankCharge } from "./prototype-bank-demo";
+import { resolvePurchaseLocation } from "./transaction-location";
 
 const EMOJI_BUCKETS = ["🛒", "🚗", "🍕", "☕", "✈️", "🏠", "💳", "🎯", "📱", "🎬"] as const;
 
@@ -84,6 +85,8 @@ export type HomeBankStripRow = {
   isPending?: boolean;
   /** Whether this is a known recurring/subscription charge. */
   isRecurring?: boolean;
+  /** Purchase location from Plaid (city / country), when bank provides it. */
+  purchaseLocation?: string | null;
 };
 
 export function demoChargeToStripRow(
@@ -127,9 +130,19 @@ export function txToSheetRow(tx: {
   accountMask?: string | null;
   isPending?: boolean;
   isRecurring?: boolean;
+  city?: string | null;
+  region?: string | null;
+  country?: string | null;
 }): HomeBankStripRow {
   const merchant = tx.merchant || tx.rawDescription || "Purchase";
   const hasReceipt = Boolean(tx.receiptId || tx.hasReceipt);
+  const purchaseLocation = resolvePurchaseLocation({
+    city: tx.city,
+    region: tx.region,
+    country: tx.country,
+    rawName: tx.rawDescription,
+    merchantName: merchant,
+  });
   return {
     stripId: tx.id,
     merchant,
@@ -174,6 +187,13 @@ export function transactionToHomeStripRow(
   const hasReceiptSnippet = Boolean(tx.hasReceipt && receiptSnippet);
   const hasReceipt = Boolean(tx.hasReceipt || tx.receiptId);
   const dateLine = tx.dateStr || tx.date || "";
+  const purchaseLocation = resolvePurchaseLocation({
+    city: tx.city,
+    region: tx.region,
+    country: tx.country,
+    rawName: tx.rawDescription,
+    merchantName: tx.merchant,
+  });
   const accountIndicator =
     options?.showAccountIndicator
       ? formatTransactionAccountIndicator(tx.accountName, tx.accountMask)
@@ -194,6 +214,7 @@ export function transactionToHomeStripRow(
     logoUrl: tx.logoUrl ?? null,
     category: tx.category ?? null,
     accountIndicator: accountIndicator ?? undefined,
+    purchaseLocation,
   };
 }
 
