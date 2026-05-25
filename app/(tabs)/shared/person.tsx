@@ -24,7 +24,12 @@ import { useDemoMode } from "../../../lib/demo-mode-context";
 import { useDemoData } from "../../../lib/demo-context";
 import { PersonSkeletonScreen, haptic } from "../../../components/ui";
 import { sfx } from "../../../lib/sounds";
-import { createPaymentLink, openPaymentLink, sharePaymentLink } from "../../../lib/payment-link";
+import {
+  copyPaymentLink,
+  createPaymentLink,
+  openPaymentLink,
+  sharePaymentLink,
+} from "../../../lib/payment-link";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
 import { colors, font, radii, prototype } from "../../../lib/theme";
@@ -318,6 +323,7 @@ export default function PersonScreen() {
         Alert.alert("Payment link", result.error);
         return;
       }
+      await copyPaymentLink(result.url);
       setSettleSheetOpen(false);
       if (mode === "pay") {
         openPaymentLink(result.token);

@@ -1,4 +1,5 @@
-import { Share } from "react-native";
+import { Share, Alert } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { router, type Href } from "expo-router";
 
 export type PayLinkSettlement = {
@@ -32,6 +33,23 @@ export type CreatePaymentLinkResult =
   | { ok: true; url: string; token: string }
   | { ok: false; error: string };
 
+function parseApiJson(
+  res: Response,
+  text: string,
+): { url?: string; token?: string; error?: string } {
+  try {
+    return JSON.parse(text) as { url?: string; token?: string; error?: string };
+  } catch {
+    if (text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html")) {
+      return {
+        error:
+          "Payment links are not available on the server yet. Pull the latest API deploy or try again in a minute.",
+      };
+    }
+    return { error: "Invalid response from server" };
+  }
+}
+
 export async function createPaymentLink(
   apiFetch: ApiFetch,
   params: CreatePaymentLinkParams,
@@ -47,21 +65,59 @@ export async function createPaymentLink(
         receiverMemberId: params.receiverMemberId,
       },
     });
-    const data = (await res.json().catch(() => ({}))) as {
-      url?: string;
-      token?: string;
-      error?: string;
-    };
+    const text = await res.text();
+    const data = parseApiJson(res, text);
     if (!res.ok) {
       return { ok: false, error: data.error ?? "Could not create link" };
     }
     if (!data.url || !data.token) {
-      return { ok: false, error: "Invalid response from server" };
+      return { ok: false, error: data.error ?? "Invalid response from server" };
     }
     return { ok: true, url: data.url, token: data.token };
   } catch {
     return { ok: false, error: "Could not create payment link" };
   }
+}
+
+export async function copyPaymentLink(url: string): Promise<void> {
+  await Clipboard.setStringAsync(url);
+}
+
+/** Create link, copy to clipboard, then optional share sheet. */
+export async function deliverPaymentLink(
+  apiFetch: ApiFetch,
+  params: CreatePaymentLinkParams,
+  opts: {
+    personName?: string;
+    amount?: number;
+    currency?: string;
+    onCopied?: () => void;
+    offerShare?: boolean;
+  } = {},
+): Promise<CreatePaymentLinkResult> {
+  const result = await createPaymentLink(apiFetch, params);
+  if (!result.ok) return result;
+
+  await copyPaymentLink(result.url);
+  opts.onCopied?.();
+
+  if (opts.offerShare !== false) {
+    const amountPart =
+      opts.amount != null
+        ? ` ($${opts.amount.toFixed(2)}${opts.currency && opts.currency !== "USD" ? ` ${opts.currency}` : ""})`
+        : "";
+    const who = opts.personName ? `Hey ${opts.personName.split(" ")[0]} — ` : "";
+    try {
+      await Share.share({
+        message: `${who}Pay me on Coconut${amountPart}: ${result.url}`,
+        url: result.url,
+      });
+    } catch {
+      /* user dismissed share — link is already copied */
+    }
+  }
+
+  return result;
 }
 
 export async function sharePaymentLink(
@@ -106,13 +162,19 @@ export function findSettlementForPerson(
 ): PayLinkSettlement | null {
   if (suggestions.length === 0) return null;
 
-  if (person.memberId) {
-    const byMemberId = suggestions.find((s) => s.fromMemberId === person.memberId);
+  const memberIdsInGroup = new Set(members.map((m) => m.id));
+  const personMemberId =
+    person.memberId && memberIdsInGroup.has(person.memberId)
+      ? person.memberId
+      : null;
+
+  if (personMemberId) {
+    const byMemberId = suggestions.find((s) => s.fromMemberId === personMemberId);
     if (byMemberId) return byMemberId;
   }
 
   for (const m of members) {
-    if (person.memberId && m.id === person.memberId) {
+    if (personMemberId && m.id === personMemberId) {
       const hit = suggestions.find((s) => s.fromMemberId === m.id);
       if (hit) return hit;
     }
@@ -122,7 +184,6 @@ export function findSettlementForPerson(
     }
   }
 
-  const normalized = normalizeName(person.name);
   const exactAmount = suggestions.find(
     (s) =>
       namesLikelyMatch(s.fromName, person.name) &&

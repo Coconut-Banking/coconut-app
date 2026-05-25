@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import { receiptImagePickerOptions } from "../lib/receipt-image-picker";
-import * as DocumentPicker from "expo-document-picker";
 import { ReceiptScanCamera } from "../components/receipt/ReceiptScanCamera";
 import { setPendingReceiptScan } from "../lib/pending-receipt-scan";
 
@@ -47,26 +46,6 @@ export default function ScanReceiptScreen() {
     }
   }, []);
 
-  const onPickFiles = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "image/*"],
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled) return;
-      const doc = result.assets[0];
-      if (!doc?.uri) return;
-      const mimeType = doc.mimeType ?? "application/pdf";
-      const name = doc.name ?? (mimeType === "application/pdf" ? "receipt.pdf" : "receipt.jpg");
-      goToReceiptWithFile(doc.uri, mimeType, name);
-    } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not open file");
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
   return (
     <>
       <StatusBar style="light" />
@@ -77,7 +56,6 @@ export default function ScanReceiptScreen() {
         }}
         onPhotoCaptured={onPhotoCaptured}
         onPickGallery={onPickGallery}
-        onPickFiles={onPickFiles}
         busy={busy}
       />
     </>

@@ -23,7 +23,6 @@ type Props = {
   onClose: () => void;
   onPhotoCaptured: (uri: string) => void;
   onPickGallery: () => void;
-  onPickFiles: () => void;
   busy?: boolean;
 };
 
@@ -68,7 +67,6 @@ export function ReceiptScanCamera({
   onClose,
   onPhotoCaptured,
   onPickGallery,
-  onPickFiles,
   busy = false,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -83,7 +81,7 @@ export function ReceiptScanCamera({
     void sfx.pop();
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
+        quality: 0.75,
         exif: false,
         // Let iOS process to JPEG; skipProcessing leaves HEIC bytes that break OCR upload.
         skipProcessing: false,
@@ -178,14 +176,9 @@ export function ReceiptScanCamera({
               <Ionicons name="camera" size={30} color="#1a1a1a" />
             )}
           </TouchableOpacity>
-          <CircleIconButton
-            icon="folder-outline"
-            onPress={onPickFiles}
-            disabled={isBusy}
-            accessibilityLabel="Import from files"
-          />
+          <View style={styles.iconCircleSpacer} />
         </View>
-        <Text style={styles.bottomHint}>Tap to scan or import from Photos/Files</Text>
+        <Text style={styles.bottomHint}>Tap to scan or choose from Photos</Text>
       </View>
     </View>
   );
@@ -236,6 +229,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  iconCircleSpacer: {
+    width: 44,
+    height: 44,
   },
   centerGuide: {
     ...StyleSheet.absoluteFillObject,

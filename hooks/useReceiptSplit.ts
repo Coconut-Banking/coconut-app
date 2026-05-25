@@ -482,7 +482,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     setIsPdf(false);
   }, []);
 
-  /** Clear stale preview/errors before camera, gallery, or PDF. */
+  /** Clear stale preview/errors before camera or photo library. */
   const prepareForNewScan = useCallback(() => {
     setUploadError(null);
     setUploadErrorCode(null);

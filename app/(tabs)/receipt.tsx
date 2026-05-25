@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { receiptImagePickerOptions } from "../../lib/receipt-image-picker";
-import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -33,9 +32,8 @@ import { useDemoData } from "../../lib/demo-context";
 import { sfx } from "../../lib/sounds";
 import { exportReceiptPdf } from "../../lib/receipt-pdf";
 import {
-  createPaymentLink,
+  deliverPaymentLink,
   findSettlementForPerson,
-  sharePaymentLink,
 } from "../../lib/payment-link";
 import { takePendingReceiptScan } from "../../lib/pending-receipt-scan";
 import {
@@ -148,7 +146,7 @@ export default function ReceiptScreen() {
       const name =
         handoff?.name ??
         pendingScanName ??
-        (mimeType === "application/pdf" ? "receipt.pdf" : "receipt.jpg");
+        "receipt.jpg";
       if (pendingScanUri) {
         router.setParams({
           pendingScanUri: undefined,
@@ -225,16 +223,6 @@ function UploadStep({
     await rs.uploadReceipt(asset.uri, { mimeType, name: `receipt.${ext}` });
   };
 
-  const pickPdf = async () => {
-    rs.prepareForNewScan();
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
-      if (result.canceled) return;
-      const doc = result.assets[0];
-      if (doc?.uri) await rs.uploadReceipt(doc.uri, { mimeType: doc.mimeType ?? "application/pdf", name: doc.name ?? "receipt.pdf" });
-    } catch (e) { Alert.alert("Error", e instanceof Error ? e.message : "Failed"); }
-  };
-
   if (rs.uploading) {
     const msg = rs.uploadStage === "uploading" ? "Uploading…" : rs.uploadStage === "reading" ? "Reading receipt…" : rs.uploadStage === "extracting" ? "Extracting items…" : "Cleaning up…";
     return (
@@ -296,7 +284,7 @@ function UploadStep({
           {hasSavedReceipt ? "Scan another receipt" : "Add your receipt"}
         </Text>
         <Text style={[st.uploadSub, { color: theme.textQuaternary }]}>
-          Paper receipt, e-receipt screenshot, or PDF
+          Paper receipt or photo from your library
         </Text>
 
         <TouchableOpacity
@@ -308,24 +296,14 @@ function UploadStep({
           <Text style={[st.uploadPrimaryText, { color: "#fff" }]}>Take photo</Text>
         </TouchableOpacity>
 
-        <View style={st.uploadSecondaryRow}>
-          <TouchableOpacity
-            style={[st.uploadSecondary, { backgroundColor: shell.mintWash, borderColor: shell.cardBorder }]}
-            onPress={() => pick(false)}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="images-outline" size={18} color={shell.cta} />
-            <Text style={[st.uploadSecondaryText, { color: shell.cta }]}>Photos</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[st.uploadSecondary, { backgroundColor: shell.mintWash, borderColor: shell.cardBorder }]}
-            onPress={pickPdf}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="document-text-outline" size={18} color={shell.cta} />
-            <Text style={[st.uploadSecondaryText, { color: shell.cta }]}>PDF</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[st.uploadSecondary, { backgroundColor: shell.mintWash, borderColor: shell.cardBorder }]}
+          onPress={() => pick(false)}
+          activeOpacity={0.88}
+        >
+          <Ionicons name="images-outline" size={18} color={shell.cta} />
+          <Text style={[st.uploadSecondaryText, { color: shell.cta }]}>Choose from Photos</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -1006,23 +984,28 @@ function SummaryStep({
     const key = person.name.toLowerCase();
     setLinkLoadingFor(key);
     try {
-      const result = await createPaymentLink(apiFetch, {
-        amount: person.totalOwed,
-        currency: "USD",
-        groupId: resolvedGroupId,
-        payerMemberId: settlement.fromMemberId,
-        receiverMemberId: settlement.toMemberId,
-      });
+      const result = await deliverPaymentLink(
+        apiFetch,
+        {
+          amount: person.totalOwed,
+          currency: "USD",
+          groupId: resolvedGroupId,
+          payerMemberId: settlement.fromMemberId,
+          receiverMemberId: settlement.toMemberId,
+        },
+        {
+          personName: person.name,
+          amount: person.totalOwed,
+          currency: "USD",
+          onCopied: () => showToast("Link copied — they can pay with Apple Pay or card"),
+          offerShare: true,
+        },
+      );
       if (!result.ok) {
         Alert.alert("Payment link", result.error);
         return;
       }
       sfx.pop();
-      await sharePaymentLink(result.url, {
-        personName: person.name,
-        amount: person.totalOwed,
-        currency: "USD",
-      });
     } finally {
       setLinkLoadingFor(null);
     }
@@ -1040,7 +1023,7 @@ function SummaryStep({
   const allTabbed = rs.personShares.every(p => tabbedPeople.has(p.name.toLowerCase()));
 
   return (
-    <View style={{ gap: 20 }}>
+    <View style={{ gap: space.lg }}>
       {/* Toast */}
       {toast && (
         <View style={{ position: "absolute", top: -50, left: 0, right: 0, zIndex: 99, alignItems: "center" }}>
@@ -1062,7 +1045,7 @@ function SummaryStep({
       </View>
 
       {/* They owe you */}
-      <View style={{ gap: 4 }}>
+      <View style={{ gap: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>They owe you</Text>
           {rs.personShares.length > 1 && !allTabbed && (
@@ -1072,7 +1055,6 @@ function SummaryStep({
             </TouchableOpacity>
           )}
         </View>
-      </View>
 
       {rs.personShares.map((person, idx) => {
         const personKey = person.name.toLowerCase();
@@ -1192,6 +1174,7 @@ function SummaryStep({
           </View>
         );
       })}
+      </View>
 
       {/* Export row */}
       <View style={smst.exportRow}>
@@ -1279,9 +1262,8 @@ const st = StyleSheet.create({
     marginTop: 4,
   },
   uploadPrimaryText: { fontSize: 16, fontFamily: font.semibold },
-  uploadSecondaryRow: { flexDirection: "row", alignSelf: "stretch", gap: 10, marginTop: 4 },
   uploadSecondary: {
-    flex: 1,
+    alignSelf: "stretch",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1289,6 +1271,7 @@ const st = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: radii.lg,
     borderWidth: 1,
+    marginTop: 4,
   },
   uploadSecondaryText: { fontSize: 14, fontFamily: font.semibold },
   uploadProgress: { paddingVertical: 32, alignItems: "center" },
@@ -1426,7 +1409,7 @@ const smst = StyleSheet.create({
   personName: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
   personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
   personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
-  personItems: { paddingLeft: 44, gap: 2 },
+  personItems: { paddingLeft: 44, gap: 4, marginTop: 2 },
   payLinkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, borderRadius: radii.xl },
   payLinkBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
   personActions: { flexDirection: "row", gap: 10 },

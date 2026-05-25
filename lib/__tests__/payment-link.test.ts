@@ -40,4 +40,13 @@ describe("findSettlementForPerson", () => {
     );
     expect(hit?.fromMemberId).toBe("m-aaran");
   });
+
+  it("ignores memberId from a different group", () => {
+    const hit = findSettlementForPerson(
+      { name: "Koushik", memberId: "m-old-group-id", totalOwed: 7.63 },
+      suggestions,
+      members,
+    );
+    expect(hit?.fromMemberId).toBe("m-koushik");
+  });
 });

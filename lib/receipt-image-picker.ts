@@ -7,7 +7,7 @@ export function receiptImagePickerOptions(
 ): ImagePicker.ImagePickerOptions {
   return {
     mediaTypes: ["images"],
-    quality: 0.85,
+    quality: 0.75,
     exif: false,
     ...(Platform.OS === "ios"
       ? {

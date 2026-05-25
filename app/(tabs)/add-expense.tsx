@@ -27,7 +27,7 @@ import { sendSmsInvite, sendEmailInvite, shareInvite } from "../../lib/invite";
 import { useApiFetch } from "../../lib/api";
 import { useGroupsSummary } from "../../hooks/useGroups";
 import { invalidateSharedDataWithExpense } from "../../lib/invalidate-shared-data";
-import { createPaymentLink, sharePaymentLink } from "../../lib/payment-link";
+import { deliverPaymentLink } from "../../lib/payment-link";
 import { useDeviceContacts, type DeviceContact } from "../../hooks/useDeviceContacts";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -35,7 +35,6 @@ import { font, radii, prototype } from "../../lib/theme";
 import { useTheme } from "../../lib/theme-context";
 import { CoconutScreen } from "../../components/shell/CoconutScreen";
 import { CoconutFlowHeader } from "../../components/shell/CoconutFlowHeader";
-import { ExpensePathPicker } from "../../components/expense/ExpensePathPicker";
 import { useCoconutShell } from "../../lib/coconut-shell";
 import type { ThemeColors } from "../../lib/colors";
 import { useToast } from "../../components/Toast";
@@ -1056,20 +1055,24 @@ export default function AddExpenseScreen() {
     }
     setPaymentLinkLoading(true);
     try {
-      const result = await createPaymentLink(apiFetch, {
-        amount: s.amount,
-        currency: currencyCode,
-        groupId: s.groupId,
-        payerMemberId: s.payerMemberId,
-        receiverMemberId: s.receiverMemberId,
-      });
+      const result = await deliverPaymentLink(
+        apiFetch,
+        {
+          amount: s.amount,
+          currency: currencyCode,
+          groupId: s.groupId,
+          payerMemberId: s.payerMemberId,
+          receiverMemberId: s.receiverMemberId,
+        },
+        { amount: s.amount, currency: currencyCode, offerShare: true },
+      );
       if (!result.ok) {
         Alert.alert("Payment link", result.error);
         return;
       }
       sfx.pop();
       setShowSettlement(false);
-      await sharePaymentLink(result.url, { amount: s.amount, currency: currencyCode });
+      toast.show("Link copied — Apple Pay or card on their phone", "success");
     } finally {
       setPaymentLinkLoading(false);
     }
@@ -1181,7 +1184,6 @@ export default function AddExpenseScreen() {
             {/* Body: contact picker OR expense form */}
             {showPicker ? (
               <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-                {targets.length === 0 && !q ? <ExpensePathPicker /> : null}
                 {loading && !summary && (
                   <View style={{ alignItems: "center", paddingVertical: 32 }}>
                     <ActivityIndicator size="small" color={theme.textTertiary} />

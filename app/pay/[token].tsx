@@ -166,11 +166,14 @@ export default function PayLinkScreen() {
                 {checkoutLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={st.primaryBtnText}>Continue to pay</Text>
+                  <>
+                    <Ionicons name="logo-apple" size={18} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={st.primaryBtnText}>Pay with Apple Pay or card</Text>
+                  </>
                 )}
               </TouchableOpacity>
               <Text style={[st.footer, { color: theme.textTertiary }]}>
-                Opens secure Stripe checkout · Apple Pay in Safari
+                Secure Stripe checkout on your phone — Apple Pay when available
               </Text>
             </>
           )}
@@ -209,6 +212,8 @@ const st = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     marginTop: 8,
   },
   primaryBtnText: { color: "#fff", fontSize: 16, fontFamily: font.semibold },
