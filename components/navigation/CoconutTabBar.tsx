@@ -171,6 +171,7 @@ export function CoconutTabBar({ state, navigation }: BottomTabBarProps) {
 
 const styles = StyleSheet.create({
   bar: {
+    zIndex: 100,
     borderTopWidth: 2,
     paddingTop: 8,
     shadowColor: "#000",
