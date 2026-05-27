@@ -30,10 +30,13 @@ export const HomeBankTransactionRow = React.memo(function HomeBankTransactionRow
   item,
   onPress,
   onSplit,
+  grouped = false,
 }: {
   item: HomeTransactionListItem;
   onPress: () => void;
   onSplit: () => void;
+  /** Inside home grouped card — no outer margin/radius. */
+  grouped?: boolean;
 }) {
   const { theme } = useTheme();
   const home = useHomePalette();
@@ -77,7 +80,7 @@ export const HomeBankTransactionRow = React.memo(function HomeBankTransactionRow
   );
 
   return (
-    <View style={styles.wrap}>
+    <View style={grouped ? styles.wrapGrouped : styles.wrap}>
       <SplitSwipeRow onSplit={onSplit} enabled={!item.alreadySplit}>
         {row}
       </SplitSwipeRow>
@@ -89,6 +92,12 @@ const styles = StyleSheet.create({
   wrap: {
     marginBottom: 4,
     borderRadius: 4,
+    overflow: "hidden",
+    width: "100%",
+  },
+  wrapGrouped: {
+    marginBottom: 0,
+    borderRadius: 0,
     overflow: "hidden",
     width: "100%",
   },

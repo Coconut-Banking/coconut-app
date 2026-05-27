@@ -95,6 +95,15 @@ export function invalidateApiCache(path?: string) {
  * Accepts an optional callback to wipe async storage — injected by
  * lib/api.ts so this module stays pure (no AsyncStorage import).
  */
+/**
+ * POST paths that sync/read data but do not mutate splits/groups — must not
+ * wipe the whole cache (home would flash empty balances after background sync).
+ */
+export function postShouldBumpCacheGeneration(path: string): boolean {
+  const base = path.split("?")[0];
+  return base !== "/api/plaid/transactions";
+}
+
 export function bumpCacheGeneration(clearAsyncStorage?: () => void) {
   _cacheGeneration++;
   _responseCache.clear();

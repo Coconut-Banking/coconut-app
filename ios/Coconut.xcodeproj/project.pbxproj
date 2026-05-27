@@ -18,8 +18,8 @@
 		AD7EBA64B375DBD922EA50F9 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD51892C5601270ED27F5D0B /* ExpoModulesProvider.swift */; };
 		B31064A3979D4BA5AFEACE91 /* ClerkViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1CACA3500E84F3497BF55F6 /* ClerkViewFactory.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		DD0B9B32623247F59DCB50B3 /* ClerkViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DE7AB46AA5E4ABE8DDD7CD7 /* ClerkViewFactory.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		DD0B9B32623247F59DCB50B3 = {isa = PBXBuildFile; fileRef = 6DE7AB46AA5E4ABE8DDD7CD7 /* ClerkViewFactory.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +28,7 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Coconut/Info.plist; sourceTree = "<group>"; };
 		32C65C5F951BDF1BA3CF065C /* ProximityReaderDiscoveryBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ProximityReaderDiscoveryBridge.m; path = Coconut/ProximityReaderDiscoveryBridge.m; sourceTree = "<group>"; };
 		6B5BC114FEEB40859A294E26 /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "Coconut/noop-file.swift"; sourceTree = "<group>"; };
+		6DE7AB46AA5E4ABE8DDD7CD7 /* ClerkViewFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClerkViewFactory.swift; path = Coconut/ClerkViewFactory.swift; sourceTree = "<group>"; };
 		9EF8C39890846D4A1DBBF7F2 /* libPods-Coconut.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Coconut.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7D0F38A4A22A600D060D1D2 /* ProximityReaderDiscoveryModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProximityReaderDiscoveryModule.swift; path = Coconut/ProximityReaderDiscoveryModule.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Coconut/SplashScreen.storyboard; sourceTree = "<group>"; };
@@ -41,7 +42,6 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Coconut/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Coconut-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Coconut-Bridging-Header.h"; path = "Coconut/Coconut-Bridging-Header.h"; sourceTree = "<group>"; };
 		F4A2D807AC1B92AC4642DAC1 /* ProximityReader.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ProximityReader.framework; path = System/Library/Frameworks/ProximityReader.framework; sourceTree = SDKROOT; };
-		6DE7AB46AA5E4ABE8DDD7CD7 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClerkViewFactory.swift; path = Coconut/ClerkViewFactory.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -209,7 +209,7 @@
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
 				B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */,
-				C677EACF0DDC45299A972FF7 /* clerk-ios */,
+				C677EACF0DDC45299A972FF7 /* XCRemoteSwiftPackageReference "clerk-ios" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
@@ -413,7 +413,7 @@
 				A29A4BA6C611D7859A9293C6 /* ProximityReaderDiscoveryModule.swift in Sources */,
 				1AF52D6BA9DD328AAF7D4E3C /* ProximityReaderDiscoveryBridge.m in Sources */,
 				AD7EBA64B375DBD922EA50F9 /* ExpoModulesProvider.swift in Sources */,
-				DD0B9B32623247F59DCB50B3 /* ClerkViewFactory.swift */,
+				DD0B9B32623247F59DCB50B3 /* ClerkViewFactory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -426,11 +426,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ALLOW_PROVISIONING_DEVICE_REGISTRATION = YES;
+				CODE_SIGN_ALLOW_PROVISIONING_UPDATES = YES;
 				CODE_SIGN_ENTITLEMENTS = Coconut/Coconut.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CODE_SIGN_ALLOW_PROVISIONING_UPDATES = YES;
-				CODE_SIGN_ALLOW_PROVISIONING_DEVICE_REGISTRATION = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 942BUGUD75;
 				ENABLE_BITCODE = NO;
@@ -453,8 +453,8 @@
 					ProximityReader,
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.coconut.app";
-				PRODUCT_NAME = "Coconut";
+				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
+				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -469,11 +469,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ALLOW_PROVISIONING_DEVICE_REGISTRATION = YES;
+				CODE_SIGN_ALLOW_PROVISIONING_UPDATES = YES;
 				CODE_SIGN_ENTITLEMENTS = Coconut/Coconut.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CODE_SIGN_ALLOW_PROVISIONING_UPDATES = YES;
-				CODE_SIGN_ALLOW_PROVISIONING_DEVICE_REGISTRATION = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 942BUGUD75;
 				INFOPLIST_FILE = Coconut/Info.plist;
@@ -492,7 +492,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.coconut.app;
-				PRODUCT_NAME = "Coconut";
+				PRODUCT_NAME = Coconut;
 				SWIFT_OBJC_BRIDGING_HEADER = "Coconut/Coconut-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -654,9 +654,9 @@
 				version = 1.0.0;
 			};
 		};
-		C677EACF0DDC45299A972FF7 = {
+		C677EACF0DDC45299A972FF7 /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = https://github.com/clerk/clerk-ios.git;
+			repositoryURL = "https://github.com/clerk/clerk-ios.git";
 			requirement = {
 				kind = exactVersion;
 				version = 1.0.0;
@@ -665,24 +665,24 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		6FC699C2A44C497FB1B71B41 /* ClerkKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C677EACF0DDC45299A972FF7 /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKitUI;
+		};
 		71F7EF8321DC4B6A829D046C /* ClerkKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */;
 			productName = ClerkKit;
 		};
+		737170F269484C4E80E45C81 /* ClerkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C677EACF0DDC45299A972FF7 /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKit;
+		};
 		EE35E473DE8045E989EA87DE /* ClerkKitUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B50C276E6C5D402EB1E5A682 /* XCRemoteSwiftPackageReference "clerk-ios" */;
-			productName = ClerkKitUI;
-		};
-		737170F269484C4E80E45C81 = {
-			isa = XCSwiftPackageProductDependency;
-			package = C677EACF0DDC45299A972FF7;
-			productName = ClerkKit;
-		};
-		6FC699C2A44C497FB1B71B41 = {
-			isa = XCSwiftPackageProductDependency;
-			package = C677EACF0DDC45299A972FF7;
 			productName = ClerkKitUI;
 		};
 /* End XCSwiftPackageProductDependency section */

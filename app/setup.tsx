@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -17,6 +17,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
+import { useIsFocused } from "@react-navigation/native";
+import { canUseStripeConnectEmbedded } from "../lib/stripe-connect-embedded";
+import { startConnectOnboarding } from "../lib/stripe-connect-actions";
 import type { LinkSuccess, LinkExit } from "react-native-plaid-link-sdk";
 
 let _plaid: typeof import("react-native-plaid-link-sdk") | null = null;
@@ -884,16 +887,47 @@ async function pollConnectStatus(
 function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
   const { theme } = useTheme();
   const apiFetch = useApiFetch();
+  const isFocused = useIsFocused();
+  const pollAfterEmbedded = useRef(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const applyPollResult = useCallback(
+    (result: { complete: boolean; payoutsEnabled: boolean; requiresVerification: boolean }) => {
+      const { complete, payoutsEnabled, requiresVerification } = result;
+      if (complete) {
+        setNeedsVerification(!payoutsEnabled || requiresVerification);
+        setSuccess(true);
+      } else {
+        setNeedsVerification(true);
+        setSuccess(true);
+      }
+      setLoading(false);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!isFocused || !pollAfterEmbedded.current) return;
+    pollAfterEmbedded.current = false;
+    setLoading(true);
+    void pollConnectStatus(apiFetch).then(applyPollResult);
+  }, [isFocused, apiFetch, applyPollResult]);
 
   const startOnboarding = async () => {
     setLoading(true);
     setError(null);
     setNeedsVerification(false);
     try {
+      if (canUseStripeConnectEmbedded()) {
+        pollAfterEmbedded.current = true;
+        await startConnectOnboarding(apiFetch, false);
+        setLoading(false);
+        return;
+      }
+
       const rawScheme = Constants.expoConfig?.scheme;
       const scheme =
         typeof rawScheme === "string"
@@ -911,7 +945,6 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
         const data = await res.json().catch(() => ({}));
         const msg = (data as { error?: string }).error ?? "Could not start setup";
         if (msg.toLowerCase().includes("not configured")) {
-          // Stripe not set up in this environment — skip silently
           onContinue();
           return;
         }
@@ -928,27 +961,9 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
         return;
       }
 
-      // Open Stripe's hosted onboarding in-app
       await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
-
-      // Bust the cached status so polling always hits Stripe fresh
       invalidateApiCache("/api/stripe/connect/status");
-
-      // Poll for completion whether the user finished or closed early
-      const { complete, payoutsEnabled, requiresVerification } = await pollConnectStatus(apiFetch);
-      if (complete) {
-        // Always show the informational screen so the user sees the real state —
-        // never silently claim "payouts set up" right after basic onboarding.
-        setNeedsVerification(!payoutsEnabled || requiresVerification);
-        setSuccess(true);
-        setLoading(false);
-      } else {
-        // Stripe is still processing — treat as pending review so they get
-        // the "Almost there" screen rather than silently going nowhere
-        setNeedsVerification(true);
-        setSuccess(true);
-        setLoading(false);
-      }
+      applyPollResult(await pollConnectStatus(apiFetch));
     } catch (e) {
       if (__DEV__) console.warn("[setup:stripe-connect]", e);
       setError("Something went wrong. Please try again.");

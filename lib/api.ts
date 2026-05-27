@@ -13,6 +13,7 @@ import {
   _inflightAborts,
   invalidateApiCache as _invalidateApiCache,
   bumpCacheGeneration as _bumpCacheGeneration,
+  postShouldBumpCacheGeneration,
 } from "./api-cache";
 
 // Re-export for consumers
@@ -144,8 +145,29 @@ export function markTokenGood() {
   _consecutive401s = 0;
 }
 
+type AuthRef = {
+  isLoaded: boolean;
+  isSignedIn: boolean | undefined;
+  getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>;
+};
+
+async function waitForAuthLoaded(
+  read: () => Pick<AuthRef, "isLoaded" | "isSignedIn">,
+  maxMs = 8000,
+): Promise<{ loaded: boolean; signedIn: boolean }> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const { isLoaded, isSignedIn } = read();
+    if (isLoaded) return { loaded: true, signedIn: Boolean(isSignedIn) };
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const { isLoaded, isSignedIn } = read();
+  return { loaded: isLoaded, signedIn: Boolean(isSignedIn) };
+}
+
 async function getTokenWithRetry(
   getToken: (opts?: { skipCache?: boolean }) => Promise<string | null>,
+  opts?: { expectSignedIn?: boolean },
 ): Promise<string | null> {
   if (_tokenPromise) return _tokenPromise;
 
@@ -164,7 +186,7 @@ async function getTokenWithRetry(
       }
     }
 
-    // One fast retry with skipCache, then give up.
+    // One fast retry with skipCache.
     try {
       const token = await getToken({ skipCache: true });
       if (token) {
@@ -176,6 +198,24 @@ async function getTokenWithRetry(
       if (isOfflineError(e) && fallback) {
         if (__DEV__) console.warn("[api] offline — using cached token after retry");
         return fallback;
+      }
+    }
+
+    // Signed-in users: Clerk can briefly return null right after tab focus / cold start.
+    if (opts?.expectSignedIn) {
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+        try {
+          const token = await getToken({ skipCache: true });
+          if (token) {
+            _lastGoodToken = token;
+            if (__DEV__ && i > 0) console.log(`[api] token ready after ${i + 1} patient retries`);
+            return token;
+          }
+        } catch (e) {
+          const fallback = offlineFallbackToken();
+          if (isOfflineError(e) && fallback) return fallback;
+        }
       }
     }
 
@@ -240,10 +280,15 @@ export function useApiFetch() {
     ) => {
       if (SKIP_AUTH) return unauthResponse();
 
-      const { isLoaded: loaded, isSignedIn: signedIn, getToken: gt } = ref.current;
+      let { isLoaded: loaded, isSignedIn: signedIn, getToken: gt } = ref.current;
+      if (!loaded) {
+        const ready = await waitForAuthLoaded(() => ref.current);
+        loaded = ready.loaded;
+        signedIn = ready.signedIn;
+      }
       if (loaded && !signedIn) return unauthResponse();
 
-      const token = await getTokenWithRetry(gt);
+      const token = await getTokenWithRetry(gt, { expectSignedIn: signedIn });
       if (!token) {
         const { isLoaded: loadedNow, isSignedIn: signedInNow } = ref.current;
         if (loadedNow && !signedInNow) return unauthResponse();
@@ -479,7 +524,12 @@ export function useApiFetch() {
         }
       }
 
-      bumpCacheGeneration();
+      if (postShouldBumpCacheGeneration(path)) {
+        bumpCacheGeneration();
+      } else {
+        invalidateApiCache("/api/plaid/transactions");
+        invalidateApiCache("/api/plaid/status");
+      }
       await acquireSlot();
       try { return await executeFetch(); } finally { releaseSlot(); }
     },

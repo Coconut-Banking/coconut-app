@@ -1,9 +1,16 @@
-import { prepareReceiptImageForUpload } from "../prepare-receipt-image";
+import {
+  prepareReceiptImageForUpload,
+  __resetManipulatorCacheForTests,
+} from "../prepare-receipt-image";
 
 const mockManipulateAsync = jest.fn(async (uri: string) => ({
   uri: `file:///resized-${uri.split("/").pop()}`,
   width: 1280,
   height: 960,
+}));
+
+jest.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: jest.fn(() => ({})),
 }));
 
 jest.mock("react-native", () => ({
@@ -24,6 +31,7 @@ jest.mock("expo-image-manipulator", () => ({
 describe("prepareReceiptImageForUpload", () => {
   beforeEach(() => {
     mockManipulateAsync.mockClear();
+    __resetManipulatorCacheForTests();
   });
 
   it("passes through PDF unchanged", async () => {
@@ -50,5 +58,23 @@ describe("prepareReceiptImageForUpload", () => {
       name: "receipt.jpg",
     });
     expect(mockManipulateAsync).toHaveBeenCalled();
+  });
+
+  it("passes through original uri when native module is missing", async () => {
+    const { requireOptionalNativeModule } = jest.requireMock("expo-modules-core") as {
+      requireOptionalNativeModule: jest.Mock;
+    };
+    requireOptionalNativeModule.mockReturnValueOnce(null);
+
+    const out = await prepareReceiptImageForUpload("file:///photo.heic", {
+      mimeType: "image/heic",
+      name: "receipt.heic",
+    });
+    expect(out).toEqual({
+      uri: "file:///photo.heic",
+      mimeType: "image/heic",
+      name: "receipt.heic",
+    });
+    expect(mockManipulateAsync).not.toHaveBeenCalled();
   });
 });

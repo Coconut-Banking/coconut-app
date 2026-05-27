@@ -44,6 +44,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { afterUiSettledAsync } from "../../lib/after-ui-settled";
 import { CoconutWalletCard } from "../../components/settings/CoconutWalletCard";
+import { startConnectOnboarding } from "../../lib/stripe-connect-actions";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -286,34 +287,10 @@ export default function SettingsScreen() {
     ]);
   }, [user]);
 
-  const startConnectOnboarding = async () => {
+  const startConnectOnboardingFlow = async () => {
     setConnectActionLoading(true);
     try {
-      const endpoint = connectStatus?.hasAccount
-        ? "/api/stripe/connect/onboarding-link"
-        : "/api/stripe/connect/create-account";
-      const rawScheme = Constants.expoConfig?.scheme;
-      const scheme =
-        typeof rawScheme === "string"
-          ? rawScheme
-          : Array.isArray(rawScheme)
-            ? rawScheme[0] ?? "coconut"
-            : "coconut";
-      const res = await apiFetch(endpoint, { method: "POST", body: { scheme } });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", (data as { error?: string }).error ?? "Could not start setup");
-        return;
-      }
-      const data = await res.json();
-      const url = (data as { url?: string }).url;
-      if (!url) {
-        Alert.alert("Error", "Could not get onboarding URL");
-        return;
-      }
-      // Open in-app browser so we detect when the user returns
-      await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
-      // Refetch status regardless of outcome — user may have completed or abandoned
+      await startConnectOnboarding(apiFetch, connectStatus?.hasAccount ?? false);
       void fetchConnectStatus();
     } catch {
       Alert.alert("Error", "Could not start payment setup. Check your connection.");
@@ -572,7 +549,7 @@ export default function SettingsScreen() {
       router.replace("/(tabs)/settings");
     } else if (sc === "refresh") {
       connectReturnHandled.current = true;
-      void startConnectOnboarding();
+      void startConnectOnboardingFlow();
       router.replace("/(tabs)/settings");
     }
   }, [splitwiseParams?.stripe_connect, user]);
@@ -1215,7 +1192,7 @@ export default function SettingsScreen() {
         ) : null}
 
         <CoconutWalletCard
-          onSetupPayouts={startConnectOnboarding}
+          onSetupPayouts={startConnectOnboardingFlow}
           setupLoading={connectActionLoading}
         />
 
@@ -1251,7 +1228,7 @@ export default function SettingsScreen() {
               </View>
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
-                onPress={startConnectOnboarding}
+                onPress={startConnectOnboardingFlow}
                 disabled={connectActionLoading}
               >
                 {connectActionLoading ? (
@@ -1265,7 +1242,7 @@ export default function SettingsScreen() {
             <View style={{ gap: 12, marginTop: 4 }}>
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
-                onPress={startConnectOnboarding}
+                onPress={startConnectOnboardingFlow}
                 disabled={connectActionLoading}
               >
                 {connectActionLoading ? (

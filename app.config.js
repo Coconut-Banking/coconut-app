@@ -48,6 +48,10 @@ export default {
       EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME:
         process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ||
         "com.googleusercontent.apps.986367405156-nhpon6mqrm7s093bbe1lag677ncnbpmi",
+      EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY:
+        process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+      EXPO_PUBLIC_STRIPE_CONNECT_EMBEDDED:
+        process.env.EXPO_PUBLIC_STRIPE_CONNECT_EMBEDDED,
     },
     slug: "coconut-app",
     version: "1.0.0",
@@ -124,7 +128,11 @@ export default {
           cameraPermission: "Coconut uses your camera to scan receipts for bill splitting.",
         },
       ],
-      ["expo-build-properties", { android: { minSdkVersion: 26 } }],
+      [
+        "expo-build-properties",
+        { android: { minSdkVersion: 26 } },
+      ],
+      "@stripe/stripe-react-native",
     ],
     experiments: { typedRoutes: true },
   },

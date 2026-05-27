@@ -1,0 +1,47 @@
+---
+description: Implement Figma designs 1:1 in coconut-app via Figma MCP (React Native, not web)
+alwaysApply: true
+---
+
+# Figma MCP → React Native (coconut-app)
+
+When the user shares a **Figma frame link**, screenshot, or asks to match a design:
+
+## 1. Prefer Figma MCP over screenshots
+
+- Ask for or use the **frame link** (`node-id=…`) — do not guess spacing/colors from PNG alone.
+- Implement **one frame at a time** (hero, card, list section). Avoid whole-app frames.
+- If MCP is available, fetch design context / variables before writing code.
+
+## 2. Output stack (never web)
+
+- **React Native + Expo** only: `View`, `Text`, `Pressable`, `ScrollView`, `StyleSheet.create`
+- ❌ No `motion/react`, `div`, Tailwind, `className`, CSS files, or Next.js patterns
+- Use `SafeAreaView` / `useSafeAreaInsets` for top and bottom padding
+- Use `useTheme()` → `theme.*` for colors; never invent hex if a token exists
+- Typography: `font.regular`, `font.medium`, `font.semibold`, `font.bold`, `font.black` from `lib/theme`
+- Spacing/radii: `radii.*`, `space.*` from `lib/theme` when values match
+
+## 3. Match Figma 1:1
+
+- Copy **exact** padding, gap, font size, weight, line height, border radius, and colors from MCP context
+- Map Figma auto-layout → RN flexbox (`flexDirection`, `gap`, `alignItems`, `justifyContent`)
+- Prefer flex over absolute positioning unless Figma uses absolute
+- Export icons/SVGs/PNG assets from Figma when MCP images are needed; don't substitute emoji
+
+## 4. Reuse existing components
+
+Check before creating new UI:
+
+- `components/home/*`, `MemberAvatar`, `MerchantLogo`, `CoconutTabBar`
+- `lib/home-theme.ts` for home-specific colors (wave, split orange, etc.)
+
+Extend existing components rather than duplicating parallel versions.
+
+## 5. Prompt pattern (for user)
+
+```
+Figma frame: [link]
+Implement 1:1 in coconut-app. React Native only. Use theme tokens.
+Frame: [single component name]
+```

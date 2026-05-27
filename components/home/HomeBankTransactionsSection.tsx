@@ -1,10 +1,9 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { font, radii } from "../../lib/theme";
-import { useTheme } from "../../lib/theme-context";
 import { type DateFilterPreset } from "./HomeSpeedDialSearch";
 import { useHomePalette } from "../../lib/home-theme";
 import { SnapPress } from "../ui";
@@ -24,40 +23,17 @@ export function HomeTransactionsFooter() {
   );
 }
 
+/** Section chrome only — empty/loading/connect UI lives in HomeBankTransactionsEmpty (ListEmptyComponent). */
 export const HomeBankTransactionsSection = React.memo(function HomeBankTransactionsSection({
-  transactionCount,
-  loading,
-  linked,
-  useDemoUi,
-  searchQuery,
-  onSearchQueryChange,
-  dateFilter,
-  onDateFilterChange,
-  txSource,
-  onTxSourceChange,
-  onSubmitSearch,
-  onConnectBank,
+  hasTransactions,
   searchActive,
   onSearchActivate,
 }: {
-  transactionCount: number;
-  loading: boolean;
-  linked: boolean;
-  useDemoUi: boolean;
-  searchQuery: string;
-  onSearchQueryChange: (q: string) => void;
-  dateFilter: DateFilterPreset;
-  onDateFilterChange: (p: DateFilterPreset) => void;
-  txSource: TxSourceTab;
-  onTxSourceChange: (tab: TxSourceTab) => void;
-  onSubmitSearch?: () => void;
-  onConnectBank?: () => void;
+  hasTransactions: boolean;
   searchActive?: boolean;
   onSearchActivate?: () => void;
 }) {
-  const { theme } = useTheme();
   const home = useHomePalette();
-  const hasRows = transactionCount > 0;
 
   return (
     <Animated.View entering={FadeIn.duration(400).delay(120)} style={styles.section}>
@@ -78,53 +54,11 @@ export const HomeBankTransactionsSection = React.memo(function HomeBankTransacti
         </View>
       ) : null}
 
-      {!searchActive && hasRows ? (
+      {!searchActive && hasTransactions ? (
         <View style={styles.swipeHint}>
           <Ionicons name="hand-left-outline" size={13} color={home.sectionSub} />
           <Text style={[styles.swipeHintText, { color: home.sectionSub }]}>
             Swipe right on any transaction to split it
-          </Text>
-        </View>
-      ) : null}
-
-      {loading && !hasRows ? (
-        <View style={[styles.empty, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}>
-          <ActivityIndicator color={home.ink} />
-          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>Loading…</Text>
-        </View>
-      ) : null}
-
-      {!loading && !useDemoUi && !linked ? (
-        <View style={[styles.empty, styles.emptyFun, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}>
-          <View style={[styles.emptyIcon, { backgroundColor: home.moneyInSoft }]}>
-            <Ionicons name="card" size={28} color={home.moneyInText} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: home.ink }]}>Connect bank</Text>
-          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-            Link an account to see transactions.
-          </Text>
-          {onConnectBank ? (
-            <TouchableOpacity
-              style={[styles.cta, { backgroundColor: home.coconutShell }]}
-              onPress={onConnectBank}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.ctaText}>Connect</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
-
-      {!loading && !hasRows && (linked || useDemoUi) && searchQuery.trim() ? (
-        <View style={[styles.empty, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}>
-          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>No results</Text>
-        </View>
-      ) : null}
-
-      {!loading && !hasRows && (linked || useDemoUi) && !searchQuery.trim() ? (
-        <View style={[styles.empty, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}>
-          <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-            {txSource === "receipts" ? "No email receipts matched yet" : "No transactions"}
           </Text>
         </View>
       ) : null}
@@ -171,54 +105,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.36,
     flex: 1,
   },
-  empty: {
-    borderRadius: radii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 24,
-    alignItems: "center",
-    gap: 8,
-  },
-  emptyFun: {
-    paddingVertical: 28,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontFamily: font.bold,
-    marginTop: 4,
-  },
-  emptySub: {
-    fontSize: 14,
-    fontFamily: font.regular,
-    textAlign: "center",
-    lineHeight: 21,
-    maxWidth: 280,
-  },
-  cta: {
-    marginTop: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: radii.md,
-  },
-  ctaText: {
-    color: "#fff",
-    fontSize: 15,
-    fontFamily: font.bold,
-  },
   seeAll: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     marginTop: 8,
-    marginBottom: 100,
+    marginBottom: 16,
     alignSelf: "center",
     paddingVertical: 12,
     paddingHorizontal: 20,

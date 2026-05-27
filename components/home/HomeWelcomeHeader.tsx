@@ -10,6 +10,7 @@ import { CoconutNotificationButton } from "./CoconutNotificationButton";
 import {
   HOME_NOTIF_RIGHT,
   homeAvatarTopOffset,
+  homeHeaderContentHeight,
   homeNotifTopOffset,
 } from "../../lib/home-screen-insets";
 
@@ -31,7 +32,7 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
   return (
     <Animated.View
       entering={FadeInDown.duration(380).delay(40)}
-      style={[styles.wrap, { minHeight: topInset + 74 }]}
+      style={[styles.wrap, { minHeight: homeHeaderContentHeight(topInset) }]}
     >
       <View
         style={[

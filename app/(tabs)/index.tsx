@@ -31,6 +31,7 @@ import { EDGE_TO_EDGE_SCROLL_PROPS } from "../../lib/edge-to-edge-scroll";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch, invalidateApiCache } from "../../lib/api";
 import { fetchReceiptDetailForTransaction } from "../../lib/fetch-receipt-detail";
@@ -47,7 +48,9 @@ import { HomeWelcomeHeader } from "../../components/home/HomeWelcomeHeader";
 import { HomeHeroBackdrop } from "../../components/home/HomeHeroBackdrop";
 import { HomeScreenBackground, CANVAS_BOTTOM } from "../../components/home/HomeScreenBackground";
 import { BalanceOverviewCard } from "../../components/home/BalanceOverviewCard";
+import { HomeCoconutBalanceStrip } from "../../components/home/HomeCoconutBalanceStrip";
 import { HomeBankTransactionsSection, HomeTransactionsFooter } from "../../components/home/HomeBankTransactionsSection";
+import { HomeBankTransactionsEmpty } from "../../components/home/HomeBankTransactionsEmpty";
 import { HomeTransactionSearchHeader } from "../../components/home/HomeTransactionSearchHeader";
 import type { HomeTransactionListItem } from "../../components/home/HomeBankTransactionRow";
 import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
@@ -55,6 +58,7 @@ import { resolvePurchaseLocation } from "../../lib/transaction-location";
 import { afterUiSettled } from "../../lib/after-ui-settled";
 import {
   homeBalanceSideInset,
+  homeListBottomPadding,
   homeListPaddingRight,
   HOME_TX_HORIZONTAL,
 } from "../../lib/home-screen-insets";
@@ -332,18 +336,31 @@ const AllBankListItem = React.memo(function AllBankListItem({
   );
 });
 
-const HomeTxSeparator = React.memo(function HomeTxSeparator() {
-  return <View style={styles.txGap} />;
+const HOME_TX_FOOTER_EXTRA = 56;
+
+const HomeTxListFooter = React.memo(function HomeTxListFooter() {
+  const home = useHomePalette();
+  return (
+    <View
+      style={[
+        styles.homeTxGroupFooter,
+        { backgroundColor: home.boxFill, borderColor: home.boxBorder },
+      ]}
+    >
+      <View style={[styles.homeTxGroupSep, { backgroundColor: home.boxBorder }]} />
+      <HomeTransactionsFooter />
+    </View>
+  );
 });
 
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const home = useHomePalette();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const { width: screenWidth } = useWindowDimensions();
   const balancePad = homeBalanceSideInset(screenWidth);
   const txPad = HOME_TX_HORIZONTAL;
-  const homeScrollBottom = 112 + Math.max(insets.bottom, 12);
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
@@ -458,12 +475,14 @@ export default function BalancesPrototypeScreen() {
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
   const useDemoBankUi = isDemoOn || (authLoaded && !isSignedIn);
-  const { transactions, linked, loading: txLoading, runFullSync } = useTransactions();
+  const { transactions, linked, loading: txLoading, hasCachedData: hasCachedTx, runFullSync } =
+    useTransactions();
   const bankVisibleTransactions = useMemo(() => filterOffsettingBankPairs(transactions), [transactions]);
   const initialHomeLoading =
     !isDemoOn &&
     isSignedIn &&
     !summary &&
+    !hasCachedTx &&
     summaryLoading &&
     txLoading &&
     transactions.length === 0;
@@ -792,24 +811,47 @@ export default function BalancesPrototypeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askResults]);
 
+  const homeTxCount = filteredHomeTx.length;
+
   const renderHomeTx = useCallback(
-    ({ item }: { item: HomeTransactionListItem }) => (
-      <HomeBankTransactionRow
-        item={item}
-        onPress={() => handleHomeTxPress(item)}
-        onSplit={() => handleHomeTxSplit(item)}
-      />
-    ),
-    [handleHomeTxPress, handleHomeTxSplit],
+    ({ item, index }: { item: HomeTransactionListItem; index: number }) => {
+      const isFirst = index === 0;
+      return (
+        <View
+          style={[
+            styles.homeTxGroupCell,
+            { backgroundColor: home.boxFill, borderColor: home.boxBorder },
+            isFirst && styles.homeTxGroupFirst,
+          ]}
+        >
+          {!isFirst ? (
+            <View style={[styles.homeTxGroupSep, { backgroundColor: home.boxBorder }]} />
+          ) : null}
+          <HomeBankTransactionRow
+            item={item}
+            onPress={() => handleHomeTxPress(item)}
+            onSplit={() => handleHomeTxSplit(item)}
+            grouped
+          />
+        </View>
+      );
+    },
+    [homeTxCount, home.boxFill, home.boxBorder, handleHomeTxPress, handleHomeTxSplit],
   );
 
   const homeListHeader = useMemo(
     () => (
-      <View style={styles.homeHeader}>
+      <View style={[styles.homeHeader, { width: screenWidth, marginLeft: -txPad }]}>
         <HomeHeroBackdrop topInset={insets.top} />
         <HomeWelcomeHeader topInset={insets.top} />
-        <View style={[styles.balanceBlock, { paddingHorizontal: balancePad }]}>
+        <View
+          style={[
+            styles.balanceBlock,
+            { paddingHorizontal: balancePad, marginTop: -8 },
+          ]}
+        >
           <BalanceOverviewCard summary={summary} />
+          <HomeCoconutBalanceStrip />
         </View>
         <View style={{ paddingHorizontal: txPad }}>
         {showContactsBanner ? (
@@ -843,25 +885,9 @@ export default function BalancesPrototypeScreen() {
           }}
         >
           <HomeBankTransactionsSection
-            transactionCount={filteredHomeTx.length}
-            loading={!useDemoBankUi && txLoading && transactions.length === 0}
-            linked={linked}
-            useDemoUi={useDemoBankUi}
-            searchQuery={homeSearch}
-            onSearchQueryChange={setHomeSearch}
-            dateFilter={homeDateFilter}
-            onDateFilterChange={setHomeDateFilter}
-            txSource={homeTxSource}
-            onTxSourceChange={setHomeTxSource}
+            hasTransactions={homeTxCount > 0}
             searchActive={homeSearchActive}
             onSearchActivate={activateHomeSearch}
-            onSubmitSearch={() =>
-              router.navigate({
-                pathname: "/(tabs)/bank",
-                params: homeTxSource === "receipts" ? { tab: "receipts" } : {},
-              })
-            }
-            onConnectBank={() => router.push("/setup")}
           />
         </View>
         </View>
@@ -869,6 +895,7 @@ export default function BalancesPrototypeScreen() {
     ),
     [
       insets.top,
+      screenWidth,
       balancePad,
       txPad,
       summary,
@@ -876,15 +903,32 @@ export default function BalancesPrototypeScreen() {
       theme,
       dismissContactsBanner,
       handleConnectContacts,
-      filteredHomeTx.length,
+      homeTxCount,
+      homeSearchActive,
+      activateHomeSearch,
+    ],
+  );
+
+  const homeListEmpty = useMemo(
+    () =>
+      !homeSearchActive ? (
+        <HomeBankTransactionsEmpty
+          loading={!useDemoBankUi && txLoading && transactions.length === 0}
+          linked={linked}
+          useDemoUi={useDemoBankUi}
+          searchQuery={homeSearch}
+          txSource={homeTxSource}
+          onConnectBank={() => router.push("/setup")}
+        />
+      ) : null,
+    [
+      homeSearchActive,
       useDemoBankUi,
       txLoading,
+      transactions.length,
       linked,
       homeSearch,
-      homeSearchActive,
-      homeDateFilter,
       homeTxSource,
-      activateHomeSearch,
     ],
   );
 
@@ -893,17 +937,22 @@ export default function BalancesPrototypeScreen() {
     [],
   );
 
-  const listContentStyle = useMemo(
-    () => [
+  const listContentStyle = useMemo(() => {
+    const tabBarClearance =
+      tabBarHeight > 0 ? tabBarHeight : homeListBottomPadding(insets.bottom);
+    const hasHomeTxList = homeTxCount > 0;
+    const paddingBottom =
+      tabBarClearance + (hasHomeTxList ? HOME_TX_FOOTER_EXTRA + 24 : 24);
+    return [
       styles.scrollContent,
       {
         paddingHorizontal: txPad,
         paddingRight: homeListPaddingRight(txPad),
-        paddingBottom: homeScrollBottom,
+        paddingBottom,
+        ...(hasHomeTxList ? {} : { flexGrow: 1 }),
       },
-    ],
-    [txPad, homeScrollBottom],
-  );
+    ];
+  }, [txPad, tabBarHeight, insets.bottom, homeTxCount]);
 
   if (initialHomeLoading) {
     return (
@@ -945,8 +994,8 @@ export default function BalancesPrototypeScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderHomeTx}
           ListHeaderComponent={homeListHeader}
-          ListFooterComponent={filteredHomeTx.length > 0 ? HomeTransactionsFooter : null}
-          ItemSeparatorComponent={HomeTxSeparator}
+          ListEmptyComponent={homeListEmpty}
+          ListFooterComponent={homeTxCount > 0 ? HomeTxListFooter : null}
           contentContainerStyle={listContentStyle}
           style={styles.flex1}
           showsVerticalScrollIndicator={false}
@@ -1528,8 +1577,28 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   flex1: { flex: 1 },
   scrollContent: { paddingHorizontal: 22, paddingRight: 76 },
-  txGap: {
-    height: 0,
+  homeTxGroupCell: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+  },
+  homeTxGroupFirst: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+  },
+  homeTxGroupSep: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 12,
+  },
+  homeTxGroupFooter: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    overflow: "hidden",
+    marginBottom: 8,
   },
   homeHeader: {
     position: "relative",

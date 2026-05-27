@@ -69,9 +69,12 @@ function _applyResponseMeta(res: Response) {
   }
 }
 
-function _applyTransactions(data: unknown): number {
+function _applyTransactions(data: unknown, opts?: { allowEmpty?: boolean }): number {
   if (!Array.isArray(data)) return _sharedTx.length;
   const mapped = (data as unknown[]).map(_mapRawTransaction);
+  if (mapped.length === 0 && _sharedTx.length > 0 && !opts?.allowEmpty) {
+    return _sharedTx.length;
+  }
   _sharedTx = mapped;
   _sharedLinked = true;
   _sharedStatus = "ok";
@@ -103,7 +106,7 @@ function _shouldBackgroundSyncAfterFetch(needsSync: boolean, txCount: number): b
 let _hydratePromise: Promise<void> | null = null;
 
 export function hydrateTransactionCache(): Promise<void> {
-  if (_sharedHasLoaded) return Promise.resolve();
+  if (_sharedTx.length > 0) return Promise.resolve();
   if (_hydratePromise) return _hydratePromise;
 
   _hydratePromise = (async () => {
@@ -111,7 +114,7 @@ export function hydrateTransactionCache(): Promise<void> {
       getPersistedResponse("/api/plaid/status"),
       getPersistedResponse("/api/plaid/transactions"),
     ]);
-    if (_sharedHasLoaded) return;
+    if (_sharedTx.length > 0) return;
     if (!statusCache) return;
     try {
       const statusData = JSON.parse(statusCache.body);
@@ -341,6 +344,9 @@ export function useTransactions() {
             return;
           }
           if (!statusRes.ok) {
+            if (_sharedLinked && (_sharedTx.length > 0 || _sharedHasLoaded)) {
+              return;
+            }
             _sharedLinked = false;
             _notify();
             return;
@@ -405,7 +411,7 @@ export function useTransactions() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
-      void fetchData(true);
+      void hydrateTransactionCache().then(() => fetchData(true));
     });
     return () => sub.remove();
   }, [fetchData, apiFetch]);
@@ -432,6 +438,7 @@ export function useTransactions() {
     linked,
     loading,
     status,
+    hasCachedData: _sharedHasLoaded || transactions.length > 0,
     refetch: fetchData,
     runFullSync,
   };

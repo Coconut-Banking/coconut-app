@@ -10,6 +10,15 @@ describe("parseReceiptUploadError", () => {
     expect(r.message).toBe("This looks like a regular photo.");
   });
 
+  it("maps session unavailable", () => {
+    const r = parseReceiptUploadError(
+      { error: "Session token unavailable" },
+      425,
+    );
+    expect(r.code).toBe("session_unavailable");
+    expect(r.message).toMatch(/session/i);
+  });
+
   it("defaults generic", () => {
     const r = parseReceiptUploadError({ error: "Server error" });
     expect(r.code).toBe("generic");

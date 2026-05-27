@@ -29,6 +29,27 @@ type ApiFetch = (
   opts?: { method?: string; body?: object | FormData; headers?: HeadersInit }
 ) => Promise<Response>;
 
+const RECEIPT_PARSE_ATTEMPTS = 6;
+
+async function postReceiptParse(
+  apiFetch: ApiFetch,
+  formData: FormData,
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < RECEIPT_PARSE_ATTEMPTS; attempt++) {
+    const res = await apiFetch("/api/receipt/parse", {
+      method: "POST",
+      body: formData,
+    });
+    last = res;
+    if (res.status !== 425) return res;
+    if (attempt < RECEIPT_PARSE_ATTEMPTS - 1) {
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  return last!;
+}
+
 export function useReceiptSplit(apiFetch: ApiFetch) {
   return useReceiptSplitInternal(apiFetch, { demo: false });
 }
@@ -143,10 +164,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           name: prepared.name,
         } as unknown as Blob);
 
-        const res = await apiFetch("/api/receipt/parse", {
-          method: "POST",
-          body: formData,
-        });
+        const res = await postReceiptParse(apiFetch, formData);
 
         // Parse body once; non-JSON error bodies (413/504) must not throw SyntaxError.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,7 +175,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           throw new Error(`Server error (${res.status})`);
         }
         if (!res.ok) {
-          const parsed = parseReceiptUploadError(data);
+          const parsed = parseReceiptUploadError(data, res.status);
           setUploadErrorCode(parsed.code);
           throw new Error(parsed.message);
         }
@@ -344,11 +362,11 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         groupId?: string | null;
         groupName?: string | null;
       }
-    ) => {
+    ): boolean => {
       const trimmed = name.trim();
-      if (!trimmed) return;
+      if (!trimmed) return false;
       if (people.some((p) => p.name.toLowerCase() === trimmed.toLowerCase()))
-        return;
+        return false;
       setPeople((prev) => [
         ...prev,
         {
@@ -360,6 +378,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           groupName: opts?.groupName ?? null,
         },
       ]);
+      return true;
     },
     [people]
   );

@@ -24,6 +24,23 @@ export const HomeCoconutBalanceStrip = React.memo(function HomeCoconutBalanceStr
   const currency = wallet?.currency ?? "USD";
   const available = wallet?.available ?? 0;
   const pending = wallet?.pending ?? 0;
+  const heldBeforeSetup = wallet?.coconutHeld ?? 0;
+  const showHeldNote =
+    (wallet?.chargesEnabled ?? false) && heldBeforeSetup > 0.005;
+  const hasBalance =
+    available > 0.005 || pending > 0.005 || heldBeforeSetup > 0.005 || loading;
+
+  if (!hasBalance && wallet && !wallet.canSetupPayouts) {
+    return null;
+  }
+
+  const hint = wallet?.chargesEnabled
+    ? showHeldNote
+      ? `${formatSplitCurrencyAmount(heldBeforeSetup, currency)} collected before payout setup`
+      : "Real money · tap to cash out"
+    : heldBeforeSetup > 0.005
+      ? "Set up payouts to send to your bank"
+      : "Tap to Pay and links add here";
 
   return (
     <Pressable
@@ -48,8 +65,8 @@ export const HomeCoconutBalanceStrip = React.memo(function HomeCoconutBalanceStr
         </View>
         <View style={styles.textCol}>
           <Text style={[styles.label, { color: home.balanceLabel }]}>COCONUT BALANCE</Text>
-          <Text style={[styles.hint, { color: theme.textTertiary }]} numberOfLines={1}>
-            Cash collected · tap to manage
+          <Text style={[styles.hint, { color: theme.textTertiary }]} numberOfLines={2}>
+            {hint}
           </Text>
         </View>
       </View>
@@ -79,6 +96,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginTop: 10,
     marginBottom: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,

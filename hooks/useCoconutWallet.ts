@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DeviceEventEmitter } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import * as WebBrowser from "expo-web-browser";
+import { openConnectCashOut } from "../lib/stripe-connect-actions";
 import { Alert } from "react-native";
 import { useApiFetch, invalidateApiCache } from "../lib/api";
 import { TAP_TO_PAY_SETTLED_EVENT } from "../lib/tap-to-pay-events";
@@ -11,6 +11,7 @@ export type CoconutWallet = {
   available: number;
   pending: number;
   coconutHeld: number;
+  totalCollected: number;
   stripeAvailable: number | null;
   stripePending: number | null;
   hasAccount: boolean;
@@ -64,23 +65,18 @@ export function useCoconutWallet(enabled = true) {
   const openCashOut = useCallback(async () => {
     if (!wallet?.canCashOut) {
       Alert.alert(
-        "Set up payouts",
-        "Finish payment setup in Account to transfer funds to your bank."
+        wallet?.chargesEnabled && !wallet?.payoutsEnabled
+          ? "Add your bank"
+          : "Set up payouts",
+        wallet?.chargesEnabled && !wallet?.payoutsEnabled
+          ? "Finish bank setup in Account to transfer funds."
+          : "Finish payment setup in Account to transfer funds to your bank."
       );
       return;
     }
     setCashOutLoading(true);
     try {
-      const res = await apiFetch("/api/stripe/connect/dashboard-link", {
-        method: "POST",
-        body: {},
-      });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        Alert.alert("Cash out", data.error ?? "Could not open payout settings.");
-        return;
-      }
-      await WebBrowser.openBrowserAsync(data.url);
+      await openConnectCashOut(apiFetch);
       void refresh();
     } catch {
       Alert.alert("Cash out", "Check your connection and try again.");

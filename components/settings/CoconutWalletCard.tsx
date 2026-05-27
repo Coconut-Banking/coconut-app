@@ -18,7 +18,17 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
   const currency = wallet?.currency ?? "USD";
   const available = wallet?.available ?? 0;
   const pending = wallet?.pending ?? 0;
-  const heldOnCoconut = !wallet?.chargesEnabled && (wallet?.coconutHeld ?? 0) > 0;
+  const coconutHeld = wallet?.coconutHeld ?? 0;
+  const showHeldLine =
+    (wallet?.chargesEnabled ?? false) && coconutHeld > 0.005;
+
+  const blurb = wallet?.chargesEnabled
+    ? wallet.payoutsEnabled
+      ? "Available in your payment account"
+      : "Add your bank to transfer this balance"
+    : coconutHeld > 0.005
+      ? "Held in Coconut until you set up payouts"
+      : "Tap to Pay and payment links add to this balance";
 
   return (
     <View
@@ -55,12 +65,21 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
             {formatSplitCurrencyAmount(available, currency)}
           </Text>
           <Text style={[s.sectionBlurb, { color: theme.textTertiary, marginTop: 4 }]}>
-            {wallet?.chargesEnabled
-              ? "Available in your payment account"
-              : heldOnCoconut
-                ? "Held in Coconut until you set up payouts"
-                : "Tap to Pay and payment links add to this balance"}
+            {blurb}
           </Text>
+
+          {showHeldLine ? (
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: font.medium,
+                color: theme.textSecondary,
+                marginTop: 8,
+              }}
+            >
+              {formatSplitCurrencyAmount(coconutHeld, currency)} collected before payout setup
+            </Text>
+          ) : null}
 
           {pending > 0.005 ? (
             <Text
@@ -107,7 +126,11 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
                 {setupLoading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={s.primaryBtnText}>Set up payouts</Text>
+                  <Text style={s.primaryBtnText}>
+                    {wallet?.chargesEnabled && !wallet?.payoutsEnabled
+                      ? "Add bank account"
+                      : "Set up payouts"}
+                  </Text>
                 )}
               </TouchableOpacity>
             ) : null}
@@ -130,9 +153,11 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
               payment links). Settling up on a split reduces what friends owe you; collecting payment adds here.
             </Text>
             <Text style={{ fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, lineHeight: 18 }}>
-              {wallet?.chargesEnabled
+              {wallet?.canCashOut
                 ? "Cash out opens Stripe to send money to your bank. Standard transfer is usually 2–4 business days; instant payout may be available with a fee."
-                : "After payout setup, new Tap to Pay deposits here automatically. You can cash out to your bank from Stripe."}
+                : wallet?.chargesEnabled && !wallet?.payoutsEnabled
+                  ? "Your payment account is ready — add a bank account to cash out."
+                  : "After payout setup, new Tap to Pay deposits here automatically. You can cash out to your bank from Stripe."}
             </Text>
           </View>
         </>

@@ -733,21 +733,20 @@ function PayScreenInner() {
       } else {
         logPaymentIntentStep("after process (success)", processResult.paymentIntent);
 
-        if (params.groupId && params.payerMemberId && params.receiverMemberId) {
+        const paymentIntentId = processResult.paymentIntent?.id;
+        if (
+          paymentIntentId &&
+          params.groupId &&
+          params.payerMemberId &&
+          params.receiverMemberId
+        ) {
           try {
-            const settleRes = await apiFetch("/api/settlements", {
+            const settleRes = await apiFetch("/api/stripe/terminal/record-settlement", {
               method: "POST",
-              body: {
-                groupId: params.groupId,
-                payerMemberId: params.payerMemberId,
-                receiverMemberId: params.receiverMemberId,
-                amount: amt,
-                method: "in_person",
-                currency: params.currency ?? "USD",
-              },
+              body: { paymentIntentId },
             });
             if (settleRes.ok) {
-              if (__DEV__) console.log("[Pay] settlement recorded directly");
+              if (__DEV__) console.log("[Pay] stripe settlement recorded (idempotent)");
             } else {
               const errData = await settleRes.json().catch(() => ({}));
               if (__DEV__) console.warn("[Pay] settlement recording failed:", errData);

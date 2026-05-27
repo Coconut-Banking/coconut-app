@@ -12,6 +12,7 @@ import {
   writeCache,
   invalidateApiCache,
   bumpCacheGeneration,
+  postShouldBumpCacheGeneration,
   getCacheTtl,
   shouldPersist,
   _responseCache,
@@ -22,6 +23,13 @@ import {
 
 beforeEach(() => {
   __resetForTests();
+});
+
+describe("postShouldBumpCacheGeneration", () => {
+  test("skips nuclear bump for Plaid cursor sync POST", () => {
+    expect(postShouldBumpCacheGeneration("/api/plaid/transactions")).toBe(false);
+    expect(postShouldBumpCacheGeneration("/api/groups")).toBe(true);
+  });
 });
 
 describe("cache generation", () => {

@@ -1,4 +1,16 @@
+import { Platform } from "react-native";
 import { HOME_LAYOUT } from "./home-typography";
+
+/** Matches CoconutTabBar: paddingTop 8 + row ~56 + label gap + bottom safe pad. */
+export function homeTabBarHeight(bottomInset: number): number {
+  const bottomPad = Math.max(bottomInset, Platform.OS === "ios" ? 10 : 8) + 10;
+  return 8 + 56 + bottomPad + 6;
+}
+
+/** FlatList bottom padding so the last tx row clears the tab bar + FAB column. */
+export function homeListBottomPadding(bottomInset: number): number {
+  return homeTabBarHeight(bottomInset) + 40;
+}
 
 /** Figma frame FINAL HOME TENTATIVE is 402×874 (node 138:1929). */
 export const HOME_FIGMA_WIDTH = HOME_LAYOUT.screenWidth;
@@ -27,12 +39,20 @@ export function homeListPaddingRight(horizontal: number): number {
 /** Figma: coconut notification shell ~24px from right edge (x=330 on 402w frame). */
 export const HOME_NOTIF_RIGHT = 24;
 
-/** Figma: profile top y=64 on full frame — ~5–8pt below typical status bar in mock. */
+/**
+ * Figma frame: avatar top y=64 on 874pt artboard (status bar included in frame).
+ * Map to device: small gap below safe area, not double-counting inset in wave height.
+ */
 export function homeAvatarTopOffset(topInset: number): number {
-  return topInset + 5;
+  return Math.max(topInset, 47) + 8;
 }
 
-/** Figma: notification group top y=72. */
+/** Figma: notification shell top y=72. */
 export function homeNotifTopOffset(topInset: number): number {
-  return topInset + 13;
+  return Math.max(topInset, 47) + 16;
+}
+
+/** Space for avatar (64) + gap before balance label (Figma label y≈150, avatar bottom ≈128). */
+export function homeHeaderContentHeight(topInset: number): number {
+  return homeAvatarTopOffset(topInset) + 64 + 18;
 }

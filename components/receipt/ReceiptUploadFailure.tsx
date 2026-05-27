@@ -25,6 +25,7 @@ export function ReceiptUploadFailure({
   const { theme } = useTheme();
   const shell = useCoconutShell();
   const isNotReceipt = code === "not_a_receipt";
+  const isSession = code === "session_unavailable";
 
   return (
     <View style={styles.wrap}>
@@ -41,19 +42,33 @@ export function ReceiptUploadFailure({
           style={[
             styles.iconCircle,
             {
-              backgroundColor: isNotReceipt ? shell.mintWash : "rgba(121, 12, 0, 0.08)",
+              backgroundColor: isNotReceipt
+                ? shell.mintWash
+                : isSession
+                  ? shell.mintWash
+                  : "rgba(121, 12, 0, 0.08)",
             },
           ]}
         >
           <Ionicons
-            name={isNotReceipt ? "receipt-outline" : "alert-circle-outline"}
+            name={
+              isNotReceipt
+                ? "receipt-outline"
+                : isSession
+                  ? "time-outline"
+                  : "alert-circle-outline"
+            }
             size={36}
-            color={isNotReceipt ? shell.cta : theme.error}
+            color={isNotReceipt || isSession ? shell.cta : theme.error}
           />
         </View>
 
         <Text style={[styles.title, { color: theme.text }]}>
-          {isNotReceipt ? "No receipt found" : "Couldn't read receipt"}
+          {isNotReceipt
+            ? "No receipt found"
+            : isSession
+              ? "Almost ready"
+              : "Couldn't read receipt"}
         </Text>
         <Text style={[styles.message, { color: theme.textSecondary }]}>
           {message}

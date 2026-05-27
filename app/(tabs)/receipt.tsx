@@ -8,10 +8,9 @@ import {
   ScrollView,
   Alert,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Share,
   DeviceEventEmitter,
+  Keyboard,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -19,7 +18,8 @@ import { receiptImagePickerOptions } from "../../lib/receipt-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import { useApiFetch } from "../../lib/api";
+import { useAuth } from "@clerk/expo";
+import { useApiFetch, SKIP_AUTH } from "../../lib/api";
 import { useReceiptSplitWithOptions, type Step } from "../../hooks/useReceiptSplit";
 import { useTheme } from "../../lib/theme-context";
 import { colors, font, fontSize, shadow, radii, space } from "../../lib/theme";
@@ -41,6 +41,11 @@ import {
   type TapToPaySettledPayload,
 } from "../../lib/tap-to-pay-events";
 import { dedupePeopleList } from "../../lib/group-people-dedupe";
+import {
+  receiptPersonAccent,
+  receiptPersonAvatarBg,
+  receiptPersonTint,
+} from "../../lib/receipt-person-palette";
 import { ReceiptUploadFailure } from "../../components/receipt/ReceiptUploadFailure";
 
 const STEPS: { key: Step; label: string }[] = [
@@ -50,8 +55,9 @@ const STEPS: { key: Step; label: string }[] = [
   { key: "summary", label: "Summary" },
 ];
 
-const PC = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#FF5A5F", "#9B59B6", "#334155"];
-function pColor(i: number) { return PC[i % PC.length]; }
+function normalizePersonName(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, " ");
+}
 
 // Demo-only: compute minimal settlement suggestions (paid vs owed) so Summary feels real.
 type DemoMemberBalance = { memberId: string; paid: number; owed: number; total: number };
@@ -122,6 +128,270 @@ type Contact = {
   hasAccount: boolean;
 };
 
+
+/* ═══════════════════ Styles ═══════════════════ */
+
+const st = StyleSheet.create({
+  safe: { flex: 1 },
+  receiptTopBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  topBarTitle: { fontSize: 17, fontFamily: font.bold, fontWeight: "700", letterSpacing: -0.3 },
+  progressRow: { flexDirection: "row", gap: 6, paddingHorizontal: 20, paddingBottom: 14 },
+  progressSegWrap: { flex: 1, gap: 4 },
+  progressSeg: { height: 3, borderRadius: 2, backgroundColor: colors.borderLight },
+  progressSegLabel: { fontSize: 10, fontFamily: font.medium, fontWeight: "500", textAlign: "center", color: colors.textMuted },
+  kv: { flex: 1 },
+  scroll: { flex: 1, backgroundColor: colors.bg },
+  scrollContent: { padding: 20, paddingBottom: 60 },
+
+  center: { alignItems: "center", paddingVertical: 48 },
+  centerText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
+  errorText: { fontSize: 14, fontFamily: font.regular, color: colors.red, marginBottom: 16 },
+
+  savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
+  savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
+  savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
+  uploadCard: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    gap: 10,
+  },
+  uploadIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  uploadTitle: { fontSize: 18, fontFamily: font.bold, textAlign: "center" },
+  uploadSub: { fontSize: 13, fontFamily: font.regular, textAlign: "center", marginBottom: 8 },
+  uploadPrimary: {
+    alignSelf: "stretch",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: radii.lg,
+    marginTop: 4,
+  },
+  uploadPrimaryText: { fontSize: 16, fontFamily: font.semibold },
+  uploadSecondary: {
+    alignSelf: "stretch",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  uploadSecondaryText: { fontSize: 14, fontFamily: font.semibold },
+  uploadProgress: { paddingVertical: 32, alignItems: "center" },
+  uploadProgressCard: {
+    alignSelf: "stretch",
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    gap: 10,
+  },
+  uploadProgressTitle: { fontSize: 17, fontFamily: font.bold, marginTop: 8 },
+  uploadProgressSub: { fontSize: 14, fontFamily: font.regular },
+
+  label: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
+  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: font.regular, color: colors.text },
+
+  // Review — editable item cards
+  itemCard: { backgroundColor: colors.surface, borderRadius: radii.md, padding: 12, marginBottom: 8, ...shadow.md },
+  itemTop: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  itemNameInput: { flex: 1, fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 4 },
+  itemBottom: { flexDirection: "row", alignItems: "center", gap: 6 },
+  stepper: { flexDirection: "row", alignItems: "center", backgroundColor: colors.borderLight, borderRadius: radii.sm, overflow: "hidden" },
+  stepperBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  stepperVal: { fontSize: 14, fontFamily: font.bold, fontWeight: "700", color: colors.text, minWidth: 20, textAlign: "center" },
+  itemX: { fontSize: 14, fontFamily: font.regular, color: colors.textMuted },
+  priceWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radii.sm, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.borderSubtle },
+  pricePre: { fontSize: 13, fontFamily: font.semibold, color: colors.textMuted, fontWeight: "600" },
+  priceInput: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text, paddingVertical: 4, minWidth: 50 },
+  itemEquals: { fontSize: 14, fontFamily: font.regular, color: colors.textMuted },
+  itemTotal: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
+  addItemBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed" },
+  addItemText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
+
+  // Totals
+  totalsCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, gap: 10, ...shadow.md },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  totalLabel: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary },
+  totalVal: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
+  totalInputWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radii.sm, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.borderSubtle },
+  totalPre: { fontSize: 13, fontFamily: font.semibold, color: colors.textMuted, fontWeight: "600" },
+  totalInput: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text, paddingVertical: 6, width: 70, textAlign: "right" },
+  totalDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
+  totalFinalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  totalFinalLabel: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
+  totalFinalValue: { fontSize: 18, fontFamily: font.black, fontWeight: "900", color: colors.text },
+
+  // Assign — people (inline chip row)
+  peopleCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  peopleInlineRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  peopleInlineLabel: { fontSize: 14, fontFamily: font.medium, lineHeight: 26, marginTop: 1 },
+  peopleChipsWrap: { flex: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  personChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingLeft: 8,
+    paddingRight: 4,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  personAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  personAvatarText: { fontSize: 8, fontFamily: font.bold, fontWeight: "700" },
+  personChipText: { fontFamily: font.semibold, fontWeight: "600", fontSize: 13 },
+  peopleInlineInput: {
+    flex: 1,
+    minWidth: 96,
+    fontSize: 14,
+    fontFamily: font.regular,
+    paddingVertical: 4,
+  },
+  duplicateHint: { fontSize: 12, fontFamily: font.regular, marginTop: 2 },
+  addPersonRow: { flexDirection: "row", gap: 8 },
+  searchInput: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, fontFamily: font.regular, color: colors.text },
+  addBtn: { width: 44, height: 44, borderRadius: radii.md, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  dropdown: { borderRadius: radii.md, overflow: "hidden", marginTop: 4, borderWidth: 1 },
+  dropdownRow: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
+  dropdownName: { fontSize: 15, fontFamily: font.medium, fontWeight: "500", color: colors.text, flex: 1 },
+  dropdownEmail: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted },
+  dropdownAdd: { fontSize: 14, fontFamily: font.semibold, color: colors.primary, fontWeight: "600" },
+  dropdownDisabled: { fontSize: 13, fontFamily: font.regular, fontStyle: "italic" },
+
+  // Assign — item cards
+  emptyAssign: { alignItems: "center", paddingVertical: 24, gap: 8 },
+  emptyAssignText: { fontSize: 13, fontFamily: font.regular, color: colors.textFaint },
+  assignCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14, marginBottom: 8, ...shadow.md },
+  assignCardDone: {},
+  assignCardWarn: { backgroundColor: "#FFFBEB" },
+  assignCardTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  assignItemName: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
+  assignItemMeta: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 3 },
+  everyoneBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, backgroundColor: colors.primaryLight },
+  everyoneBtnText: { fontSize: 12, fontFamily: font.bold, color: colors.primary, fontWeight: "700" },
+  assignChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  assignChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii["2xl"] },
+  assignChipOff: { backgroundColor: colors.borderLight },
+  assignChipText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: colors.textTertiary },
+
+  // Running totals
+  runningTotals: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14, ...shadow.md },
+  runningRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 },
+  runningDot: { width: 10, height: 10, borderRadius: 5 },
+  runningName: { flex: 1, fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text },
+  runningAmount: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
+
+  // Summary
+  summaryTitle: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary },
+  shareCard: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
+  shareHeader: { flexDirection: "row", alignItems: "center", padding: 14, gap: 10, backgroundColor: colors.surfaceRaised },
+  shareAv: { width: 32, height: 32, borderRadius: radii.xl, alignItems: "center", justifyContent: "center" },
+  shareAvText: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: "#fff" },
+  shareName: { fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, flex: 1 },
+  shareTotal: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
+  shareItems: { paddingHorizontal: 14, paddingVertical: 8 },
+  shareItemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
+  shareItemName: { fontSize: 12, fontFamily: font.regular, color: colors.textTertiary },
+  shareItemAmt: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
+
+  actionCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, gap: 10, ...shadow.md },
+  actionTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
+  actionSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted },
+  groupPicker: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  groupChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.sm, backgroundColor: colors.borderLight },
+  groupChipOn: { backgroundColor: colors.primaryLight },
+  groupChipText: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.textTertiary },
+
+  successCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.greenSurface, padding: 16, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.greenBorder },
+  successText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700", color: colors.greenDark },
+  suggRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.borderSubtle },
+  suggText: { fontSize: 13, fontFamily: font.regular, color: colors.textSecondary, flex: 1 },
+  suggBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  suggBtnGreen: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  suggBtnText: { fontSize: 12, fontFamily: font.medium, fontWeight: "500", color: colors.textTertiary },
+  suggBtnGreenText: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
+  suggBtnTap: { borderColor: colors.blue, backgroundColor: colors.blueBg },
+  suggBtnTapText: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.blue },
+
+  // Shared
+  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.primary, paddingVertical: 13, paddingHorizontal: 20, borderRadius: radii.md },
+  btnText: { color: "#fff", fontFamily: font.bold, fontWeight: "700", fontSize: 15 },
+  btnOff: { opacity: 0.4 },
+  btnOutline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, paddingHorizontal: 20, borderRadius: radii.md, borderWidth: 2, borderColor: colors.primary },
+  btnOutlineText: { color: colors.primary, fontFamily: font.bold, fontWeight: "700", fontSize: 15 },
+  nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 12 },
+  navBack: { flexDirection: "row", alignItems: "center", gap: 4 },
+  navBackText: { fontSize: 14, fontFamily: font.medium, color: colors.textTertiary, fontWeight: "500" },
+});
+
+const smst = StyleSheet.create({
+  receiptCard: { borderRadius: radii.lg, padding: 18, borderWidth: 1, gap: 4 },
+  receiptMeta: { fontSize: 13, fontFamily: font.regular },
+  receiptTotal: { fontSize: 32, fontFamily: font.black, fontWeight: "900", letterSpacing: -1 },
+  receiptPaid: { fontSize: 13, fontFamily: font.regular },
+  personCard: { borderRadius: radii.lg, padding: 16, borderWidth: 1, gap: 12, ...shadow.md },
+  personHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  personName: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
+  personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
+  personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
+  personActions: { flexDirection: "row", gap: 8 },
+  actionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 11,
+    borderRadius: radii.xl,
+    borderWidth: 1.5,
+  },
+  actionBtnPrimary: { borderWidth: 0 },
+  actionBtnText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+  },
+  exportBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
+  doneBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: radii.xl },
+  doneBtnText: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
+});
+
 export default function ReceiptScreen() {
   const { pendingScanUri, pendingScanMime, pendingScanName } = useLocalSearchParams<{
     pendingScanUri?: string;
@@ -129,12 +399,40 @@ export default function ReceiptScreen() {
     pendingScanName?: string;
   }>();
   const { theme } = useTheme();
+  const { isLoaded, isSignedIn } = useAuth();
   const apiFetch = useApiFetch();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
   const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
   const scrollRef = useRef<ScrollView>(null);
+  const authReady = SKIP_AUTH || isDemoOn || (isLoaded && isSignedIn);
+  const pendingUploadRef = useRef<{
+    uri: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
+
+  const runPendingUpload = useCallback(
+    (payload: { uri: string; mimeType: string; name: string }) => {
+      if (!authReady || rs.uploading) {
+        pendingUploadRef.current = payload;
+        return;
+      }
+      pendingUploadRef.current = null;
+      void rs.uploadReceipt(payload.uri, {
+        mimeType: payload.mimeType,
+        name: payload.name,
+      });
+    },
+    [authReady, rs.uploading, rs.uploadReceipt],
+  );
+
+  useEffect(() => {
+    const pending = pendingUploadRef.current;
+    if (!pending || !authReady || rs.uploading) return;
+    runPendingUpload(pending);
+  }, [authReady, rs.uploading, runPendingUpload]);
 
   useFocusEffect(
     useCallback(() => {
@@ -154,13 +452,13 @@ export default function ReceiptScreen() {
           pendingScanName: undefined,
         });
       }
-      void rs.uploadReceipt(uri, { mimeType, name });
+      runPendingUpload({ uri, mimeType, name });
     }, [
       rs.uploading,
-      rs.uploadReceipt,
       pendingScanUri,
       pendingScanMime,
       pendingScanName,
+      runPendingUpload,
     ])
   );
 
@@ -174,22 +472,25 @@ export default function ReceiptScreen() {
       <CoconutFlowHeader title="Split receipt" onClose={goBack} leftIcon="back" />
       <CoconutProgressSteps steps={STEPS} currentIndex={stepIdx} />
 
-      <KeyboardAvoidingView style={st.kv} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
+      <Pressable style={st.kv} onPress={Keyboard.dismiss} accessible={false}>
         <ScrollView
           ref={scrollRef}
           style={[st.scroll, { backgroundColor: theme.background }]}
           contentContainerStyle={st.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
           automaticallyAdjustKeyboardInsets
         >
 
-        {rs.step === "upload" && <UploadStep rs={rs} onGoBack={goBack} />}
+        {rs.step === "upload" && (
+          <UploadStep rs={rs} onGoBack={goBack} onUploadImage={runPendingUpload} />
+        )}
         {rs.step === "review" && <ReviewStep rs={rs} />}
         {rs.step === "assign" && <AssignStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
         {rs.step === "summary" && <SummaryStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </Pressable>
     </CoconutScreen>
   );
 }
@@ -199,9 +500,11 @@ export default function ReceiptScreen() {
 function UploadStep({
   rs,
   onGoBack,
+  onUploadImage,
 }: {
   rs: ReturnType<typeof useReceiptSplitWithOptions>;
   onGoBack: () => void;
+  onUploadImage: (payload: { uri: string; mimeType: string; name: string }) => void;
 }) {
   const { theme } = useTheme();
   const shell = useCoconutShell();
@@ -220,7 +523,11 @@ function UploadStep({
     if (!asset?.uri) return;
     const mimeType = asset.mimeType ?? "image/jpeg";
     const ext = (mimeType.split("/")[1] ?? "jpg").replace("heif", "heic");
-    await rs.uploadReceipt(asset.uri, { mimeType, name: `receipt.${ext}` });
+    onUploadImage({
+      uri: asset.uri,
+      mimeType,
+      name: `receipt.${ext}`,
+    });
   };
 
   if (rs.uploading) {
@@ -513,20 +820,26 @@ function AssignStep({
   isDemoOn: boolean;
   demo: ReturnType<typeof useDemoData>;
 }) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [search, setSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [duplicateHint, setDuplicateHint] = useState<string | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+
+  const addedNameKeys = useMemo(
+    () => new Set(rs.people.map((p) => normalizePersonName(p.name))),
+    [rs.people]
+  );
 
   const filteredItems = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     if (!q) return rs.itemsWithExtras;
-    return rs.itemsWithExtras.filter(item => item.name.toLowerCase().includes(q));
+    return rs.itemsWithExtras.filter((item) => item.name.toLowerCase().includes(q));
   }, [rs.itemsWithExtras, itemSearch]);
 
   useEffect(() => {
     if (isDemoOn) {
-      // Demo contacts come from demo group member lists.
       const groups = Object.values(demo.groupDetails ?? {});
       const contactsBuilt: Contact[] = [];
       for (const g of groups) {
@@ -551,26 +864,93 @@ function AssignStep({
       .catch(() => {});
   }, [apiFetch, isDemoOn, demo]);
 
+  const availableContacts = useMemo(
+    () =>
+      contacts.filter(
+        (c) => !addedNameKeys.has(normalizePersonName(c.displayName))
+      ),
+    [contacts, addedNameKeys]
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return contacts.slice(0, 6);
-    return contacts.filter(c => c.displayName.toLowerCase().includes(q)).slice(0, 6);
-  }, [contacts, search]);
+    if (!q) return availableContacts.slice(0, 6);
+    return availableContacts
+      .filter((c) => c.displayName.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [availableContacts, search]);
+
+  const trimmedSearch = search.trim();
+  const searchKey = normalizePersonName(trimmedSearch);
+  const searchIsDuplicate = searchKey.length > 0 && addedNameKeys.has(searchKey);
+  const exactContactMatch = useMemo(
+    () =>
+      trimmedSearch
+        ? contacts.find(
+            (c) => normalizePersonName(c.displayName) === searchKey
+          )
+        : undefined,
+    [contacts, trimmedSearch, searchKey]
+  );
+
+  const tryAddPerson = useCallback(
+    (
+      name: string,
+      opts?: {
+        memberId?: string | null;
+        email?: string | null;
+        hasAccount?: boolean;
+        groupId?: string | null;
+        groupName?: string | null;
+      }
+    ) => {
+      const trimmed = name.trim();
+      if (!trimmed) return false;
+
+      const key = normalizePersonName(trimmed);
+      if (addedNameKeys.has(key)) {
+        setDuplicateHint(`${trimmed} is already at the table`);
+        setSearch("");
+        Keyboard.dismiss();
+        searchInputRef.current?.blur();
+        return false;
+      }
+
+      const added = rs.addPerson(trimmed, opts);
+      setSearch("");
+      setDuplicateHint(null);
+      Keyboard.dismiss();
+      searchInputRef.current?.blur();
+      if (!added) {
+        setDuplicateHint(`${trimmed} is already at the table`);
+      }
+      return added;
+    },
+    [addedNameKeys, rs]
+  );
 
   const addFromContact = (c: Contact) => {
-    rs.addPerson(c.displayName, { memberId: c.memberId, email: c.email, hasAccount: c.hasAccount, groupId: c.groupId, groupName: c.groupName });
-    setSearch("");
+    tryAddPerson(c.displayName, {
+      memberId: c.memberId,
+      email: c.email,
+      hasAccount: c.hasAccount,
+      groupId: c.groupId,
+      groupName: c.groupName,
+    });
   };
 
   const addNew = () => {
-    const name = search.trim();
-    if (!name) return;
-    const match = contacts.find(c => c.displayName.toLowerCase() === name.toLowerCase());
-    if (match) addFromContact(match);
-    else { rs.addPerson(name, { hasAccount: false }); setSearch(""); }
+    if (!trimmedSearch) return;
+    if (exactContactMatch) {
+      addFromContact(exactContactMatch);
+      return;
+    }
+    tryAddPerson(trimmedSearch, { hasAccount: false });
   };
 
-  const unassignedCount = rs.itemsWithExtras.filter(item => (rs.assignments.get(item.id) ?? []).length === 0).length;
+  const unassignedCount = rs.itemsWithExtras.filter(
+    (item) => (rs.assignments.get(item.id) ?? []).length === 0
+  ).length;
   const allAssigned = unassignedCount === 0 && rs.itemsWithExtras.length > 0;
 
   const personTotals = useMemo(() => {
@@ -580,48 +960,179 @@ function AssignStep({
       if (assignees.length === 0) continue;
       const share = item.finalPrice / assignees.length;
       for (const a of assignees) {
-        const key = a.name.toLowerCase();
+        const key = normalizePersonName(a.name);
         totals.set(key, (totals.get(key) ?? 0) + share);
       }
     }
     return totals;
   }, [rs.itemsWithExtras, rs.assignments]);
 
+  const showSuggestions =
+    trimmedSearch.length > 0 &&
+    (filtered.length > 0 || (!searchIsDuplicate && trimmedSearch.length > 0));
+
   return (
     <View style={{ gap: 16 }}>
-      {/* People section */}
-      <View>
-        <Text style={[st.label, { color: theme.textTertiary }]}>People at the table</Text>
-        <View style={st.peopleRow}>
-          {rs.people.map((p, i) => (
-            <TouchableOpacity key={p.name} style={[st.personChip, { backgroundColor: pColor(i) }]} onPress={() => rs.removePerson(p.name)}>
-              <Text style={st.personChipText}>{p.name}</Text>
-              <Ionicons name="close" size={12} color="rgba(255,255,255,0.8)" />
-            </TouchableOpacity>
-          ))}
+      {/* People section — inline chips like Add expense */}
+      <View
+        style={[
+          st.peopleCard,
+          { backgroundColor: theme.surface, borderColor: theme.cardBorder },
+        ]}
+      >
+        <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>
+          People at the table
+        </Text>
+        <View style={st.peopleInlineRow}>
+          <Text style={[st.peopleInlineLabel, { color: theme.textSecondary }]}>
+            With{" "}
+            <Text style={{ fontFamily: font.bold, color: theme.text }}>you</Text>{" "}
+            and:
+          </Text>
+          <View style={st.peopleChipsWrap}>
+            {rs.people.map((p, i) => {
+              const accent = receiptPersonAccent(i);
+              return (
+                <View
+                  key={`${normalizePersonName(p.name)}-${i}`}
+                  style={[
+                    st.personChip,
+                    {
+                      backgroundColor: receiptPersonTint(accent, isDark),
+                      borderColor: `${accent}44`,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      st.personAvatar,
+                      { backgroundColor: receiptPersonAvatarBg(accent, isDark) },
+                    ]}
+                  >
+                    <Text style={[st.personAvatarText, { color: accent }]}>
+                      {p.name.slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[st.personChipText, { color: theme.text }]}>
+                    {p.name}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => rs.removePerson(p.name)}
+                    hitSlop={6}
+                    style={{ padding: 1 }}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={14}
+                      color={theme.textTertiary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+            <TextInput
+              ref={searchInputRef}
+              style={[st.peopleInlineInput, { color: theme.text }]}
+              value={search}
+              onChangeText={(t) => {
+                setSearch(t);
+                if (duplicateHint) setDuplicateHint(null);
+              }}
+              onSubmitEditing={addNew}
+              placeholder={
+                rs.people.length === 0
+                  ? "Search contacts or type a name"
+                  : "Add more…"
+              }
+              placeholderTextColor={theme.inputPlaceholder}
+              autoCorrect={false}
+              returnKeyType="done"
+              blurOnSubmit
+              maxLength={500}
+            />
+          </View>
         </View>
-        <View style={st.addPersonRow}>
-          <TextInput style={[st.searchInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={search} onChangeText={setSearch} placeholder="Search contacts or type a name" placeholderTextColor={theme.inputPlaceholder} onSubmitEditing={addNew} maxLength={500} />
-          <TouchableOpacity style={[st.addBtn, { backgroundColor: theme.primary }, !search.trim() && st.btnOff]} onPress={addNew} disabled={!search.trim()}>
-            <Ionicons name="add" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        {filtered.length > 0 && search.length > 0 && (
-          <View style={[st.dropdown, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {duplicateHint ? (
+          <Text style={[st.duplicateHint, { color: theme.error }]}>
+            {duplicateHint}
+          </Text>
+        ) : null}
+        {showSuggestions ? (
+          <View
+            style={[
+              st.dropdown,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderLight,
+              },
+            ]}
+          >
             {filtered.map((c, i) => (
-              <TouchableOpacity key={`${c.memberId}-${c.email ?? c.displayName}-${i}`} style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => addFromContact(c)}>
-                <Text style={[st.dropdownName, { color: theme.text }]}>{c.displayName}</Text>
-                {c.email && <Text style={[st.dropdownEmail, { color: theme.textQuaternary }]} numberOfLines={1}>{c.email}</Text>}
+              <TouchableOpacity
+                key={`${c.memberId}-${c.email ?? c.displayName}-${i}`}
+                style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]}
+                onPress={() => addFromContact(c)}
+              >
+                <View
+                  style={[
+                    st.personAvatar,
+                    {
+                      backgroundColor: receiptPersonAvatarBg(
+                        receiptPersonAccent(rs.people.length + i),
+                        isDark
+                      ),
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      st.personAvatarText,
+                      { color: receiptPersonAccent(rs.people.length + i) },
+                    ]}
+                  >
+                    {c.displayName.slice(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[st.dropdownName, { color: theme.text }]}>
+                    {c.displayName}
+                  </Text>
+                  {c.email ? (
+                    <Text
+                      style={[st.dropdownEmail, { color: theme.textQuaternary }]}
+                      numberOfLines={1}
+                    >
+                      {c.email}
+                    </Text>
+                  ) : null}
+                </View>
               </TouchableOpacity>
             ))}
-            {search.trim() && !contacts.some(c => c.displayName.toLowerCase() === search.trim().toLowerCase()) && (
-              <TouchableOpacity style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]} onPress={() => { rs.addPerson(search.trim(), { hasAccount: false }); setSearch(""); }}>
-                <Ionicons name="person-add-outline" size={14} color={theme.primary} />
-                <Text style={[st.dropdownAdd, { color: theme.primary }]}>Add "{search.trim()}"</Text>
+            {trimmedSearch && !exactContactMatch && !searchIsDuplicate ? (
+              <TouchableOpacity
+                style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]}
+                onPress={() => tryAddPerson(trimmedSearch, { hasAccount: false })}
+              >
+                <Ionicons name="person-add-outline" size={16} color={theme.accent} />
+                <Text style={[st.dropdownAdd, { color: theme.accent }]}>
+                  Add "{trimmedSearch}"
+                </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
+            {searchIsDuplicate ? (
+              <View style={[st.dropdownRow, { borderBottomColor: theme.borderLight }]}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={16}
+                  color={theme.textQuaternary}
+                />
+                <Text style={[st.dropdownDisabled, { color: theme.textQuaternary }]}>
+                  {trimmedSearch} is already at the table
+                </Text>
+              </View>
+            ) : null}
           </View>
-        )}
+        ) : null}
       </View>
 
       {/* Items with inline assignment */}
@@ -652,7 +1163,7 @@ function AssignStep({
           const isAssigned = assigned.length > 0;
           const isUnassigned = !isAssigned && rs.people.length > 0;
           return (
-            <View key={item.id} style={[st.assignCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }, isAssigned && { borderColor: theme.primaryLight }, isUnassigned && { borderColor: theme.warningLight, backgroundColor: theme.warningLight }]}>
+            <View key={item.id} style={[st.assignCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderLight }, isAssigned && { borderColor: theme.accent }, isUnassigned && { borderColor: theme.warning, backgroundColor: theme.warningLight }]}>
               <View style={st.assignCardTop}>
                 <View style={{ flex: 1 }}>
                   <Text style={[st.assignItemName, { color: theme.text }]}>{item.name}</Text>
@@ -664,26 +1175,59 @@ function AssignStep({
                   </Text>
                 </View>
                 {rs.people.length > 0 && (
-                  <TouchableOpacity style={[st.everyoneBtn, { backgroundColor: theme.primaryLight }]} onPress={() => rs.assignAll(item.id)}>
-                    <Ionicons name="people" size={14} color={theme.primary} />
-                    <Text style={[st.everyoneBtnText, { color: theme.primary }]}>All</Text>
+                  <TouchableOpacity
+                    style={[
+                      st.everyoneBtn,
+                      { backgroundColor: theme.accentMuted },
+                    ]}
+                    onPress={() => rs.assignAll(item.id)}
+                  >
+                    <Ionicons name="people" size={14} color={theme.accent} />
+                    <Text style={[st.everyoneBtnText, { color: theme.accent }]}>
+                      All
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
               {rs.people.length > 0 && (
                 <View style={st.assignChips}>
                   {rs.people.map((person, pIdx) => {
-                    const on = assigned.some(a => a.name.toLowerCase() === person.name.toLowerCase());
+                    const accent = receiptPersonAccent(pIdx);
+                    const on = assigned.some(
+                      (a) =>
+                        normalizePersonName(a.name) ===
+                        normalizePersonName(person.name)
+                    );
                     return (
                       <TouchableOpacity
-                        key={person.name}
-                        style={[st.assignChip, on ? { backgroundColor: pColor(pIdx) } : { backgroundColor: theme.surfaceTertiary }]}
+                        key={`${normalizePersonName(person.name)}-${pIdx}`}
+                        style={[
+                          st.assignChip,
+                          on
+                            ? {
+                                backgroundColor: accent,
+                                borderWidth: 1,
+                                borderColor: accent,
+                              }
+                            : {
+                                backgroundColor: theme.surfaceTertiary,
+                                borderWidth: 1,
+                                borderColor: theme.borderLight,
+                              },
+                        ]}
                         onPress={() => rs.toggleAssignment(item.id, person)}
                         activeOpacity={0.7}
                       >
-                        <Text style={[st.assignChipText, { color: theme.textTertiary }, on && { color: "#fff" }]}>
+                        <Text
+                          style={[
+                            st.assignChipText,
+                            { color: on ? "#FFFCF6" : theme.textSecondary },
+                          ]}
+                        >
                           {person.name}
-                          {on && assigned.length > 1 ? ` $${(item.finalPrice / assigned.length).toFixed(2)}` : ""}
+                          {on && assigned.length > 1
+                            ? ` $${(item.finalPrice / assigned.length).toFixed(2)}`
+                            : ""}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -700,12 +1244,15 @@ function AssignStep({
         <View style={[st.runningTotals, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
           <Text style={[st.label, { color: theme.textTertiary }]}>Running totals</Text>
           {rs.people.map((p, i) => {
-            const total = personTotals.get(p.name.toLowerCase()) ?? 0;
+            const accent = receiptPersonAccent(i);
+            const total = personTotals.get(normalizePersonName(p.name)) ?? 0;
             return (
-              <View key={p.name} style={st.runningRow}>
-                <View style={[st.runningDot, { backgroundColor: pColor(i) }]} />
+              <View key={`${normalizePersonName(p.name)}-${i}`} style={st.runningRow}>
+                <View style={[st.runningDot, { backgroundColor: accent }]} />
                 <Text style={[st.runningName, { color: theme.text }]}>{p.name}</Text>
-                <Text style={[st.runningAmount, { color: theme.text }]}>${total.toFixed(2)}</Text>
+                <Text style={[st.runningAmount, { color: theme.text }]}>
+                  ${total.toFixed(2)}
+                </Text>
               </View>
             );
           })}
@@ -749,21 +1296,6 @@ function AssignStep({
 
 /* ═══════════════════ Step 4: Summary ═══════════════════ */
 
-function buildShareText(merchant: string, personShares: Array<{ name: string; totalOwed: number; items: Array<{ itemName: string; shareAmount: number }> }>, grandTotal: number) {
-  const lines: string[] = [];
-  lines.push(`${merchant || "Receipt"} Split — $${grandTotal.toFixed(2)} total`);
-  lines.push("");
-  for (const p of personShares) {
-    lines.push(`${p.name}: $${p.totalOwed.toFixed(2)}`);
-    for (const item of p.items) {
-      lines.push(`  ${item.itemName} — $${item.shareAmount.toFixed(2)}`);
-    }
-    lines.push("");
-  }
-  lines.push("Sent via Coconut");
-  return lines.join("\n");
-}
-
 function SummaryStep({
   rs,
   apiFetch,
@@ -781,9 +1313,7 @@ function SummaryStep({
   const [finished, setFinished] = useState(false);
   const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ fromMemberId: string; toMemberId: string; fromName: string; toName: string; amount: number }>>([]);
-  const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
-  const [recordedSettlements, setRecordedSettlements] = useState<Set<string>>(new Set());
   const [tapPaidPeople, setTapPaidPeople] = useState<Set<string>>(new Set());
   const [linkLoadingFor, setLinkLoadingFor] = useState<string | null>(null);
 
@@ -850,7 +1380,6 @@ function SummaryStep({
         toName: memberMap.get(s.toMemberId) ?? "Unknown",
         amount: s.amount,
       })));
-      setGroupName(group.name ?? "");
       setMembers(groupMembers.map((m) => ({ id: m.id, displayName: m.display_name, email: m.email ?? null })));
       setFinishing(false);
       return;
@@ -884,7 +1413,6 @@ function SummaryStep({
       if (res.ok) {
         setFinished(true);
         setSuggestions(data.suggestions || []);
-        setGroupName(data.groupName || "");
         setMembers(data.members || []);
       } else {
         Alert.alert("Error", data?.error ?? "Failed to save receipt split.");
@@ -900,64 +1428,60 @@ function SummaryStep({
 
   const [exportingPdf, setExportingPdf] = useState(false);
 
-  const handleShareText = async () => {
-    const text = buildShareText(rs.editMerchant, rs.personShares, grandTotal);
-    try {
-      await Share.share({ message: text, title: `${rs.editMerchant || "Receipt"} Split` });
-    } catch { /* cancelled */ }
-  };
-
   const handleExportPdf = async () => {
     setExportingPdf(true);
     try {
       await exportReceiptPdf(apiFetch, rs.editMerchant, rs.personShares);
-    } catch (e) {
-      Alert.alert("PDF Export", "Could not generate PDF. Try sharing as text instead.");
+    } catch {
+      Alert.alert("PDF", "Could not generate PDF. Try again in a moment.");
     } finally {
       setExportingPdf(false);
     }
   };
 
-  const handleCash = async (s: (typeof suggestions)[0]) => {
-    if (isDemoOn) {
-      setRecordedSettlements((prev) => new Set(prev).add(`${s.fromMemberId}-${s.toMemberId}`));
-      return;
-    }
-    const key = `${s.fromMemberId}-${s.toMemberId}`;
-    try {
-      const res = await apiFetch("/api/settlements", { method: "POST", body: { groupId: resolvedGroupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId, amount: s.amount, method: "in_person" } });
-      if (res.ok) setRecordedSettlements(prev => new Set(prev).add(key));
-      else Alert.alert("Error", "Could not record");
-    } catch { Alert.alert("Error", "Could not record"); }
-  };
-
-  const [toast, setToast] = useState<string | null>(null);
   const [tabbedPeople, setTabbedPeople] = useState<Set<string>>(new Set());
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
-  };
-
-  const handleTabPerson = async (person: typeof rs.personShares[0]) => {
+  const handleTabPerson = (person: typeof rs.personShares[0]) => {
     const key = person.name.toLowerCase();
     if (tabbedPeople.has(key)) return;
-    setTabbedPeople(prev => new Set(prev).add(key));
+    setTabbedPeople((prev) => new Set(prev).add(key));
     sfx.pop();
-    showToast(`Added $${person.totalOwed.toFixed(2)} to ${person.name}'s tab`);
   };
 
-  const handleTabAll = async () => {
-    const untabbed = rs.personShares.filter(
-      (p) => !tabbedPeople.has(p.name.toLowerCase())
+  const handleTabAll = () => {
+    setTabbedPeople(
+      new Set(rs.personShares.map((p) => p.name.toLowerCase()))
     );
-    setTabbedPeople((prev) => {
-      const next = new Set(prev);
-      for (const p of untabbed) next.add(p.name.toLowerCase());
-      return next;
-    });
     sfx.coin();
-    showToast(`Added to everyone's tab`);
+  };
+
+  const openTapToPay = (person: typeof rs.personShares[0]) => {
+    if (!finished || !resolvedGroupId) {
+      Alert.alert("Please wait", "Saving receipt split…");
+      return;
+    }
+    const settlement = findSettlementForPerson(
+      { name: person.name, memberId: person.memberId, totalOwed: person.totalOwed },
+      suggestions,
+      members,
+    );
+    if (!settlement) {
+      Alert.alert("Tap to Pay", "Still saving this split. Wait a moment and try again.");
+      return;
+    }
+    sfx.paymentTap();
+    router.push({
+      pathname: "/(tabs)/pay",
+      params: {
+        amount: settlement.amount.toFixed(2),
+        currency: "USD",
+        groupId: resolvedGroupId,
+        payerMemberId: settlement.fromMemberId,
+        receiverMemberId: settlement.toMemberId,
+        returnTo: "receipt-split",
+        payerName: person.name,
+      },
+    });
   };
 
   const handleSendPaymentLink = async (person: typeof rs.personShares[0]) => {
@@ -977,7 +1501,7 @@ function SummaryStep({
     if (!settlement) {
       Alert.alert(
         "Payment link",
-        "Still saving this split. Wait a moment and try again, or make sure this person is in the group.",
+        "Still saving this split. Wait a moment and try again.",
       );
       return;
     }
@@ -987,7 +1511,7 @@ function SummaryStep({
       const result = await deliverPaymentLink(
         apiFetch,
         {
-          amount: person.totalOwed,
+          amount: settlement.amount,
           currency: "USD",
           groupId: resolvedGroupId,
           payerMemberId: settlement.fromMemberId,
@@ -995,9 +1519,8 @@ function SummaryStep({
         },
         {
           personName: person.name,
-          amount: person.totalOwed,
+          amount: settlement.amount,
           currency: "USD",
-          onCopied: () => showToast("Link copied — they can pay with Apple Pay or card"),
           offerShare: true,
         },
       );
@@ -1024,15 +1547,6 @@ function SummaryStep({
 
   return (
     <View style={{ gap: space.lg }}>
-      {/* Toast */}
-      {toast && (
-        <View style={{ position: "absolute", top: -50, left: 0, right: 0, zIndex: 99, alignItems: "center" }}>
-          <View style={{ backgroundColor: "#1a1a1a", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
-            <Text style={{ color: "#fff", fontSize: 13, fontFamily: font.semibold, fontWeight: "600" }}>{toast}</Text>
-          </View>
-        </View>
-      )}
-
       {/* Receipt summary card */}
       <View style={[smst.receiptCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
         <Text style={[smst.receiptMeta, { color: theme.textTertiary }]}>
@@ -1040,18 +1554,31 @@ function SummaryStep({
         </Text>
         <Text style={[smst.receiptTotal, { color: theme.text }]}>${grandTotal.toFixed(2)}</Text>
         <Text style={[smst.receiptPaid, { color: theme.textQuaternary }]}>
-          Paid by You · {rs.personShares.length} {rs.personShares.length === 1 ? "person" : "people"}
+          Paid by you · {rs.personShares.length} {rs.personShares.length === 1 ? "person" : "people"}
         </Text>
       </View>
 
-      {/* They owe you */}
       <View style={{ gap: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>They owe you</Text>
           {rs.personShares.length > 1 && !allTabbed && (
-            <TouchableOpacity onPress={handleTabAll} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.md, backgroundColor: theme.surfaceTertiary }}>
-              <Ionicons name="layers-outline" size={14} color={theme.primary} />
-              <Text style={{ fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: theme.primary }}>Tab all</Text>
+            <TouchableOpacity
+              onPress={handleTabAll}
+              hitSlop={8}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: radii.md,
+                backgroundColor: theme.surfaceTertiary,
+              }}
+            >
+              <Ionicons name="layers-outline" size={14} color={theme.accent} />
+              <Text style={{ fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: theme.accent }}>
+                Tab all
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1060,145 +1587,124 @@ function SummaryStep({
         const personKey = person.name.toLowerCase();
         const isTabbed = tabbedPeople.has(personKey);
         const isTapPaid = tapPaidPeople.has(personKey);
+        const isLinkLoading = linkLoadingFor === personKey;
+        const accent = receiptPersonAccent(idx);
+        const itemCount = person.items.length;
         return (
           <View key={person.name} style={[smst.personCard, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
             <View style={smst.personHeader}>
-              <View style={[st.shareAv, { backgroundColor: pColor(idx) }]}>
+              <View style={[st.shareAv, { backgroundColor: accent }]}>
                 <Text style={st.shareAvText}>{person.name.slice(0, 2).toUpperCase()}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[smst.personName, { color: theme.text }]}>{person.name}</Text>
-                <Text style={[smst.personSub, { color: theme.textQuaternary }]}>their share</Text>
+                <Text style={[smst.personSub, { color: theme.textQuaternary }]}>
+                  {itemCount} item{itemCount !== 1 ? "s" : ""}
+                </Text>
               </View>
-              <Text style={[smst.personAmount, { color: theme.positive }]}>${person.totalOwed.toFixed(2)}</Text>
+              <Text style={[smst.personAmount, { color: theme.positive }]}>
+                ${person.totalOwed.toFixed(2)}
+              </Text>
             </View>
 
-            {/* Item breakdown */}
-            <View style={smst.personItems}>
-              {person.items.map((item, i) => (
-                <View key={i} style={st.shareItemRow}>
-                  <Text style={[st.shareItemName, { color: theme.textTertiary }]}>{item.itemName}</Text>
-                  <Text style={[st.shareItemAmt, { color: theme.textSecondary }]}>${item.shareAmount.toFixed(2)}</Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Action buttons */}
-            <View style={{ gap: 8 }}>
+            <View style={smst.personActions}>
               <TouchableOpacity
-                style={[smst.payLinkBtn, { backgroundColor: theme.text }, (!finished || linkLoadingFor === person.name.toLowerCase()) && { opacity: 0.7 }]}
+                style={[
+                  smst.actionBtn,
+                  smst.actionBtnPrimary,
+                  { backgroundColor: theme.text, flex: 1.4 },
+                  (!finished || isLinkLoading) && { opacity: 0.65 },
+                ]}
                 onPress={() => handleSendPaymentLink(person)}
-                disabled={!finished || linkLoadingFor === person.name.toLowerCase()}
-                activeOpacity={0.8}
+                disabled={!finished || isLinkLoading}
+                activeOpacity={0.85}
               >
-                {linkLoadingFor === person.name.toLowerCase() ? (
+                {isLinkLoading ? (
                   <ActivityIndicator size="small" color={theme.surface} />
                 ) : (
                   <>
-                    <Ionicons name="link-outline" size={15} color={theme.surface} />
-                    <Text style={[smst.payLinkBtnText, { color: theme.surface }]}>Send payment link</Text>
+                    <Ionicons name="paper-plane-outline" size={14} color={theme.surface} />
+                    <Text style={[smst.actionBtnText, { color: theme.surface }]}>Send link</Text>
                   </>
                 )}
               </TouchableOpacity>
-              <View style={smst.personActions}>
-                <TouchableOpacity
+              <TouchableOpacity
+                style={[
+                  smst.actionBtn,
+                  {
+                    backgroundColor: isTapPaid ? theme.successLight : theme.surface,
+                    borderColor: isTapPaid ? theme.success : theme.border,
+                  },
+                ]}
+                onPress={() => openTapToPay(person)}
+                activeOpacity={0.85}
+                disabled={isTapPaid}
+              >
+                {isTapPaid ? (
+                  <Ionicons name="checkmark" size={15} color={theme.success} />
+                ) : (
+                  <Ionicons name="phone-portrait-outline" size={15} color={theme.text} />
+                )}
+                <Text
                   style={[
-                    smst.settleBtn,
-                    {
-                      backgroundColor: isTapPaid ? theme.successLight : theme.surface,
-                      borderWidth: 1.5,
-                      borderColor: isTapPaid ? theme.success : theme.border,
-                    },
+                    smst.actionBtnText,
+                    { color: isTapPaid ? theme.success : theme.text },
                   ]}
-                  onPress={() => {
-                    if (isTapPaid) return;
-                    sfx.paymentTap();
-                    if (!finished || !resolvedGroupId) {
-                      Alert.alert("Please wait", "Saving receipt split…");
-                      return;
-                    }
-                    const settlement = findSettlementForPerson(
-                      { name: person.name, memberId: person.memberId, totalOwed: person.totalOwed },
-                      suggestions,
-                      members,
-                    );
-                    if (!settlement) {
-                      Alert.alert(
-                        "Tap to Pay",
-                        "Still saving this split. Wait a moment and try again.",
-                      );
-                      return;
-                    }
-                    router.push({
-                      pathname: "/(tabs)/pay",
-                      params: {
-                        amount: person.totalOwed.toFixed(2),
-                        currency: "USD",
-                        groupId: resolvedGroupId,
-                        payerMemberId: settlement.fromMemberId,
-                        receiverMemberId: settlement.toMemberId,
-                        returnTo: "receipt-split",
-                        payerName: person.name,
-                      },
-                    });
-                  }}
-                  activeOpacity={0.8}
-                  disabled={isTapPaid}
                 >
-                  {isTapPaid ? (
-                    <>
-                      <Ionicons name="checkmark" size={14} color={theme.success} />
-                      <Text style={[smst.settleBtnText, { color: theme.success }]}>Paid</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="wifi" size={14} color={theme.text} style={{ transform: [{ rotate: "90deg" }] }} />
-                      <Text style={[smst.settleBtnText, { color: theme.text }]}>Tap to Pay</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[smst.tabBtn, { borderColor: theme.border, backgroundColor: isTabbed ? theme.successLight : theme.surface }]}
-                  onPress={() => handleTabPerson(person)}
-                  disabled={isTabbed}
-                  activeOpacity={0.7}
+                  {isTapPaid ? "Paid" : "Tap"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  smst.actionBtn,
+                  {
+                    backgroundColor: isTabbed ? theme.successLight : theme.surface,
+                    borderColor: isTabbed ? theme.success : theme.border,
+                  },
+                ]}
+                onPress={() => handleTabPerson(person)}
+                disabled={isTabbed}
+                activeOpacity={0.85}
+              >
+                {isTabbed ? (
+                  <Ionicons name="checkmark" size={15} color={theme.success} />
+                ) : null}
+                <Text
+                  style={[
+                    smst.actionBtnText,
+                    { color: isTabbed ? theme.success : theme.textSecondary },
+                  ]}
                 >
-                  {isTabbed ? (
-                    <><Ionicons name="checkmark" size={14} color={theme.success} /><Text style={[smst.tabBtnText, { color: theme.success }]}>Tabbed</Text></>
-                  ) : (
-                    <Text style={[smst.tabBtnText, { color: theme.textSecondary }]}>Tab it</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+                  {isTabbed ? "Tabbed" : "Tab it"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         );
       })}
       </View>
 
-      {/* Export row */}
-      <View style={smst.exportRow}>
-        <TouchableOpacity onPress={handleShareText} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7}>
-          <Ionicons name="share-social-outline" size={15} color={theme.text} />
-          <Text style={[smst.exportBtnText, { color: theme.text }]}>Share text</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleExportPdf} style={[smst.exportBtn, { borderColor: theme.border }]} activeOpacity={0.7} disabled={exportingPdf}>
-          {exportingPdf ? (
-            <ActivityIndicator size="small" color={theme.text} />
-          ) : (
-            <Ionicons name="document-outline" size={15} color={theme.text} />
-          )}
-          <Text style={[smst.exportBtnText, { color: theme.text }]}>Export PDF</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        onPress={handleExportPdf}
+        style={[smst.exportBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+        activeOpacity={0.85}
+        disabled={exportingPdf}
+      >
+        {exportingPdf ? (
+          <ActivityIndicator size="small" color={theme.text} />
+        ) : (
+          <Ionicons name="document-outline" size={16} color={theme.text} />
+        )}
+        <Text style={[smst.exportBtnText, { color: theme.text }]}>
+          Share breakdown (PDF)
+        </Text>
+      </TouchableOpacity>
 
-      {/* Done */}
       <TouchableOpacity style={[smst.doneBtn, { backgroundColor: theme.text }]} onPress={rs.reset} activeOpacity={0.8}>
         <Text style={[smst.doneBtnText, { color: theme.surface }]}>Done</Text>
       </TouchableOpacity>
 
-      {/* Edit link */}
-      <TouchableOpacity style={{ alignSelf: "center", paddingVertical: 8 }} onPress={() => rs.setStep("assign")} disabled={finished}>
+      <TouchableOpacity style={{ alignSelf: "center", paddingVertical: 8 }} onPress={() => rs.setStep("assign")}>
         <Text style={{ fontSize: 14, fontFamily: font.medium, fontWeight: "500", color: theme.textTertiary }}>
           <Ionicons name="chevron-back" size={12} color={theme.textTertiary} /> Edit assignments
         </Text>
@@ -1206,220 +1712,3 @@ function SummaryStep({
     </View>
   );
 }
-
-/* ═══════════════════ Styles ═══════════════════ */
-
-const st = StyleSheet.create({
-  safe: { flex: 1 },
-  receiptTopBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 6,
-  },
-  topBarTitle: { fontSize: 17, fontFamily: font.bold, fontWeight: "700", letterSpacing: -0.3 },
-  progressRow: { flexDirection: "row", gap: 6, paddingHorizontal: 20, paddingBottom: 14 },
-  progressSegWrap: { flex: 1, gap: 4 },
-  progressSeg: { height: 3, borderRadius: 2, backgroundColor: colors.borderLight },
-  progressSegLabel: { fontSize: 10, fontFamily: font.medium, fontWeight: "500", textAlign: "center", color: colors.textMuted },
-  kv: { flex: 1 },
-  scroll: { flex: 1, backgroundColor: colors.bg },
-  scrollContent: { padding: 20, paddingBottom: 60 },
-
-  center: { alignItems: "center", paddingVertical: 48 },
-  centerText: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary, marginTop: 12 },
-  errorText: { fontSize: 14, fontFamily: font.regular, color: colors.red, marginBottom: 16 },
-
-  savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
-  savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
-  savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
-  uploadCard: {
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: "center",
-    gap: 10,
-  },
-  uploadIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  uploadTitle: { fontSize: 18, fontFamily: font.bold, textAlign: "center" },
-  uploadSub: { fontSize: 13, fontFamily: font.regular, textAlign: "center", marginBottom: 8 },
-  uploadPrimary: {
-    alignSelf: "stretch",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 15,
-    borderRadius: radii.lg,
-    marginTop: 4,
-  },
-  uploadPrimaryText: { fontSize: 16, fontFamily: font.semibold },
-  uploadSecondary: {
-    alignSelf: "stretch",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 13,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    marginTop: 4,
-  },
-  uploadSecondaryText: { fontSize: 14, fontFamily: font.semibold },
-  uploadProgress: { paddingVertical: 32, alignItems: "center" },
-  uploadProgressCard: {
-    alignSelf: "stretch",
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    gap: 10,
-  },
-  uploadProgressTitle: { fontSize: 17, fontFamily: font.bold, marginTop: 8 },
-  uploadProgressSub: { fontSize: 14, fontFamily: font.regular },
-
-  label: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
-  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: font.regular, color: colors.text },
-
-  // Review — editable item cards
-  itemCard: { backgroundColor: colors.surface, borderRadius: radii.md, padding: 12, marginBottom: 8, ...shadow.md },
-  itemTop: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  itemNameInput: { flex: 1, fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, paddingBottom: 4 },
-  itemBottom: { flexDirection: "row", alignItems: "center", gap: 6 },
-  stepper: { flexDirection: "row", alignItems: "center", backgroundColor: colors.borderLight, borderRadius: radii.sm, overflow: "hidden" },
-  stepperBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  stepperVal: { fontSize: 14, fontFamily: font.bold, fontWeight: "700", color: colors.text, minWidth: 20, textAlign: "center" },
-  itemX: { fontSize: 14, fontFamily: font.regular, color: colors.textMuted },
-  priceWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radii.sm, paddingHorizontal: 6, borderWidth: 1, borderColor: colors.borderSubtle },
-  pricePre: { fontSize: 13, fontFamily: font.semibold, color: colors.textMuted, fontWeight: "600" },
-  priceInput: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text, paddingVertical: 4, minWidth: 50 },
-  itemEquals: { fontSize: 14, fontFamily: font.regular, color: colors.textMuted },
-  itemTotal: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
-  addItemBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed" },
-  addItemText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
-
-  // Totals
-  totalsCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, gap: 10, ...shadow.md },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  totalLabel: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary },
-  totalVal: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
-  totalInputWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radii.sm, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.borderSubtle },
-  totalPre: { fontSize: 13, fontFamily: font.semibold, color: colors.textMuted, fontWeight: "600" },
-  totalInput: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text, paddingVertical: 6, width: 70, textAlign: "right" },
-  totalDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
-  totalFinalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  totalFinalLabel: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
-  totalFinalValue: { fontSize: 18, fontFamily: font.black, fontWeight: "900", color: colors.text },
-
-  // Assign — people
-  peopleRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
-  personChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii["2xl"] },
-  personChipText: { color: "#fff", fontFamily: font.semibold, fontWeight: "600", fontSize: 13 },
-  addPersonRow: { flexDirection: "row", gap: 8 },
-  searchInput: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, fontFamily: font.regular, color: colors.text },
-  addBtn: { width: 44, height: 44, borderRadius: radii.md, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
-  dropdown: { backgroundColor: colors.surface, borderRadius: radii.md, overflow: "hidden", marginTop: 6, ...shadow.md },
-  dropdownRow: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 1, borderBottomColor: "#F5F5F5", gap: 8 },
-  dropdownName: { fontSize: 15, fontFamily: font.medium, fontWeight: "500", color: colors.text, flex: 1 },
-  dropdownEmail: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted },
-  dropdownAdd: { fontSize: 14, fontFamily: font.semibold, color: colors.primary, fontWeight: "600" },
-
-  // Assign — item cards
-  emptyAssign: { alignItems: "center", paddingVertical: 24, gap: 8 },
-  emptyAssignText: { fontSize: 13, fontFamily: font.regular, color: colors.textFaint },
-  assignCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14, marginBottom: 8, ...shadow.md },
-  assignCardDone: {},
-  assignCardWarn: { backgroundColor: "#FFFBEB" },
-  assignCardTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  assignItemName: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
-  assignItemMeta: { fontSize: 12, fontFamily: font.regular, color: colors.textMuted, marginTop: 3 },
-  everyoneBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, backgroundColor: colors.primaryLight },
-  everyoneBtnText: { fontSize: 12, fontFamily: font.bold, color: colors.primary, fontWeight: "700" },
-  assignChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
-  assignChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii["2xl"] },
-  assignChipOff: { backgroundColor: colors.borderLight },
-  assignChipText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: colors.textTertiary },
-
-  // Running totals
-  runningTotals: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 14, ...shadow.md },
-  runningRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 },
-  runningDot: { width: 10, height: 10, borderRadius: 5 },
-  runningName: { flex: 1, fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.text },
-  runningAmount: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
-
-  // Summary
-  summaryTitle: { fontSize: 14, fontFamily: font.regular, color: colors.textTertiary },
-  shareCard: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: "hidden", ...shadow.md },
-  shareHeader: { flexDirection: "row", alignItems: "center", padding: 14, gap: 10, backgroundColor: colors.surfaceRaised },
-  shareAv: { width: 32, height: 32, borderRadius: radii.xl, alignItems: "center", justifyContent: "center" },
-  shareAvText: { fontSize: 11, fontFamily: font.bold, fontWeight: "700", color: "#fff" },
-  shareName: { fontSize: 15, fontFamily: font.semibold, fontWeight: "600", color: colors.text, flex: 1 },
-  shareTotal: { fontSize: 15, fontFamily: font.extrabold, fontWeight: "800", color: colors.text },
-  shareItems: { paddingHorizontal: 14, paddingVertical: 8 },
-  shareItemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
-  shareItemName: { fontSize: 12, fontFamily: font.regular, color: colors.textTertiary },
-  shareItemAmt: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.textSecondary },
-
-  actionCard: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: 16, gap: 10, ...shadow.md },
-  actionTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700", color: colors.text },
-  actionSub: { fontSize: 13, fontFamily: font.regular, color: colors.textMuted },
-  groupPicker: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  groupChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.sm, backgroundColor: colors.borderLight },
-  groupChipOn: { backgroundColor: colors.primaryLight },
-  groupChipText: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.textTertiary },
-
-  successCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.greenSurface, padding: 16, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.greenBorder },
-  successText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700", color: colors.greenDark },
-  suggRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: 12, backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.borderSubtle },
-  suggText: { fontSize: 13, fontFamily: font.regular, color: colors.textSecondary, flex: 1 },
-  suggBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  suggBtnGreen: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  suggBtnText: { fontSize: 12, fontFamily: font.medium, fontWeight: "500", color: colors.textTertiary },
-  suggBtnGreenText: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.primary },
-  suggBtnTap: { borderColor: colors.blue, backgroundColor: colors.blueBg },
-  suggBtnTapText: { fontSize: 12, fontFamily: font.semibold, fontWeight: "600", color: colors.blue },
-
-  // Shared
-  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.primary, paddingVertical: 13, paddingHorizontal: 20, borderRadius: radii.md },
-  btnText: { color: "#fff", fontFamily: font.bold, fontWeight: "700", fontSize: 15 },
-  btnOff: { opacity: 0.4 },
-  btnOutline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, paddingHorizontal: 20, borderRadius: radii.md, borderWidth: 2, borderColor: colors.primary },
-  btnOutlineText: { color: colors.primary, fontFamily: font.bold, fontWeight: "700", fontSize: 15 },
-  nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 12 },
-  navBack: { flexDirection: "row", alignItems: "center", gap: 4 },
-  navBackText: { fontSize: 14, fontFamily: font.medium, color: colors.textTertiary, fontWeight: "500" },
-});
-
-const smst = StyleSheet.create({
-  receiptCard: { borderRadius: radii.lg, padding: 18, borderWidth: 1, gap: 4 },
-  receiptMeta: { fontSize: 13, fontFamily: font.regular },
-  receiptTotal: { fontSize: 32, fontFamily: font.black, fontWeight: "900", letterSpacing: -1 },
-  receiptPaid: { fontSize: 13, fontFamily: font.regular },
-  personCard: { borderRadius: radii.lg, padding: 16, borderWidth: 1, gap: 12, ...shadow.md },
-  personHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  personName: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
-  personSub: { fontSize: 12, fontFamily: font.regular, marginTop: 1 },
-  personAmount: { fontSize: 20, fontFamily: font.extrabold, fontWeight: "800" },
-  personItems: { paddingLeft: 44, gap: 4, marginTop: 2 },
-  payLinkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, borderRadius: radii.xl },
-  payLinkBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
-  personActions: { flexDirection: "row", gap: 10 },
-  settleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flex: 1, paddingVertical: 12, borderRadius: radii.xl },
-  settleBtnText: { fontSize: 14, fontFamily: font.bold, fontWeight: "700" },
-  tabBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, flex: 1, paddingVertical: 12, borderRadius: radii.xl, borderWidth: 1.5 },
-  tabBtnText: { fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
-  exportRow: { flexDirection: "row", gap: 10 },
-  exportBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 13, borderRadius: 12, borderWidth: 1 },
-  exportBtnText: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },
-  doneBtn: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: radii.xl },
-  doneBtnText: { fontSize: 16, fontFamily: font.bold, fontWeight: "700" },
-});

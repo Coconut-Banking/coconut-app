@@ -62,6 +62,8 @@ export interface GroupsSummary {
  * already fetched doesn't wait on AsyncStorage.
  */
 const _memSummary = new Map<string, GroupsSummary>();
+/** Survives cache-generation bumps so remounts don't flash $0 until refetch completes. */
+const _staleSummary = new Map<string, GroupsSummary>();
 const _summaryListeners = new Map<string, Set<(summary: GroupsSummary | null) => void>>();
 
 function _emitSummary(path: string, summary: GroupsSummary | null) {
@@ -70,17 +72,24 @@ function _emitSummary(path: string, summary: GroupsSummary | null) {
 
 function _setMemSummary(path: string, summary: GroupsSummary) {
   _memSummary.set(path, summary);
+  _staleSummary.set(path, summary);
   _emitSummary(path, summary);
+}
+
+function _getCachedSummary(path: string): GroupsSummary | null {
+  return _memSummary.get(path) ?? _staleSummary.get(path) ?? null;
 }
 
 /** Clear the in-memory summary cache (call alongside invalidateApiCache). */
 export function clearMemSummaryCache() {
   _memSummary.clear();
+  _staleSummary.clear();
 }
 
 /** Nuclear: wipe every in-memory shared/split cache. */
 export function clearAllSharedCaches() {
   _memSummary.clear();
+  _staleSummary.clear();
   _memGroupDetail.clear();
   _memPersonDetail.clear();
   _memTxDetail.clear();
@@ -215,7 +224,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   const summaryPath = contacts ? "/api/groups/summary?contacts=1" : "/api/groups/summary";
   const apiFetch = useApiFetch();
 
-  const mem = _memSummary.get(summaryPath) ?? null;
+  const mem = _getCachedSummary(summaryPath);
   const [summary, setSummary] = useState<GroupsSummary | null>(mem);
   const [loading, setLoading] = useState(!mem);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -226,7 +235,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
       // Never set loading=true once we already have data — the caller
       // should treat refetch as a silent background refresh so the user
       // never sees a spinner or skeleton when switching tabs.
-      const hasData = _memSummary.has(summaryPath) || summary != null;
+      const hasData = _getCachedSummary(summaryPath) != null || summary != null;
       if (!hasData) setLoading(true);
       try {
         const res = await apiFetch(summaryPath);
@@ -265,6 +274,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   // and after mutations so the UI doesn't show stale balances.
   const forceRefetch = useCallback(async () => {
     _memSummary.delete(summaryPath);
+    _staleSummary.delete(summaryPath);
     invalidateApiCache(summaryPath);
     setSummary(null);
     setLoading(true);
@@ -277,8 +287,8 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
 
     // If we already have in-memory data (from prefetch or previous mount),
     // skip the AsyncStorage read and go straight to network refresh.
-    if (_memSummary.has(summaryPath)) {
-      const cached = _memSummary.get(summaryPath)!;
+    if (_getCachedSummary(summaryPath)) {
+      const cached = _getCachedSummary(summaryPath)!;
       setSummary(cached);
       setLoading(false);
       fetchSummary(false);
@@ -290,7 +300,7 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
 
     fetchSummary(false);
     getPersistedResponse(summaryPath).then((cached) => {
-      if (cached && !cancelled && !_memSummary.has(summaryPath)) {
+      if (cached && !cancelled && !_getCachedSummary(summaryPath)) {
         try {
           const data = JSON.parse(cached.body);
           _setMemSummary(summaryPath, data);

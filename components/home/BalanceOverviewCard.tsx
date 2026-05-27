@@ -125,13 +125,20 @@ function FigmaOweBand({
           accessibilityState={{ expanded }}
           accessibilityLabel={`${collapsedLabel}, ${formatHomeMoney(amount, currency)}`}
         >
-          <Text style={[styles.bandAmount, homeMoneyType, { color: textColor }]}>
+          <Text
+            style={[styles.bandAmount, homeMoneyType, { color: textColor }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             {formatHomeMoney(amount, currency)}
           </Text>
           <Text style={[styles.bandLabel, { color: textColor }]} numberOfLines={1}>
             {collapsedLabel}
           </Text>
-          <Ionicons name="chevron-forward" size={22} color={textColor} />
+          <View style={styles.bandChevron}>
+            <Ionicons name="chevron-forward" size={22} color={textColor} />
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -339,15 +346,23 @@ const styles = StyleSheet.create({
   bandAmount: {
     fontSize: 16,
     letterSpacing: 0.48,
-    minWidth: 72,
+    maxWidth: "42%",
+    flexShrink: 1,
   },
   bandLabel: {
     flex: 1,
+    flexShrink: 0,
     fontSize: 16,
     fontFamily: font.regular,
     letterSpacing: 0.32,
     textAlign: "center",
     textTransform: "lowercase",
+    paddingHorizontal: 4,
+  },
+  bandChevron: {
+    width: 28,
+    alignItems: "flex-end",
+    flexShrink: 0,
   },
   expandedList: {
     marginTop: 2,
