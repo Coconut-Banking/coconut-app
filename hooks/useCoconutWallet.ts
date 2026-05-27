@@ -19,6 +19,11 @@ export type CoconutWallet = {
   payoutsEnabled: boolean;
   canCashOut: boolean;
   canSetupPayouts: boolean;
+  autoPayout: {
+    enabled: boolean;
+    thresholdUsd: number | null;
+    allowedThresholds: readonly number[];
+  };
 };
 
 export function useCoconutWallet(enabled = true) {

@@ -4,6 +4,7 @@ import { useTheme } from "../../lib/theme-context";
 import { font, radii } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
 import { useCoconutWallet } from "../../hooks/useCoconutWallet";
+import { AutoPayoutSettings } from "./AutoPayoutSettings";
 import { settingsStyles as s } from "./styles";
 
 type Props = {
@@ -153,13 +154,17 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
               payment links). Settling up on a split reduces what friends owe you; collecting payment adds here.
             </Text>
             <Text style={{ fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, lineHeight: 18 }}>
-              {wallet?.canCashOut
-                ? "Cash out opens Stripe to send money to your bank. Standard transfer is usually 2–4 business days; instant payout may be available with a fee."
-                : wallet?.chargesEnabled && !wallet?.payoutsEnabled
-                  ? "Your payment account is ready — add a bank account to cash out."
-                  : "After payout setup, new Tap to Pay deposits here automatically. You can cash out to your bank from Stripe."}
+              {wallet?.autoPayout?.enabled && wallet.autoPayout.thresholdUsd != null
+                ? `Automatic transfers on: we send to your bank when balance is over ${formatSplitCurrencyAmount(wallet.autoPayout.thresholdUsd, currency)} (usually 2–4 business days). Manual cash out still works anytime.`
+                : wallet?.canCashOut
+                  ? "Turn on automatic transfers below, or cash out manually anytime (usually 2–4 business days)."
+                  : wallet?.chargesEnabled && !wallet?.payoutsEnabled
+                    ? "Your payment account is ready — add a bank account to cash out."
+                    : "After payout setup, Tap to Pay and payment links add here."}
             </Text>
           </View>
+
+          <AutoPayoutSettings payoutsReady={Boolean(wallet?.payoutsEnabled && wallet?.canCashOut)} />
         </>
       )}
     </View>
