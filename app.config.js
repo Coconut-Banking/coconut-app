@@ -132,7 +132,16 @@ export default {
         "expo-build-properties",
         { android: { minSdkVersion: 26 } },
       ],
-      "@stripe/stripe-react-native",
+      [
+        "@stripe/stripe-react-native",
+        {
+          // Apple Pay merchant ID (create in Apple Developer → Identifiers → Merchant IDs)
+          merchantIdentifier:
+            process.env.EXPO_PUBLIC_STRIPE_APPLE_MERCHANT_ID ||
+            `merchant.${bundleId}`,
+          enableGooglePay: false,
+        },
+      ],
     ],
     experiments: { typedRoutes: true },
   },
