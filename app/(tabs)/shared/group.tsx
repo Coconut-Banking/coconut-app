@@ -47,6 +47,7 @@ import { PartialSettleModal } from "../../../components/PartialSettleModal";
 import { sfx } from "../../../lib/sounds";
 import { BASE_URL } from "../../../lib/invite";
 import { LinkQrSheet } from "../../../components/share/LinkQrSheet";
+import { startPayCollect } from "../../../lib/receipt-collect";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
@@ -142,6 +143,8 @@ export default function GroupScreen() {
   const [membersExpanded, setMembersExpanded] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showInviteQr, setShowInviteQr] = useState(false);
+  const [collectQrUrl, setCollectQrUrl] = useState<string | null>(null);
+  const [collectQrLoading, setCollectQrLoading] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -875,6 +878,32 @@ export default function GroupScreen() {
                         <Ionicons name="cash-outline" size={14} color="#fff" />
                       </TouchableOpacity>
                     )}
+                    {theyPayMe && id && !isDemoOn ? (
+                      <TouchableOpacity
+                        style={[s.miniBtn, { backgroundColor: theme.primary }]}
+                        onPress={() => {
+                          void (async () => {
+                            setCollectQrLoading(true);
+                            const result = await startPayCollect(
+                              apiFetch,
+                              id,
+                              su.amount,
+                              `${fromName} → you`,
+                            );
+                            setCollectQrLoading(false);
+                            if (!result.ok) {
+                              Alert.alert("Collect at table", result.error);
+                              return;
+                            }
+                            setCollectQrUrl(result.collectUrl);
+                          })();
+                        }}
+                        disabled={collectQrLoading}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="qr-code-outline" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    ) : null}
                     {canMarkPaid && (
                       <TouchableOpacity
                         style={[s.miniBtn, { borderWidth: 1, borderColor: theme.border }]}
@@ -1440,6 +1469,16 @@ export default function GroupScreen() {
           title="Invite to group"
           subtitle="Friends scan to join on Coconut"
           onClose={() => setShowInviteQr(false)}
+        />
+      ) : null}
+
+      {collectQrUrl ? (
+        <LinkQrSheet
+          visible
+          url={collectQrUrl}
+          title="Collect at table"
+          subtitle="They tap their name, then pay their share"
+          onClose={() => setCollectQrUrl(null)}
         />
       ) : null}
     </SafeAreaView>

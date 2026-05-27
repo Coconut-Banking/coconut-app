@@ -47,6 +47,8 @@ import {
   receiptPersonTint,
 } from "../../lib/receipt-person-palette";
 import { ReceiptUploadFailure } from "../../components/receipt/ReceiptUploadFailure";
+import { ReceiptTableCollect } from "../../components/receipt/ReceiptTableCollect";
+import { LinkQrSheet } from "../../components/share/LinkQrSheet";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -156,6 +158,16 @@ const st = StyleSheet.create({
   savedReceiptBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: radii.lg, borderWidth: 1.5 },
   savedReceiptTitle: { fontSize: 15, fontFamily: font.bold, fontWeight: "700" },
   savedReceiptSub: { fontSize: 13, fontFamily: font.regular, opacity: 0.8 },
+  tableBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+  },
+  tableBannerTitle: { fontSize: 15, fontFamily: font.bold },
+  tableBannerSub: { fontSize: 12, fontFamily: font.regular, marginTop: 2 },
   uploadCard: {
     borderRadius: radii.xl,
     borderWidth: 1,
@@ -948,6 +960,68 @@ function AssignStep({
     tryAddPerson(trimmedSearch, { hasAccount: false });
   };
 
+  const [tableMode, setTableMode] = useState(false);
+  const [tableGroup, setTableGroup] = useState<{ id: string; name: string } | null>(null);
+
+  const tableGroupId = useMemo(() => {
+    const ids = rs.people.map((p) => p.groupId).filter(Boolean) as string[];
+    if (ids.length === 0) return null;
+    const unique = [...new Set(ids)];
+    return unique.length === 1 ? unique[0] : null;
+  }, [rs.people]);
+
+  const tableGroupName = useMemo(() => {
+    if (!tableGroupId) return null;
+    return rs.people.find((p) => p.groupId === tableGroupId)?.groupName ?? null;
+  }, [rs.people, tableGroupId]);
+
+  const groupsFromContacts = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of contacts) {
+      if (c.groupId && c.groupName) map.set(c.groupId, c.groupName);
+    }
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [contacts]);
+
+  const startTableCollect = useCallback(async () => {
+    if (!rs.receiptId) {
+      Alert.alert("Save receipt", "Finish review first.");
+      return;
+    }
+    let gid = tableGroupId ?? tableGroup?.id;
+    let gname = tableGroupName ?? tableGroup?.name ?? "Group";
+    if (!gid) {
+      if (groupsFromContacts.length === 1) {
+        gid = groupsFromContacts[0].id;
+        gname = groupsFromContacts[0].name;
+      } else if (groupsFromContacts.length > 1) {
+        Alert.alert(
+          "Choose a group",
+          groupsFromContacts.map((g) => g.name).join(", "),
+          [
+            ...groupsFromContacts.map((g) => ({
+              text: g.name,
+              onPress: () => {
+                setTableGroup({ id: g.id, name: g.name });
+                setTableMode(true);
+              },
+            })),
+            { text: "Cancel", style: "cancel" as const },
+          ],
+        );
+        return;
+      } else {
+        Alert.alert(
+          "Pick a group",
+          "Add someone from a group, or create a group in Shared first.",
+        );
+        return;
+      }
+    }
+    setTableGroup({ id: gid, name: gname });
+    setTableMode(true);
+  }, [rs.receiptId, tableGroupId, tableGroupName, tableGroup, groupsFromContacts]);
+
   const unassignedCount = rs.itemsWithExtras.filter(
     (item) => (rs.assignments.get(item.id) ?? []).length === 0
   ).length;
@@ -971,13 +1045,48 @@ function AssignStep({
     trimmedSearch.length > 0 &&
     (filtered.length > 0 || (!searchIsDuplicate && trimmedSearch.length > 0));
 
+  if (tableMode && tableGroup && rs.receiptId) {
+    return (
+      <ReceiptTableCollect
+        receiptId={rs.receiptId}
+        groupId={tableGroup.id}
+        groupName={tableGroup.name}
+        merchantName={rs.editMerchant}
+        apiFetch={apiFetch}
+        onBack={() => setTableMode(false)}
+        onClosed={() => {
+          setTableMode(false);
+          rs.computeSummary();
+          rs.setStep("summary");
+        }}
+      />
+    );
+  }
+
   return (
     <View style={{ gap: 16 }}>
+      {rs.receiptId ? (
+        <TouchableOpacity
+          style={[st.tableBanner, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}
+          onPress={() => void startTableCollect()}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="qr-code-outline" size={22} color={theme.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[st.tableBannerTitle, { color: theme.text }]}>Split with table</Text>
+            <Text style={[st.tableBannerSub, { color: theme.textTertiary }]}>
+              Everyone scans a QR and picks their items
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+        </TouchableOpacity>
+      ) : null}
+
       {/* People section — inline chips like Add expense */}
       <View
         style={[
           st.peopleCard,
-          { backgroundColor: theme.surface, borderColor: theme.cardBorder },
+          { backgroundColor: theme.surface, borderColor: theme.borderLight },
         ]}
       >
         <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>
@@ -1316,6 +1425,7 @@ function SummaryStep({
   const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
   const [tapPaidPeople, setTapPaidPeople] = useState<Set<string>>(new Set());
   const [linkLoadingFor, setLinkLoadingFor] = useState<string | null>(null);
+  const [linkQr, setLinkQr] = useState<{ url: string; personName: string } | null>(null);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
@@ -1528,6 +1638,7 @@ function SummaryStep({
         Alert.alert("Payment link", result.error);
         return;
       }
+      setLinkQr({ url: result.url, personName: person.name });
       sfx.pop();
     } finally {
       setLinkLoadingFor(null);
@@ -1709,6 +1820,16 @@ function SummaryStep({
           <Ionicons name="chevron-back" size={12} color={theme.textTertiary} /> Edit assignments
         </Text>
       </TouchableOpacity>
+
+      {linkQr ? (
+        <LinkQrSheet
+          visible
+          url={linkQr.url}
+          title={`Pay ${linkQr.personName}`}
+          subtitle="Link copied — scan or share to collect"
+          onClose={() => setLinkQr(null)}
+        />
+      ) : null}
     </View>
   );
 }
