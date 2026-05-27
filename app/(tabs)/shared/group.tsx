@@ -46,6 +46,7 @@ import { GroupDetailSkeleton, haptic } from "../../../components/ui";
 import { PartialSettleModal } from "../../../components/PartialSettleModal";
 import { sfx } from "../../../lib/sounds";
 import { BASE_URL } from "../../../lib/invite";
+import { LinkQrSheet } from "../../../components/share/LinkQrSheet";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
@@ -140,6 +141,7 @@ export default function GroupScreen() {
   } | null>(null);
   const [membersExpanded, setMembersExpanded] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showInviteQr, setShowInviteQr] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -734,9 +736,16 @@ export default function GroupScreen() {
           <Text style={[s.backText, { color: theme.text }]}>{source === "home" ? "Home" : "Back"}</Text>
         </TouchableOpacity>
         {!isArchived && (
-          <TouchableOpacity onPress={() => setShowSettingsModal(true)} hitSlop={12} style={s.settingsBtn}>
-            <Ionicons name="settings-outline" size={22} color={theme.text} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            {detail.invite_token ? (
+              <TouchableOpacity onPress={() => setShowInviteQr(true)} hitSlop={12}>
+                <Ionicons name="qr-code-outline" size={22} color={theme.text} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={() => setShowSettingsModal(true)} hitSlop={12}>
+              <Ionicons name="settings-outline" size={22} color={theme.text} />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
       <ScrollView
@@ -1421,6 +1430,16 @@ export default function GroupScreen() {
           loading={recordingSettlement}
           onConfirm={handleSettleConfirm}
           onCancel={() => setSettleTarget(null)}
+        />
+      ) : null}
+
+      {detail.invite_token ? (
+        <LinkQrSheet
+          visible={showInviteQr}
+          url={`${BASE_URL.replace(/\/$/, "")}/join/${detail.invite_token}`}
+          title="Invite to group"
+          subtitle="Friends scan to join on Coconut"
+          onClose={() => setShowInviteQr(false)}
         />
       ) : null}
     </SafeAreaView>

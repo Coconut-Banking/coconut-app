@@ -188,6 +188,8 @@ function AuthSwitch() {
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="pay/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="receipt/collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="connect-onboarding" options={{ headerShown: false, presentation: "fullScreenModal" }} />
         <Stack.Screen name="connect-payouts" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="scan-receipt" options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />

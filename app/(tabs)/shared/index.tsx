@@ -44,6 +44,7 @@ import { useCurrency } from "../../../hooks/useCurrency";
 import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { useDeviceContacts, type DeviceContact } from "../../../hooks/useDeviceContacts";
+import { BillsHubSection } from "../../../components/bills/BillsHubSection";
 
 const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -829,6 +830,7 @@ export default function SharedIndex() {
 
   return (
     <SafeAreaView style={[st.container, { backgroundColor: theme.background }]} edges={["top"]}>
+      <BillsHubSection />
       {/* Tab bar */}
       <View style={[st.tabBar, { borderBottomColor: theme.border }]}>
         <View
