@@ -86,5 +86,8 @@
     "jest-expo": "^55.0.13",
     "typescript": "~5.9.2"
   },
+  "overrides": {
+    "dnssd-advertise": "1.1.4"
+  },
   "private": true
 }
