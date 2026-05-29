@@ -50,6 +50,10 @@ export function ReceiptSplitChoose({
   const [status, setStatus] = useState<Awaited<ReturnType<typeof fetchCollectStatus>>>(null);
   const [tableActive, setTableActive] = useState(false);
 
+  const guestCount = status?.guestCount ?? status?.totalCount ?? 0;
+  const guestsSubmitted = status?.guestsSubmitted ?? status?.submittedCount ?? 0;
+  const pendingGuests = status?.pendingGuests ?? Math.max(0, guestCount - guestsSubmitted);
+
   const refresh = useCallback(async () => {
     const s = await fetchCollectStatus(apiFetch, receiptId);
     if (s?.collecting) {
@@ -79,15 +83,28 @@ export function ReceiptSplitChoose({
     sfx.pop();
   };
 
-  const finishTable = async () => {
-    const pending = (status?.totalCount ?? 0) - (status?.submittedCount ?? 0);
-    if (pending > 0) {
+  const saveAndExit = () => {
+    invalidateApiCache("/api/bills");
+    onDone();
+    router.replace("/(tabs)");
+  };
+
+  const finishSplit = async () => {
+    if (guestCount === 0) {
       Alert.alert(
-        "Close bill?",
-        `${pending} ${pending === 1 ? "person hasn't" : "people haven't"} picked items yet.`,
+        "No one has joined yet",
+        "Share the link so friends can pick items. Use Save to track this bill on Home → Bills and finish later.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+    if (pendingGuests > 0) {
+      Alert.alert(
+        "Send payment requests?",
+        `${pendingGuests} ${pendingGuests === 1 ? "person hasn't" : "people haven't"} picked items yet. Unpicked items will count toward you. Everyone else gets a pay link on the same bill link.`,
         [
-          { text: "Keep open", style: "cancel" },
-          { text: "Close & send requests", style: "destructive", onPress: () => void doClose() },
+          { text: "Keep waiting", style: "cancel" },
+          { text: "Send requests", onPress: () => void doClose() },
         ],
       );
       return;
@@ -100,14 +117,23 @@ export function ReceiptSplitChoose({
     const result = await closeReceiptCollect(apiFetch, receiptId);
     setClosing(false);
     if (!result.ok) {
-      Alert.alert("Error", result.error);
+      const msg =
+        result.error === "No items assigned yet"
+          ? "No items picked yet. Share the link or tap Tag items myself."
+          : result.error;
+      Alert.alert("Could not finish", msg);
       return;
     }
     invalidateApiCache("/api/bills");
     sfx.success();
     onDone();
-    router.replace("/(tabs)/shared");
+    router.replace("/(tabs)");
   };
+
+  const statusLine =
+    guestCount === 0
+      ? "Waiting for guests to join the link"
+      : `${guestsSubmitted} of ${guestCount} guest${guestCount === 1 ? "" : "s"} picked items`;
 
   return (
     <View style={{ gap: space.lg }}>
@@ -130,7 +156,7 @@ export function ReceiptSplitChoose({
         <View style={s.optionBody}>
           <Text style={[s.optionTitle, { color: theme.text }]}>Tag items myself</Text>
           <Text style={[s.optionSub, { color: theme.textTertiary }]}>
-            Just you, or add a few names — no group needed
+            Just you, or add a few names — no link needed
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={theme.textTertiary} />
@@ -152,7 +178,7 @@ export function ReceiptSplitChoose({
         <View style={s.optionBody}>
           <Text style={[s.optionTitle, { color: theme.text }]}>Share a link</Text>
           <Text style={[s.optionSub, { color: theme.textTertiary }]}>
-            Everyone scans, picks their items, then you close the bill
+            Friends pick items in the browser — you finish when ready
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={theme.textTertiary} />
@@ -160,9 +186,7 @@ export function ReceiptSplitChoose({
 
       {tableActive ? (
         <View style={[s.statusCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}>
-          <Text style={[s.statusLabel, { color: theme.textTertiary }]}>
-            Link open · {status?.submittedCount ?? 0} picked items
-          </Text>
+          <Text style={[s.statusLabel, { color: theme.textTertiary }]}>Link open · {statusLine}</Text>
           <View style={s.statusActions}>
             <TouchableOpacity
               style={[s.secondaryBtn, { borderColor: theme.border }]}
@@ -172,29 +196,27 @@ export function ReceiptSplitChoose({
               <Text style={[s.secondaryBtnText, { color: theme.primary }]}>Show QR</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[s.primaryBtn, { backgroundColor: theme.primary }, closing && { opacity: 0.6 }]}
-              onPress={() => void finishTable()}
-              disabled={closing}
+              style={[s.secondaryBtn, { borderColor: theme.border }]}
+              onPress={saveAndExit}
             >
-              {closing ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={s.primaryBtnText}>Close bill</Text>
-              )}
+              <Ionicons name="bookmark-outline" size={16} color={theme.primary} />
+              <Text style={[s.secondaryBtnText, { color: theme.primary }]}>Save</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            onPress={() => {
-              onDone();
-              router.replace("/(tabs)/shared");
-            }}
-            style={s.exitRow}
+            style={[s.primaryBtn, { backgroundColor: theme.primary }, closing && { opacity: 0.6 }]}
+            onPress={() => void finishSplit()}
+            disabled={closing}
           >
-            <Text style={[s.exitText, { color: theme.textTertiary }]}>
-              Leave — finish later in Shared
-            </Text>
-            <Ionicons name="arrow-forward" size={14} color={theme.textTertiary} />
+            {closing ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={s.primaryBtnText}>Send payment requests</Text>
+            )}
           </TouchableOpacity>
+          <Text style={[s.hint, { color: theme.textTertiary }]}>
+            Save = bill stays open on Home → Bills. Send requests = everyone can pay their share on the same link (Apple Pay in browser).
+          </Text>
         </View>
       ) : null}
 
@@ -259,18 +281,15 @@ const s = StyleSheet.create({
   },
   secondaryBtnText: { fontFamily: font.semibold, fontSize: 14 },
   primaryBtn: {
-    flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: radii.lg,
     alignItems: "center",
   },
-  primaryBtnText: { color: "#fff", fontFamily: font.semibold, fontSize: 14 },
-  exitRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingTop: 4,
+  primaryBtnText: { color: "#fff", fontFamily: font.semibold, fontSize: 15 },
+  hint: {
+    fontFamily: font.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
   },
-  exitText: { fontFamily: font.medium, fontSize: 14 },
 });

@@ -5,6 +5,7 @@ import { font } from "../../lib/theme";
 import {
   TRANSFER_STATUS_COPY,
   deriveTransferEligibility,
+  formatPayoutBankLabel,
   transferStatusBadge,
   type ConnectStatusPayload,
   type TransferEligibility,
@@ -57,6 +58,7 @@ export function PayoutTransferStatusCard({
   }
 
   const copy = TRANSFER_STATUS_COPY[eligibility];
+  const payoutBankLabel = formatPayoutBankLabel(connectStatus?.payoutBank);
   const badge = transferStatusBadge(eligibility);
   const isActive = eligibility === "active";
   const isPending = eligibility === "pending_review";
@@ -128,6 +130,11 @@ export function PayoutTransferStatusCard({
         <Text style={[s.resultDetail, { color: theme.textQuaternary, marginTop: 6 }]}>
           {copy.detail}
         </Text>
+        {payoutBankLabel ? (
+          <Text style={[s.resultDetail, { color: theme.textSecondary, marginTop: 8, fontFamily: font.medium }]}>
+            Payouts to {payoutBankLabel}
+          </Text>
+        ) : null}
         {isPending ? (
           <Text style={[s.resultDetail, { color: theme.textTertiary, marginTop: 8 }]}>
             Updates when Stripe approves you — tap refresh or reopen Account.

@@ -816,7 +816,7 @@ function SplitwiseStep({ onDone, onSkip }: { onDone: () => void; onSkip: () => v
           <BenefitRow icon="people-outline" text="All your friends and contacts" theme={theme} />
           <BenefitRow icon="home-outline" text="Groups with full history" theme={theme} />
           <BenefitRow icon="cash-outline" text="Current balances and IOUs" theme={theme} />
-          <BenefitRow icon="sync-outline" text="Automatic two-way sync" theme={theme} />
+          <BenefitRow icon="download-outline" text="One-time import of your history" theme={theme} />
         </View>
       </View>
 

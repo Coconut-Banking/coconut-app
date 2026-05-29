@@ -24,6 +24,7 @@ import {
   clearMemActivityCache,
   clearAllSharedCaches,
 } from "../../hooks/useGroups";
+import { formatSplitwiseImportDate } from "../../lib/splitwise-ui";
 import { settingsStyles as s } from "./styles";
 import type { UninvitedMember } from "./InviteModal";
 
@@ -50,6 +51,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
     connected: boolean;
     connectedAt?: string | null;
     importedSplitwiseGroupCount?: number;
+    importCompleted?: boolean;
+    importCompletedAt?: string | null;
   } | null>(null);
   const [splitwiseLoading, setSplitwiseLoading] = useState(false);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
@@ -109,6 +112,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
           connected: boolean;
           connectedAt?: string | null;
           importedSplitwiseGroupCount?: unknown;
+          importCompleted?: unknown;
+          importCompletedAt?: string | null;
         };
         const n = row.importedSplitwiseGroupCount;
         setSplitwiseStatus({
@@ -116,6 +121,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
           connected: row.connected,
           connectedAt: row.connectedAt ?? null,
           importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+          importCompleted: row.importCompleted === true,
+          importCompletedAt: row.importCompletedAt ?? null,
         });
       } catch {
         setSplitwiseStatus(null);
@@ -401,6 +408,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         connected?: boolean;
         connectedAt?: string | null;
         importedSplitwiseGroupCount?: unknown;
+        importCompleted?: boolean;
+        importCompletedAt?: string | null;
       };
       if (
         typeof st.configured !== "boolean" ||
@@ -418,11 +427,20 @@ export function SplitwiseCard({ onShowInvites }: Props) {
         connected: st.connected,
         connectedAt: st.connectedAt ?? null,
         importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+        importCompleted: st.importCompleted === true,
+        importCompletedAt: st.importCompletedAt ?? null,
       });
       if (!st.connected) {
         Alert.alert(
           "Splitwise",
           "Connection did not complete. Try Connect again, or use the Coconut website if this keeps happening.",
+        );
+        return;
+      }
+      if (st.importCompleted) {
+        Alert.alert(
+          "Already imported",
+          "Your Splitwise data was already imported. Balances stay in the Shared tab.",
         );
         return;
       }
@@ -441,6 +459,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
   useEffect(() => {
     if (!user) return;
     if (splitwiseAutoImportStarted.current) return;
+    if (splitwiseStatus?.importCompleted) return;
     if (
       params?.splitwise === "connected" &&
       params?.import === "1"
@@ -448,7 +467,7 @@ export function SplitwiseCard({ onShowInvites }: Props) {
       splitwiseAutoImportStarted.current = true;
       void startSplitwiseImport();
     }
-  }, [params?.splitwise, params?.import, user]);
+  }, [params?.splitwise, params?.import, user, splitwiseStatus?.importCompleted]);
 
   useEffect(() => {
     const err = params?.splitwise_error;
@@ -471,6 +490,26 @@ export function SplitwiseCard({ onShowInvites }: Props) {
     ]);
   }, [params?.splitwise_error, router]);
 
+  if (splitwiseStatus?.importCompleted) {
+    const dateLabel = formatSplitwiseImportDate(splitwiseStatus.importCompletedAt);
+    return (
+      <View
+        style={[
+          s.card,
+          { backgroundColor: theme.surface, borderColor: theme.cardBorder },
+        ]}
+      >
+        <Text style={[s.sectionTitle, { color: theme.text }]}>Splitwise</Text>
+        <Text style={[s.muted, { color: theme.textTertiary, marginTop: 4 }]}>
+          Imported{dateLabel ? ` on ${dateLabel}` : ""}.{" "}
+          {splitwiseStatus.importedSplitwiseGroupCount ?? 0} group
+          {(splitwiseStatus.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} — one-time
+          import; balances are in Shared.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View
       style={[
@@ -480,9 +519,8 @@ export function SplitwiseCard({ onShowInvites }: Props) {
     >
       <Text style={[s.sectionTitle, { color: theme.text }]}>Splitwise</Text>
       <Text style={[s.sectionBlurb, { color: theme.textTertiary }]}>
-        Connect once in the browser, then import groups and expenses. After
-        data is imported, you can disconnect to remove Coconut&apos;s copy and
-        the saved token (your Splitwise account is unchanged).
+        One-time import of your Splitwise groups and history. You can&apos;t sync
+        again after import finishes.
       </Text>
 
       {splitwiseResult ? (
@@ -591,38 +629,6 @@ export function SplitwiseCard({ onShowInvites }: Props) {
                 )}
               </TouchableOpacity>
             </>
-          ) : (
-            <Text
-              style={[
-                s.muted,
-                { color: theme.textTertiary, marginBottom: 4 },
-              ]}
-            >
-              {splitwiseStatus?.importedSplitwiseGroupCount ?? 0} group
-              {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) !== 1
-                ? "s"
-                : ""}{" "}
-              imported. Sync to refresh balances from Splitwise.
-            </Text>
-          )}
-          {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) > 0 ? (
-            <TouchableOpacity
-              style={[
-                s.primaryBtn,
-                { backgroundColor: theme.primary },
-                splitwiseImporting && s.disabled,
-              ]}
-              onPress={startSplitwiseImport}
-              disabled={splitwiseImporting || splitwiseClearing}
-            >
-              {splitwiseImporting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={s.primaryBtnText}>
-                  Sync from Splitwise
-                </Text>
-              )}
-            </TouchableOpacity>
           ) : null}
           {hasSplitwiseImportedData ? (
             <TouchableOpacity

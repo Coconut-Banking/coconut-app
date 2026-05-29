@@ -3,16 +3,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
 import { font, radii } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
+import { useIsFocused } from "@react-navigation/native";
 import { useCoconutWallet } from "../../hooks/useCoconutWallet";
 import { AutoPayoutSettings } from "./AutoPayoutSettings";
-import { deriveTransferEligibility } from "../../lib/stripe-transfer-status";
+import { deriveTransferEligibility, formatPayoutBankLabel } from "../../lib/stripe-transfer-status";
 import { settingsStyles as s } from "./styles";
 
 type ConnectStatus = {
   hasAccount?: boolean;
   onboardingComplete?: boolean;
+  chargesEnabled?: boolean;
   payoutsEnabled?: boolean;
   transferEligibility?: "none" | "setup_required" | "action_required" | "pending_review" | "active";
+  payoutBank?: { bankName?: string | null; last4?: string | null } | null;
 } | null;
 
 type Props = {
@@ -29,7 +32,8 @@ export function CoconutWalletCard({
   connectLoading,
 }: Props) {
   const { theme } = useTheme();
-  const { wallet, loading, openCashOut, cashOutLoading } = useCoconutWallet();
+  const isFocused = useIsFocused();
+  const { wallet, loading, openCashOut, cashOutLoading } = useCoconutWallet(isFocused);
 
   const currency = wallet?.currency ?? "USD";
   const available = wallet?.available ?? 0;
@@ -39,16 +43,26 @@ export function CoconutWalletCard({
     (wallet?.chargesEnabled ?? false) && coconutHeld > 0.005;
 
   const eligibility = deriveTransferEligibility(connectStatus ?? null);
-  const payoutsReady =
+  const fullyConnected =
     eligibility === "active" ||
-    Boolean(connectStatus?.onboardingComplete && wallet?.payoutsEnabled);
+    Boolean(
+      connectStatus?.payoutsEnabled &&
+        (connectStatus.chargesEnabled || connectStatus.onboardingComplete),
+    );
+  const payoutsReady = fullyConnected;
   const pendingReview = eligibility === "pending_review";
   const needsSetup =
-    eligibility === "setup_required" ||
-    eligibility === "none";
+    !fullyConnected &&
+    (eligibility === "setup_required" || eligibility === "none");
+  const showCashOut = Boolean(wallet?.canCashOut) || fullyConnected;
+  const showSetupButton =
+    !showCashOut && (needsSetup || Boolean(wallet?.canSetupPayouts));
 
+  const payoutBankLabel = formatPayoutBankLabel(connectStatus?.payoutBank);
   const blurb = payoutsReady
-    ? "Ready to cash out · Tap to Pay deposits land here"
+    ? payoutBankLabel
+      ? `Ready to cash out to ${payoutBankLabel}`
+      : "Ready to cash out · Tap to Pay deposits land here"
     : pendingReview
       ? "Stripe is reviewing your info — transfers unlock soon"
       : needsSetup
@@ -122,7 +136,7 @@ export function CoconutWalletCard({
           ) : null}
 
           <View style={{ flexDirection: "row", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-            {wallet?.canCashOut ? (
+            {showCashOut ? (
               <TouchableOpacity
                 style={[
                   s.primaryBtn,
@@ -139,7 +153,7 @@ export function CoconutWalletCard({
                   <Text style={s.primaryBtnText}>Cash out</Text>
                 )}
               </TouchableOpacity>
-            ) : needsSetup || wallet?.canSetupPayouts ? (
+            ) : showSetupButton ? (
               <TouchableOpacity
                 style={[
                   s.primaryBtn,

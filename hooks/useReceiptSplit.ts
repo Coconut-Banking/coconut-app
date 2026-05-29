@@ -12,6 +12,7 @@ import {
   parseReceiptUploadError,
   type ReceiptUploadErrorCode,
 } from "../lib/receipt-upload-errors";
+import { fetchReceiptForResume } from "../lib/receipt-collect";
 
 export type Step = "upload" | "review" | "choose" | "assign" | "summary";
 
@@ -525,6 +526,31 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     setStep("upload");
   }, []);
 
+  const resumeCollectingBill = useCallback(
+    async (id: string) => {
+      const data = await fetchReceiptForResume(apiFetch, id);
+      if (!data) return false;
+      setReceiptId(data.id);
+      setEditMerchant(data.merchantName ?? "");
+      setEditSubtotal(Number(data.subtotal) || 0);
+      setEditTax(Number(data.tax) || 0);
+      setEditTip(Number(data.tip) || 0);
+      setEditTotal(Number(data.total) || 0);
+      setEditItems(
+        data.items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          quantity: Number(i.quantity) || 1,
+          unitPrice: Number(i.unit_price) || 0,
+          totalPrice: Number(i.total_price) || 0,
+        })),
+      );
+      setStep("choose");
+      return true;
+    },
+    [apiFetch],
+  );
+
   const reset = useCallback(() => {
     setStep("upload");
     setReceiptId(null);
@@ -589,5 +615,6 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     saveError,
     setSaveError,
     reset,
+    resumeCollectingBill,
   };
 }

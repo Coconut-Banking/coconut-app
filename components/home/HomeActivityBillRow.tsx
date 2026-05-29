@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
 import { useHomePalette } from "../../lib/home-theme";
@@ -8,6 +9,7 @@ import type { BillRow } from "../../hooks/useBills";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
 
 function billStatusLabel(bill: BillRow): string {
+  if (bill.status === "collecting") return "Open";
   if (bill.paidAt || bill.status === "paid" || bill.status === "settled_off_link") {
     return "Paid";
   }
@@ -26,13 +28,27 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
 }) {
   const { theme } = useTheme();
   const home = useHomePalette();
+  const collecting = bill.status === "collecting";
   const paid = Boolean(bill.paidAt || bill.status === "paid" || bill.status === "settled_off_link");
   const status = billStatusLabel(bill);
+  const guestTotal = bill.collectGuestCount ?? 0;
+  const guestDone = bill.collectGuestsSubmitted ?? 0;
 
   const onPress = useCallback(() => {
+    if (collecting && bill.receiptId) {
+      router.push({
+        pathname: "/(tabs)/receipt",
+        params: { resumeReceiptId: bill.receiptId },
+      });
+      return;
+    }
+    if (collecting) {
+      router.push("/(tabs)/receipt");
+      return;
+    }
     if (bill.isPayer && bill.payUrl) void Linking.openURL(bill.payUrl);
     else if (bill.isReceiver && onNudge) onNudge(bill);
-  }, [bill, onNudge]);
+  }, [bill, collecting, onNudge]);
 
   return (
     <View>
@@ -40,7 +56,7 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
         style={styles.row}
         activeOpacity={0.75}
         onPress={onPress}
-        disabled={paid && !bill.payUrl}
+        disabled={paid && !bill.payUrl && !collecting}
       >
         <View
           style={[
@@ -61,8 +77,11 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
             {bill.label}
           </Text>
           <Text style={[styles.sub, { color: theme.textTertiary }]} numberOfLines={1}>
-            {bill.groupName}
-            {bill.isPayer ? ` · to ${bill.receiverName}` : ` · from ${bill.payerName}`}
+            {collecting
+              ? guestTotal > 0
+                ? `${guestDone} of ${guestTotal} picked items · tap to continue`
+                : "Waiting for guests · tap to continue"
+              : `${bill.groupName}${bill.isPayer ? ` · to ${bill.receiverName}` : ` · from ${bill.payerName}`}`}
           </Text>
         </View>
         <View style={styles.right}>

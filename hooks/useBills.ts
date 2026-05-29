@@ -17,6 +17,10 @@ export type BillRow = {
   lastNudgedAt: string | null;
   isPayer: boolean;
   isReceiver: boolean;
+  /** Open table split — not a payment request yet */
+  receiptId?: string;
+  collectGuestCount?: number;
+  collectGuestsSubmitted?: number;
 };
 
 type BillsResponse = {

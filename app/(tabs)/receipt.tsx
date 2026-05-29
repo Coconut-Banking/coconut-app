@@ -426,11 +426,13 @@ const smst = StyleSheet.create({
 });
 
 export default function ReceiptScreen() {
-  const { pendingScanUri, pendingScanMime, pendingScanName } = useLocalSearchParams<{
-    pendingScanUri?: string;
-    pendingScanMime?: string;
-    pendingScanName?: string;
-  }>();
+  const { pendingScanUri, pendingScanMime, pendingScanName, resumeReceiptId } =
+    useLocalSearchParams<{
+      pendingScanUri?: string;
+      pendingScanMime?: string;
+      pendingScanName?: string;
+      resumeReceiptId?: string;
+    }>();
   const { theme } = useTheme();
   const { isLoaded, isSignedIn } = useAuth();
   const apiFetch = useApiFetch();
@@ -445,6 +447,18 @@ export default function ReceiptScreen() {
     mimeType: string;
     name: string;
   } | null>(null);
+  const resumeHandled = useRef(false);
+
+  useEffect(() => {
+    const id = typeof resumeReceiptId === "string" ? resumeReceiptId : undefined;
+    if (!id || !authReady || resumeHandled.current) return;
+    resumeHandled.current = true;
+    void (async () => {
+      const ok = await rs.resumeCollectingBill(id);
+      if (!ok) Alert.alert("Bill", "Could not open this bill.");
+      router.setParams({ resumeReceiptId: undefined });
+    })();
+  }, [resumeReceiptId, authReady, rs.resumeCollectingBill]);
 
   const runPendingUpload = useCallback(
     (payload: { uri: string; mimeType: string; name: string }) => {

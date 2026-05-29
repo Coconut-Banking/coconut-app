@@ -42,8 +42,6 @@ import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/Merc
 import type { ReceiptItem } from "../../lib/receipt-split";
 import {
   useGroupsSummary,
-  usePrefetchContactsSummary,
-  usePrefetchActivity,
   useRecentActivity,
   type RecentActivityItem,
 } from "../../hooks/useGroups";
@@ -374,8 +372,6 @@ export default function BalancesPrototypeScreen() {
     loading: summaryLoading,
     refetch,
   } = useGroupsSummary();
-  usePrefetchContactsSummary(500);
-  usePrefetchActivity(500);
   const {
     activity: apiActivity,
     loading: activityLoading,
@@ -392,6 +388,7 @@ export default function BalancesPrototypeScreen() {
   const {
     toPay: billsToPay,
     waiting: billsWaiting,
+    collecting: billsCollecting,
     paid: billsPaid,
     refetch: refetchBills,
   } = useHomeBills(!isDemoOn);
@@ -487,11 +484,8 @@ export default function BalancesPrototypeScreen() {
       dismissContactsBanner();
     }
   }, [requestContactsAccess, dismissContactsBanner]);
-  const showContactsBanner =
-    !contactsBannerDismissed &&
-    contactsPerm !== "granted" &&
-    isSignedIn &&
-    !isDemoOn;
+  /** Contacts prompt hidden on home for now — still available in Account settings. */
+  const showContactsBanner = false;
 
 
   // Avoid treating Clerk's initial isSignedIn=false/undefined as "guest" — that flashed demo bank while session loads.
@@ -513,11 +507,12 @@ export default function BalancesPrototypeScreen() {
         activity,
         billsToPay,
         billsWaiting,
+        billsCollecting,
         billsPaid,
         filter: feedFilter,
         search: activitySearch,
       }),
-    [activity, billsToPay, billsWaiting, billsPaid, feedFilter, activitySearch],
+    [activity, billsToPay, billsWaiting, billsCollecting, billsPaid, feedFilter, activitySearch],
   );
 
   const feedCount = filteredFeed.length;

@@ -39,6 +39,11 @@ export const TRANSFER_STATUS_COPY: Record<
 };
 
 /** Connect status payload from GET /api/stripe/connect/status (new + legacy fields). */
+export type ConnectPayoutBankInfo = {
+  bankName?: string | null;
+  last4?: string | null;
+};
+
 export type ConnectStatusPayload = {
   hasAccount?: boolean;
   onboardingComplete?: boolean;
@@ -47,7 +52,15 @@ export type ConnectStatusPayload = {
   detailsSubmitted?: boolean;
   requiresVerification?: boolean;
   transferEligibility?: TransferEligibility;
+  payoutBank?: ConnectPayoutBankInfo | null;
 } | null;
+
+/** e.g. "Chase ••••2632" for payout destination (Stripe Connect bank). */
+export function formatPayoutBankLabel(bank: ConnectPayoutBankInfo | null | undefined): string | null {
+  if (!bank?.last4) return null;
+  const name = bank.bankName?.trim();
+  return name ? `${name} ••••${bank.last4}` : `Bank ••••${bank.last4}`;
+}
 
 /**
  * Derive eligibility when API omits transferEligibility (older deploy) or Stripe sync lags.

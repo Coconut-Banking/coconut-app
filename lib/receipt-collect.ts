@@ -15,6 +15,9 @@ export type CollectStatus = {
   }>;
   submittedCount: number;
   totalCount: number;
+  guestsSubmitted?: number;
+  guestCount?: number;
+  pendingGuests?: number;
 };
 
 export async function startReceiptCollect(
@@ -59,6 +62,32 @@ export async function fetchCollectStatus(
   const res = await apiFetch(`/api/receipt/${receiptId}/collect-status`);
   if (!res.ok) return null;
   return res.json() as Promise<CollectStatus>;
+}
+
+export type ReceiptResumePayload = {
+  id: string;
+  merchantName: string;
+  subtotal: number;
+  tax: number;
+  tip: number;
+  total: number;
+  status: string;
+  items: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+  }>;
+};
+
+export async function fetchReceiptForResume(
+  apiFetch: ApiFetch,
+  receiptId: string,
+): Promise<ReceiptResumePayload | null> {
+  const res = await apiFetch(`/api/receipt/${receiptId}`);
+  if (!res.ok) return null;
+  return res.json() as Promise<ReceiptResumePayload>;
 }
 
 export async function closeReceiptCollect(

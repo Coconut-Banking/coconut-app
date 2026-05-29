@@ -824,7 +824,7 @@ export function useRecentActivity(enabled = true) {
       hydratedRef.current = true;
       setActivity(_memActivity);
       setLoading(false);
-      fetchActivity();
+      // Prefetch / tab layout already loaded activity — avoid duplicate network on mount.
       return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
     }
 

@@ -716,9 +716,12 @@ export default function SharedIndex() {
 
   useEffect(() => {
     if (!summaryGroups.length || isDemoOn) return;
-    const top = summaryGroups.slice(0, 5);
-    void Promise.all(top.map((g) => apiFetch(`/api/groups/${g.id}`).catch(() => {})));
-  }, [summaryGroups.length, isDemoOn]);
+    const top = summaryGroups.slice(0, 2);
+    const timer = setTimeout(() => {
+      void Promise.all(top.map((g) => apiFetch(`/api/groups/${g.id}`).catch(() => {})));
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [summaryGroups.length, isDemoOn, apiFetch]);
 
   const friends = useMemo(() => {
     const mergedFallbackGroups = [

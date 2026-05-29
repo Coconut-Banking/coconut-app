@@ -105,7 +105,7 @@ export default function GroupScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const { detail: realDetail, loading, refetch } = useGroupDetail(isDemoOn ? null : (id ?? null));
-  const { refetch: refetchSummary } = useGroupsSummary({ contacts: true });
+  const { summary, refetch: refetchSummary } = useGroupsSummary({ contacts: true });
   const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
   const { currencyCode: myCurrency } = useCurrency();
   const toast = useToast();
@@ -175,7 +175,6 @@ export default function GroupScreen() {
     return () => sub.remove();
   }, [pendingP2PPlatform]);
 
-  const { summary } = useGroupsSummary({ contacts: true });
   const existingMemberNames = useMemo(
     () => new Set((detail?.members ?? []).map((m) => m.display_name.toLowerCase())),
     [detail?.members],

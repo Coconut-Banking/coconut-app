@@ -42,6 +42,7 @@ import { useCurrency, SUPPORTED_CURRENCIES, type CurrencyCode } from "../../hook
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { afterUiSettledAsync } from "../../lib/after-ui-settled";
+import { formatSplitwiseImportDate } from "../../lib/splitwise-ui";
 import { CoconutWalletCard } from "../../components/settings/CoconutWalletCard";
 import { startConnectOnboarding } from "../../lib/stripe-connect-actions";
 import { PayoutTransferStatusCard } from "../../components/settings/PayoutTransferStatusCard";
@@ -130,6 +131,8 @@ export default function SettingsScreen() {
     connectedAt?: string | null;
     /** From server: Splitwise-sourced groups you own (0 if authorized but never imported / cleared). */
     importedSplitwiseGroupCount?: number;
+    importCompleted?: boolean;
+    importCompletedAt?: string | null;
   } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
@@ -197,11 +200,14 @@ export default function SettingsScreen() {
     detailsSubmitted?: boolean;
     requiresVerification?: boolean;
     transferEligibility?: TransferEligibility;
+    payoutBank?: { bankName?: string | null; last4?: string | null } | null;
   } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectActionLoading, setConnectActionLoading] = useState(false);
   const [connectPendingReview, setConnectPendingReview] = useState(false);
   const connectReturnHandled = useRef(false);
+  const connectStatusRef = useRef(connectStatus);
+  connectStatusRef.current = connectStatus;
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsLoading(true);
@@ -230,7 +236,8 @@ export default function SettingsScreen() {
   const fetchConnectStatus = useCallback(async (forceRefresh = false) => {
     if (!user) return;
     if (forceRefresh) invalidateApiCache("/api/stripe/connect/status");
-    setConnectLoading(true);
+    const showSpinner = forceRefresh || connectStatusRef.current === null;
+    if (showSpinner) setConnectLoading(true);
     try {
       const res = await apiFetch("/api/stripe/connect/status");
       if (!res.ok) { setConnectStatus(null); return; }
@@ -242,9 +249,9 @@ export default function SettingsScreen() {
         setConnectPendingReview(false);
       }
     } catch {
-      setConnectStatus(null);
+      if (connectStatusRef.current === null) setConnectStatus(null);
     } finally {
-      setConnectLoading(false);
+      if (showSpinner) setConnectLoading(false);
     }
   }, [user, apiFetch]);
 
@@ -341,12 +348,7 @@ export default function SettingsScreen() {
     return () => sub.remove();
   }, [apiFetch]);
 
-  useEffect(() => {
-    if (isFocused && !prevFocused.current && linked) {
-      fetchAccounts(true);
-    }
-    prevFocused.current = isFocused;
-  }, [isFocused, linked]);
+  prevFocused.current = isFocused;
 
   const fetchSplitwiseStatus = useCallback(
     async (opts?: { showLoading?: boolean }) => {
@@ -374,6 +376,8 @@ export default function SettingsScreen() {
           connected: boolean;
           connectedAt?: string | null;
           importedSplitwiseGroupCount?: unknown;
+          importCompleted?: unknown;
+          importCompletedAt?: string | null;
         };
         const n = row.importedSplitwiseGroupCount;
         setSplitwiseStatus({
@@ -381,6 +385,8 @@ export default function SettingsScreen() {
           connected: row.connected,
           connectedAt: row.connectedAt ?? null,
           importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+          importCompleted: row.importCompleted === true,
+          importCompletedAt: row.importCompletedAt ?? null,
         });
       } catch {
         setSplitwiseStatus(null);
@@ -403,12 +409,16 @@ export default function SettingsScreen() {
     }
   };
 
+  /** Email receipts UI hidden for now — skip Gmail API on Account tab. */
+  const showEmailReceipts = false;
+
   useEffect(() => {
-    if (!user) return;
-    if (!isFocused) return;
-    void fetchSplitwiseStatus({ showLoading: true });
-    void fetchGmailStatus();
-    void fetchConnectStatus();
+    if (!user || !isFocused) return;
+    void Promise.all([
+      fetchConnectStatus(),
+      fetchAccounts(false),
+      fetchSplitwiseStatus({ showLoading: splitwiseStatusRef.current === null }),
+    ]);
   }, [isFocused, user, fetchSplitwiseStatus, fetchConnectStatus]);
 
   // After Safari OAuth, token can exist before the app was opened — refresh when returning to foreground.
@@ -528,11 +538,12 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!user) return;
     if (splitwiseAutoImportStarted.current) return;
+    if (splitwiseStatus?.importCompleted) return;
     if (splitwiseParams?.splitwise === "connected" && splitwiseParams?.import === "1") {
       splitwiseAutoImportStarted.current = true;
       void startSplitwiseImport();
     }
-  }, [splitwiseParams?.splitwise, splitwiseParams?.import, user]);
+  }, [splitwiseParams?.splitwise, splitwiseParams?.import, user, splitwiseStatus?.importCompleted]);
 
   useEffect(() => {
     if (!user) return;
@@ -733,22 +744,34 @@ export default function SettingsScreen() {
         connected?: boolean;
         connectedAt?: string | null;
         importedSplitwiseGroupCount?: unknown;
+        importCompleted?: boolean;
+        importCompletedAt?: string | null;
       };
       if (typeof st.configured !== "boolean" || typeof st.connected !== "boolean") {
         Alert.alert("Splitwise", "Could not verify the connection. Pull to refresh on Settings.");
         return;
       }
       const n = st.importedSplitwiseGroupCount;
+      const completed = st.importCompleted === true;
       setSplitwiseStatus({
         configured: st.configured,
         connected: st.connected,
         connectedAt: st.connectedAt ?? null,
         importedSplitwiseGroupCount: typeof n === "number" ? n : 0,
+        importCompleted: completed,
+        importCompletedAt: st.importCompletedAt ?? null,
       });
       if (!st.connected) {
         Alert.alert(
           "Splitwise",
           "Connection did not complete. Try Connect again, or use the Coconut website if this keeps happening.",
+        );
+        return;
+      }
+      if (completed) {
+        Alert.alert(
+          "Already imported",
+          "Your Splitwise data was already imported. Balances stay in the Shared tab.",
         );
         return;
       }
@@ -1278,12 +1301,26 @@ export default function SettingsScreen() {
           ) : null}
         </View>
 
-        {/* Splitwise import */}
+        {/* Splitwise import — one-time; hidden after completed import */}
+        {splitwiseStatus?.importCompleted ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise</Text>
+            <Text style={[styles.muted, { color: theme.textTertiary, marginTop: 4 }]}>
+              Imported
+              {formatSplitwiseImportDate(splitwiseStatus.importCompletedAt)
+                ? ` on ${formatSplitwiseImportDate(splitwiseStatus.importCompletedAt)}`
+                : ""}
+              .{" "}
+              {splitwiseStatus.importedSplitwiseGroupCount ?? 0} group
+              {(splitwiseStatus.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} — one-time import;
+              balances are in Shared.
+            </Text>
+          </View>
+        ) : (
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Splitwise</Text>
           <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Connect once in the browser, then import groups and expenses. After data is imported, you can disconnect to remove
-            Coconut&apos;s copy and the saved token (your Splitwise account is unchanged).
+            One-time import of your Splitwise groups and history. You can&apos;t sync again after import finishes.
           </Text>
 
           {splitwiseResult ? (
@@ -1350,30 +1387,13 @@ export default function SettingsScreen() {
                     )}
                   </TouchableOpacity>
                 </>
-              ) : (
-                <Text style={[styles.muted, { color: theme.textTertiary, marginBottom: 4 }]}>
-                  {splitwiseStatus?.importedSplitwiseGroupCount ?? 0} group{(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} imported. Sync to refresh balances from Splitwise.
-                </Text>
-              )}
-              {(splitwiseStatus?.importedSplitwiseGroupCount ?? 0) > 0 ? (
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: theme.primary }, splitwiseImporting && styles.disabled]}
-                  onPress={startSplitwiseImport}
-                  disabled={splitwiseImporting}
-                >
-                  {splitwiseImporting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Sync from Splitwise</Text>
-                  )}
-                </TouchableOpacity>
               ) : null}
-              {null}
             </View>
           )}
         </View>
+        )}
 
-        {/* Email receipts */}
+        {showEmailReceipts ? (
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Email receipts</Text>
           <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
@@ -1472,6 +1492,7 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+        ) : null}
 
         {/* Collapsible Developer Tools */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>

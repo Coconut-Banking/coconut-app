@@ -6,7 +6,7 @@ type BillsPayload = { bills?: BillRow[] };
 
 async function fetchBillsTab(
   apiFetch: ReturnType<typeof useApiFetch>,
-  tab: "to_pay" | "waiting_on" | "paid",
+  tab: "to_pay" | "waiting_on" | "paid" | "collecting",
 ): Promise<BillRow[]> {
   const res = await apiFetch(`/api/bills?tab=${tab}`);
   if (!res.ok) return [];
@@ -19,6 +19,7 @@ export function useHomeBills(enabled = true) {
   const apiFetch = useApiFetch();
   const [toPay, setToPay] = useState<BillRow[]>([]);
   const [waiting, setWaiting] = useState<BillRow[]>([]);
+  const [collecting, setCollecting] = useState<BillRow[]>([]);
   const [paid, setPaid] = useState<BillRow[]>([]);
   const [loading, setLoading] = useState(enabled);
 
@@ -29,13 +30,15 @@ export function useHomeBills(enabled = true) {
     }
     setLoading(true);
     try {
-      const [tp, wa, pd] = await Promise.all([
+      const [tp, wa, co, pd] = await Promise.all([
         fetchBillsTab(apiFetch, "to_pay"),
         fetchBillsTab(apiFetch, "waiting_on"),
+        fetchBillsTab(apiFetch, "collecting"),
         fetchBillsTab(apiFetch, "paid"),
       ]);
       setToPay(tp);
       setWaiting(wa);
+      setCollecting(co);
       setPaid(pd);
     } finally {
       setLoading(false);
@@ -46,5 +49,5 @@ export function useHomeBills(enabled = true) {
     void refetch();
   }, [refetch]);
 
-  return { toPay, waiting, paid, loading, refetch };
+  return { toPay, waiting, collecting, paid, loading, refetch };
 }

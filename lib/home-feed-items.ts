@@ -42,6 +42,7 @@ export function buildHomeFeedItems(params: {
   activity: RecentActivityItem[];
   billsToPay: BillRow[];
   billsWaiting: BillRow[];
+  billsCollecting: BillRow[];
   billsPaid: BillRow[];
   filter: HomeFeedFilter;
   search: string;
@@ -49,9 +50,12 @@ export function buildHomeFeedItems(params: {
   const q = params.search.trim().toLowerCase();
 
   if (params.filter === "bills") {
-    const bills = [...params.billsToPay, ...params.billsWaiting, ...params.billsPaid].sort(
-      (a, b) => billSortKey(b) - billSortKey(a),
-    );
+    const bills = [
+      ...params.billsCollecting,
+      ...params.billsToPay,
+      ...params.billsWaiting,
+      ...params.billsPaid,
+    ].sort((a, b) => billSortKey(b) - billSortKey(a));
     const rows: HomeFeedItem[] = bills.map((bill) => ({
       kind: "bill",
       id: `bill-${bill.id}`,
@@ -59,6 +63,28 @@ export function buildHomeFeedItems(params: {
     }));
     if (!q) return rows;
     return rows.filter((row) => row.kind === "bill" && billHaystack(row.bill).includes(q));
+  }
+
+  if (params.filter === "all") {
+    const collectingRows: HomeFeedItem[] = params.billsCollecting.map((bill) => ({
+      kind: "bill",
+      id: `bill-${bill.id}`,
+      bill,
+    }));
+    let acts = params.activity;
+    if (q) acts = acts.filter((a) => activityHaystack(a).includes(q));
+    const actRows = acts.map((activity) => ({
+      kind: "activity" as const,
+      id: activity.id,
+      activity,
+    }));
+    const merged = [...collectingRows, ...actRows];
+    if (!q) return merged;
+    return merged.filter(
+      (row) =>
+        row.kind === "bill" ||
+        (row.kind === "activity" && activityHaystack(row.activity).includes(q)),
+    );
   }
 
   let acts = params.activity.filter((a) => activityMatchesFeedFilter(a, params.filter));
