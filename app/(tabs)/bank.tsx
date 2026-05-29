@@ -368,7 +368,7 @@ export default function BankTabScreen() {
   }, [allLinkedBankRows]);
 
   const filteredAllBankRows = useMemo(() => {
-    const q = committedSearch.trim().toLowerCase();
+    const q = searchMode === "keyword" ? bankSearch.trim().toLowerCase() : committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (accountFilter && tx.accountMask !== accountFilter) return false;
       if (txSource === "receipts" && !transactionHasEmailReceipt(tx)) return false;
@@ -639,273 +639,288 @@ export default function BankTabScreen() {
     </>
   );
 
+  const renderSearchControls = () => (
+    <>
+      <View style={[searchStyles.tabRow, { backgroundColor: theme.surfaceSecondary }]}>
+        {(
+          [
+            ["keyword", "Search", "search"],
+            ["natural", "Ask", "sparkles"],
+          ] as const
+        ).map(([mode, label, icon]) => (
+          <TouchableOpacity
+            key={mode}
+            onPress={() => {
+              setSearchMode(mode);
+              resetFiltersForModeSwitch();
+            }}
+            style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
+          >
+            <Ionicons name={icon} size={13} color={searchMode === mode ? "#fff" : theme.textTertiary} />
+            <Text style={[searchStyles.tabText, searchMode === mode && searchStyles.tabTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <TransactionSourceTabs value={txSource} onChange={setTxSource} />
+
+      <View
+        style={[
+          styles.searchBox,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+          searchMode === "natural" && bankSearch.trim() ? { borderColor: "#7C3AED40" } : {},
+        ]}
+      >
+        <Ionicons
+          name={searchMode === "natural" ? "sparkles" : "search"}
+          size={18}
+          color={searchMode === "natural" && bankSearch.trim() ? "#7C3AED" : theme.textTertiary}
+        />
+        <TextInput
+          style={[styles.searchInput, { color: theme.text }]}
+          value={bankSearch}
+          onChangeText={(text) => {
+            setBankSearch(text);
+            if (!text.trim()) {
+              setCommittedSearch("");
+              if (searchMode === "natural") askClear();
+            }
+          }}
+          onSubmitEditing={() => {
+            if (searchMode === "natural" && bankSearch.trim()) {
+              const dateOpts = dateFilterRange
+                ? {
+                    dateStart: dateFilterRange.start.toISOString().slice(0, 10),
+                    dateEnd: dateFilterRange.end.toISOString().slice(0, 10),
+                  }
+                : undefined;
+              void askSearch(bankSearch, dateOpts);
+            } else if (searchMode === "keyword") {
+              setCommittedSearch(bankSearch);
+            }
+          }}
+          placeholder={searchMode === "natural" ? "Ask in plain English…" : "Search by name, amount, etc."}
+          placeholderTextColor={theme.textTertiary}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={200}
+        />
+        {bankSearch.length > 0 ? (
+          <TouchableOpacity
+            onPress={() => {
+              setBankSearch("");
+              setCommittedSearch("");
+              askClear();
+            }}
+            hitSlop={10}
+            accessibilityLabel="Clear search"
+          >
+            <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, marginBottom: 12 }}
+        contentContainerStyle={{ gap: 6 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {(
+          [
+            ["all", "All time"],
+            ["week", "Last 7 days"],
+            ["month", "Last 30 days"],
+          ] as const
+        ).map(([preset, label]) => (
+          <TouchableOpacity
+            key={preset}
+            onPress={() => {
+              setDatePreset(preset);
+              setShowCalendar(false);
+              setCustomDateStart(null);
+              setCustomDateEnd(null);
+            }}
+            style={[
+              searchStyles.dateChip,
+              { borderColor: theme.border, backgroundColor: theme.surface },
+              datePreset === preset && searchStyles.dateChipActive,
+            ]}
+          >
+            <Text
+              style={[
+                searchStyles.dateChipText,
+                { color: theme.textTertiary },
+                datePreset === preset && searchStyles.dateChipTextActive,
+              ]}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity
+          onPress={() => {
+            setDatePreset("custom");
+            setShowCalendar(true);
+          }}
+          style={[
+            searchStyles.dateChip,
+            { borderColor: theme.border, backgroundColor: theme.surface },
+            datePreset === "custom" && searchStyles.dateChipActive,
+          ]}
+        >
+          <Text
+            style={[
+              searchStyles.dateChipText,
+              { color: theme.textTertiary },
+              datePreset === "custom" && searchStyles.dateChipTextActive,
+            ]}
+          >
+            {datePreset === "custom" && customDateStart && customDateEnd
+              ? `${customDateStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customDateEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+              : "Custom"}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {datePreset === "custom" && showCalendar ? (
+        <View style={{ marginBottom: 12 }}>
+          <CalendarPicker
+            startDate={customDateStart}
+            endDate={customDateEnd}
+            onSelect={(start, end) => {
+              setCustomDateStart(start);
+              setCustomDateEnd(end);
+            }}
+            onApply={() => setShowCalendar(false)}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.sectionLabelRow}>
+        <Text style={[styles.sLabel, { color: theme.textTertiary }]}>
+          {searchMode === "natural"
+            ? "Ask Coconut"
+            : bankSearch.trim()
+              ? `Matches · ${filteredAllBankRows.length}`
+              : "Transactions"}
+        </Text>
+        {searchMode === "keyword" && bankSearch.trim() && allLinkedBankRows.length > 0 ? (
+          <Text style={[styles.sLabelMeta, { color: theme.textTertiary }]}>
+            {allLinkedBankRows.length} total
+          </Text>
+        ) : null}
+      </View>
+    </>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <FlatList
-          {...FLAT_LIST_PERF}
-          data={flatListData}
-          keyExtractor={bankRowKeyExtractor}
-          renderItem={renderBankRow}
-          style={styles.scroll}
-          contentContainerStyle={[styles.page, showConnectBank && styles.pageLoading]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          extraData={flatListData.length}
-          refreshControl={
-            isDemoOn ? undefined : (
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-            )
-          }
-          ListEmptyComponent={
-            searchMode === "keyword" && !showInitialLoading && !showConnectBank ? (
-              <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Ionicons
-                  name={txSource === "receipts" ? "mail-outline" : "card-outline"}
-                  size={32}
-                  color={theme.textTertiary}
-                />
-                <Text style={[styles.emptyTitle, { color: theme.text }]}>
-                  {txSource === "receipts" ? "No email receipts" : "No charges found"}
-                </Text>
-                <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-                  {txSource === "receipts"
-                    ? "Charges matched to Gmail receipts appear here."
-                    : "Try another search or date filter."}
-                </Text>
-              </View>
-            ) : undefined
-          }
-          ListHeaderComponent={
-            <>
-          <View style={[styles.pad, { zIndex: 10 }]}>
-            <BankHeader
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View style={[styles.pad, { zIndex: 10 }]}>
+          <BankHeader
+            accounts={uniqueAccounts}
+            activeFilter={accountFilter}
+            showMenu={showAccountMenu}
+            onToggleMenu={() => setShowAccountMenu((v) => !v)}
+          />
+          {showAccountMenu ? (
+            <AccountFilterMenu
               accounts={uniqueAccounts}
               activeFilter={accountFilter}
-              showMenu={showAccountMenu}
-              onToggleMenu={() => setShowAccountMenu((v) => !v)}
+              onSelect={setAccountFilter}
+              onClose={() => setShowAccountMenu(false)}
             />
-            {showAccountMenu ? (
-              <AccountFilterMenu
-                accounts={uniqueAccounts}
-                activeFilter={accountFilter}
-                onSelect={setAccountFilter}
-                onClose={() => setShowAccountMenu(false)}
-              />
-            ) : null}
-          </View>
+          ) : null}
+        </View>
 
-          {showInitialLoading ? (
-            <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <View key={i}>
-                  <View style={styles.friendRow}>
-                    <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]} />
-                    <View style={{ flex: 1, marginLeft: 12, gap: 6 }}>
-                      <View style={[styles.skeletonLine, { width: "55%", backgroundColor: theme.surfaceSecondary }]} />
-                      <View style={[styles.skeletonLine, { width: "30%", backgroundColor: theme.surfaceSecondary }]} />
-                    </View>
-                    <View style={[styles.skeletonLine, { width: 50, backgroundColor: theme.surfaceSecondary }]} />
+        {showInitialLoading ? (
+          <View style={[styles.groupedCard, { backgroundColor: theme.surface, borderColor: theme.border, marginHorizontal: 20 }]}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <View key={i}>
+                <View style={styles.friendRow}>
+                  <View style={[styles.bankEmojiWrap, { backgroundColor: theme.surfaceSecondary }]} />
+                  <View style={{ flex: 1, marginLeft: 12, gap: 6 }}>
+                    <View style={[styles.skeletonLine, { width: "55%", backgroundColor: theme.surfaceSecondary }]} />
+                    <View style={[styles.skeletonLine, { width: "30%", backgroundColor: theme.surfaceSecondary }]} />
                   </View>
-                  {i < 4 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
+                  <View style={[styles.skeletonLine, { width: 50, backgroundColor: theme.surfaceSecondary }]} />
                 </View>
-              ))}
-            </View>
-          ) : showConnectBank ? (
-            <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Ionicons name="link-outline" size={36} color={theme.textTertiary} />
-              <Text style={[styles.emptyTitle, { color: theme.text }]}>Connect your bank</Text>
-              <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
-                Link an account in Settings to see transactions here.
-              </Text>
-              <TouchableOpacity
-                style={[styles.ctaBtn, { backgroundColor: colors.primary }]}
-                onPress={() => router.push("/(tabs)/settings")}
-              >
-                <Text style={styles.ctaBtnText}>Open Settings</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              <View style={[searchStyles.tabRow, { backgroundColor: theme.surfaceSecondary }]}>
-                {(
-                  [
-                    ["keyword", "Search", "search"],
-                    ["natural", "Ask", "sparkles"],
-                  ] as const
-                ).map(([mode, label, icon]) => (
-                  <TouchableOpacity
-                    key={mode}
-                    onPress={() => {
-                      setSearchMode(mode);
-                      resetFiltersForModeSwitch();
-                    }}
-                    style={[searchStyles.tab, searchMode === mode && searchStyles.tabActive]}
-                  >
-                    <Ionicons name={icon} size={13} color={searchMode === mode ? "#fff" : theme.textTertiary} />
-                    <Text style={[searchStyles.tabText, searchMode === mode && searchStyles.tabTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
+                {i < 4 ? <View style={[styles.rowSep, { backgroundColor: theme.borderLight }]} /> : null}
               </View>
-
-              <TransactionSourceTabs value={txSource} onChange={setTxSource} />
-
-              <View
-                style={[
-                  styles.searchBox,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
-                  searchMode === "natural" && bankSearch.trim() ? { borderColor: "#7C3AED40" } : {},
-                ]}
-              >
-                <Ionicons
-                  name={searchMode === "natural" ? "sparkles" : "search"}
-                  size={18}
-                  color={searchMode === "natural" && bankSearch.trim() ? "#7C3AED" : theme.textTertiary}
-                />
-                <TextInput
-                  style={[styles.searchInput, { color: theme.text }]}
-                  value={bankSearch}
-                  onChangeText={(text) => {
-                    setBankSearch(text);
-                    if (!text.trim()) {
-                      setCommittedSearch("");
-                      if (searchMode === "natural") askClear();
-                    }
-                  }}
-                  onSubmitEditing={() => {
-                    if (searchMode === "natural" && bankSearch.trim()) {
-                      const dateOpts = dateFilterRange
-                        ? {
-                            dateStart: dateFilterRange.start.toISOString().slice(0, 10),
-                            dateEnd: dateFilterRange.end.toISOString().slice(0, 10),
-                          }
-                        : undefined;
-                      void askSearch(bankSearch, dateOpts);
-                    } else if (searchMode === "keyword") {
-                      setCommittedSearch(bankSearch);
-                    }
-                  }}
-                  placeholder={searchMode === "natural" ? "Ask in plain English…" : "Search by name, amount, etc."}
-                  placeholderTextColor={theme.textTertiary}
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={200}
-                />
-                {bankSearch.length > 0 ? (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setBankSearch("");
-                      setCommittedSearch("");
-                      askClear();
-                    }}
-                    hitSlop={10}
-                    accessibilityLabel="Clear search"
-                  >
-                    <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
+            ))}
+          </View>
+        ) : showConnectBank ? (
+          <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border, marginHorizontal: 20 }]}>
+            <Ionicons name="link-outline" size={36} color={theme.textTertiary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>Connect your bank</Text>
+            <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
+              Link an account in Settings to see transactions here.
+            </Text>
+            <TouchableOpacity
+              style={[styles.ctaBtn, { backgroundColor: colors.primary }]}
+              onPress={() => router.push("/(tabs)/settings")}
+            >
+              <Text style={styles.ctaBtnText}>Open Settings</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <View style={styles.searchControls}>{renderSearchControls()}</View>
+            {searchMode === "natural" ? (
               <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ flexGrow: 0, marginBottom: 12 }}
-                contentContainerStyle={{ gap: 6 }}
+                style={{ flex: 1 }}
+                contentContainerStyle={styles.page}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
               >
-                {(
-                  [
-                    ["all", "All time"],
-                    ["week", "Last 7 days"],
-                    ["month", "Last 30 days"],
-                  ] as const
-                ).map(([preset, label]) => (
-                  <TouchableOpacity
-                    key={preset}
-                    onPress={() => {
-                      setDatePreset(preset);
-                      setShowCalendar(false);
-                      setCustomDateStart(null);
-                      setCustomDateEnd(null);
-                    }}
-                    style={[
-                      searchStyles.dateChip,
-                      { borderColor: theme.border, backgroundColor: theme.surface },
-                      datePreset === preset && searchStyles.dateChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        searchStyles.dateChipText,
-                        { color: theme.textTertiary },
-                        datePreset === preset && searchStyles.dateChipTextActive,
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity
-                  onPress={() => {
-                    setDatePreset("custom");
-                    setShowCalendar(true);
-                  }}
-                  style={[
-                    searchStyles.dateChip,
-                    { borderColor: theme.border, backgroundColor: theme.surface },
-                    datePreset === "custom" && searchStyles.dateChipActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      searchStyles.dateChipText,
-                      { color: theme.textTertiary },
-                      datePreset === "custom" && searchStyles.dateChipTextActive,
-                    ]}
-                  >
-                    {datePreset === "custom" && customDateStart && customDateEnd
-                      ? `${customDateStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customDateEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Custom"}
-                  </Text>
-                </TouchableOpacity>
+                {renderAskSection()}
               </ScrollView>
-
-              {datePreset === "custom" && showCalendar ? (
-                <View style={{ marginBottom: 12 }}>
-                  <CalendarPicker
-                    startDate={customDateStart}
-                    endDate={customDateEnd}
-                    onSelect={(start, end) => {
-                      setCustomDateStart(start);
-                      setCustomDateEnd(end);
-                    }}
-                    onApply={() => setShowCalendar(false)}
-                  />
-                </View>
-              ) : null}
-
-              <View style={styles.sectionLabelRow}>
-                <Text style={[styles.sLabel, { color: theme.textTertiary }]}>
-                  {searchMode === "natural"
-                    ? "Ask Coconut"
-                    : committedSearch.trim()
-                      ? `Matches · ${filteredAllBankRows.length}`
-                      : "Transactions"}
-                </Text>
-                {searchMode === "keyword" && committedSearch.trim() && allLinkedBankRows.length > 0 ? (
-                  <Text style={[styles.sLabelMeta, { color: theme.textTertiary }]}>
-                    {allLinkedBankRows.length} total
-                  </Text>
-                ) : null}
-              </View>
-
-              {searchMode === "natural" ? renderAskSection() : null}
-            </>
-          )}
-            </>
-          }
-        />
+            ) : (
+              <FlatList
+                {...FLAT_LIST_PERF}
+                data={flatListData}
+                keyExtractor={bankRowKeyExtractor}
+                renderItem={renderBankRow}
+                style={styles.scroll}
+                contentContainerStyle={styles.page}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                extraData={`${flatListData.length}-${bankSearch}`}
+                refreshControl={
+                  isDemoOn ? undefined : (
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                  )
+                }
+                ListEmptyComponent={
+                  !showInitialLoading && !showConnectBank ? (
+                    <View style={[styles.groupedCard, styles.emptyInner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                      <Ionicons
+                        name={txSource === "receipts" ? "mail-outline" : "card-outline"}
+                        size={32}
+                        color={theme.textTertiary}
+                      />
+                      <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                        {txSource === "receipts" ? "No email receipts" : "No charges found"}
+                      </Text>
+                      <Text style={[styles.emptySub, { color: theme.textTertiary }]}>
+                        {txSource === "receipts"
+                          ? "Charges matched to Gmail receipts appear here."
+                          : "Try another search or date filter."}
+                      </Text>
+                    </View>
+                  ) : undefined
+                }
+              />
+            )}
+          </>
+        )}
       </KeyboardAvoidingView>
 
       {selectedStrip ? <Modal visible={true} transparent animationType="slide" onRequestClose={() => setSelectedStrip(null)}>
@@ -1045,6 +1060,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   page: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 8 },
   pad: { paddingHorizontal: 0, paddingTop: 4, marginBottom: 16 },
+  searchControls: { paddingHorizontal: 20, paddingBottom: 4 },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",

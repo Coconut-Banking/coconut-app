@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { invalidateApiCache } from "./api";
+import { parseStripeConnectReturnUrl } from "./stripe-connect-return";
 import { canUseStripeConnectEmbedded } from "./stripe-connect-embedded";
 
 type ApiFetch = (
@@ -42,9 +43,21 @@ export async function openHostedConnectOnboarding(
     return false;
   }
 
-  await WebBrowser.openAuthSessionAsync(url, `${appScheme()}://stripe-connect-return`);
+  const redirectUrl = `${appScheme()}://stripe-connect-return`;
+  const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl);
+
   invalidateApiCache("/api/stripe/connect/status");
+  invalidateApiCache("/api/stripe/wallet");
   DeviceEventEmitter.emit("groups-updated");
+
+  if (result.type === "success" && result.url) {
+    const action = parseStripeConnectReturnUrl(result.url);
+    if (__DEV__) console.log("[Connect] auth session returned:", action ?? "unknown");
+    if (action === "refresh") {
+      DeviceEventEmitter.emit("stripe-connect-refresh");
+    }
+  }
+
   return true;
 }
 
@@ -61,7 +74,62 @@ export async function openHostedConnectCashOut(apiFetch: ApiFetch): Promise<bool
   await WebBrowser.openBrowserAsync(data.url);
   invalidateApiCache("/api/stripe/wallet");
   invalidateApiCache("/api/stripe/connect/status");
+  DeviceEventEmitter.emit("groups-updated");
   return true;
+}
+
+let connectFlowClosing = false;
+
+/** Close Connect modal routes without POP — dismiss/back often fail on root modals. */
+export function dismissConnectFlow(): void {
+  if (connectFlowClosing) return;
+  connectFlowClosing = true;
+
+  invalidateApiCache("/api/stripe/connect/status");
+  invalidateApiCache("/api/stripe/wallet");
+  DeviceEventEmitter.emit("groups-updated");
+
+  if (__DEV__) console.log("[Connect] dismissConnectFlow → tabs");
+
+  try {
+    // dismiss() dispatches raw POP and often fails on root modals; dismissTo closes modal → tabs.
+    if (typeof router.dismissTo === "function") {
+      router.dismissTo("/(tabs)");
+    } else {
+      router.replace("/(tabs)");
+    }
+  } catch {
+    try {
+      router.replace("/(tabs)");
+    } catch {
+      /* ignore */
+    }
+  } finally {
+    setTimeout(() => {
+      connectFlowClosing = false;
+    }, 400);
+  }
+}
+
+/** In-app Connect onboarding when embedded is enabled; otherwise Safari Account Link. */
+export async function startConnectOnboarding(
+  apiFetch: ApiFetch,
+  hasAccount: boolean,
+): Promise<void> {
+  if (canUseStripeConnectEmbedded()) {
+    router.push("/connect-onboarding");
+    return;
+  }
+  await openHostedConnectOnboarding(apiFetch, hasAccount);
+}
+
+/** In-app payout management when embedded is enabled; otherwise Stripe Express in Safari. */
+export async function openConnectCashOut(apiFetch: ApiFetch): Promise<void> {
+  if (canUseStripeConnectEmbedded()) {
+    router.push("/connect-payouts");
+    return;
+  }
+  await openHostedConnectCashOut(apiFetch);
 }
 
 export function openEmbeddedConnectOnboarding(): void {
@@ -72,21 +140,10 @@ export function openEmbeddedConnectPayouts(): void {
   router.push("/connect-payouts");
 }
 
-export async function startConnectOnboarding(
+export async function openHostedConnectOnboardingFromEmbedded(
   apiFetch: ApiFetch,
-  hasAccount: boolean,
+  hasAccount = true,
 ): Promise<void> {
-  if (canUseStripeConnectEmbedded()) {
-    openEmbeddedConnectOnboarding();
-    return;
-  }
-  await openHostedConnectOnboarding(apiFetch, hasAccount);
-}
-
-export async function openConnectCashOut(apiFetch: ApiFetch): Promise<void> {
-  if (canUseStripeConnectEmbedded()) {
-    openEmbeddedConnectPayouts();
-    return;
-  }
-  await openHostedConnectCashOut(apiFetch);
+  const ok = await openHostedConnectOnboarding(apiFetch, hasAccount);
+  if (ok) dismissConnectFlow();
 }

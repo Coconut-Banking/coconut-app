@@ -1,6 +1,6 @@
 /**
- * Home tab — UI matches `Create design prototype (1)/src/app/pages/MobileAppPage.tsx` HomeScreen.
- * No legacy transaction list / NL search on this screen (Insights is linked from here).
+ * Home tab — balance overview, Coconut wallet, paid bills, and recent split activity feed.
+ * Bank transactions live on the Bank tab (not listed here even when Plaid is linked).
  */
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,6 +23,7 @@ import {
   Platform,
   PanResponder,
   useWindowDimensions,
+  FlatList,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,7 +40,13 @@ import { getDemoItemizedReceipt } from "../../lib/demo-receipt-itemized";
 import { ItemizedReceiptPreview } from "../../components/ItemizedReceiptPreview";
 import { MerchantEnrichmentCard, MerchantItemsList } from "../../components/MerchantEnrichmentCard";
 import type { ReceiptItem } from "../../lib/receipt-split";
-import { useGroupsSummary, usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
+import {
+  useGroupsSummary,
+  usePrefetchContactsSummary,
+  usePrefetchActivity,
+  useRecentActivity,
+  type RecentActivityItem,
+} from "../../hooks/useGroups";
 import { useTransactions, type Transaction } from "../../hooks/useTransactions";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useDemoData } from "../../lib/demo-context";
@@ -48,23 +55,28 @@ import { HomeWelcomeHeader } from "../../components/home/HomeWelcomeHeader";
 import { HomeHeroBackdrop } from "../../components/home/HomeHeroBackdrop";
 import { HomeScreenBackground, CANVAS_BOTTOM } from "../../components/home/HomeScreenBackground";
 import { BalanceOverviewCard } from "../../components/home/BalanceOverviewCard";
-import { HomeCoconutBalanceStrip } from "../../components/home/HomeCoconutBalanceStrip";
-import { HomeBankTransactionsSection, HomeTransactionsFooter } from "../../components/home/HomeBankTransactionsSection";
-import { HomeBankTransactionsEmpty } from "../../components/home/HomeBankTransactionsEmpty";
-import { HomeTransactionSearchHeader } from "../../components/home/HomeTransactionSearchHeader";
+import { HomeCoconutBalanceCard } from "../../components/home/HomeCoconutBalanceCard";
 import type { HomeTransactionListItem } from "../../components/home/HomeBankTransactionRow";
+import { HomeActivityRow } from "../../components/home/HomeActivityRow";
+import { HomeActivityBillRow } from "../../components/home/HomeActivityBillRow";
+import { HomeFeedSourceTabs } from "../../components/home/HomeFeedSourceTabs";
+import { HomeActivitySectionHeader } from "../../components/home/HomeActivitySectionHeader";
+import { HomeActivitySearchBar } from "../../components/home/HomeActivitySearchBar";
+import type { HomeFeedFilter } from "../../lib/home-feed-filter";
+import { buildHomeFeedItems, type HomeFeedItem } from "../../lib/home-feed-items";
+import { useHomeBills } from "../../hooks/useHomeBills";
+import { useToast } from "../../components/Toast";
 import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
 import { resolvePurchaseLocation } from "../../lib/transaction-location";
 import { afterUiSettled } from "../../lib/after-ui-settled";
 import {
   homeBalanceSideInset,
   homeListBottomPadding,
-  homeListPaddingRight,
   HOME_TX_HORIZONTAL,
 } from "../../lib/home-screen-insets";
+import { HOME_LAYOUT } from "../../lib/home-typography";
 import { HomeBankTransactionRow } from "../../components/home/HomeBankTransactionRow";
 import type { DateFilterPreset } from "../../components/home/HomeSpeedDialSearch";
-import { FlatList } from "react-native-gesture-handler";
 import { FLAT_LIST_PERF } from "../../lib/list-performance";
 import { colors, font, radii, shadow, darkUI, prototype } from "../../lib/theme";
 import { useHomePalette } from "../../lib/home-theme";
@@ -338,21 +350,6 @@ const AllBankListItem = React.memo(function AllBankListItem({
 
 const HOME_TX_FOOTER_EXTRA = 56;
 
-const HomeTxListFooter = React.memo(function HomeTxListFooter() {
-  const home = useHomePalette();
-  return (
-    <View
-      style={[
-        styles.homeTxGroupFooter,
-        { backgroundColor: home.boxFill, borderColor: home.boxBorder },
-      ]}
-    >
-      <View style={[styles.homeTxGroupSep, { backgroundColor: home.boxBorder }]} />
-      <HomeTransactionsFooter />
-    </View>
-  );
-});
-
 export default function BalancesPrototypeScreen() {
   const { theme } = useTheme();
   const home = useHomePalette();
@@ -361,6 +358,14 @@ export default function BalancesPrototypeScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const balancePad = homeBalanceSideInset(screenWidth);
   const txPad = HOME_TX_HORIZONTAL;
+  const homeContentWidth = useMemo(
+    () => ({
+      width: "100%" as const,
+      maxWidth: HOME_LAYOUT.bandMaxWidth,
+      alignSelf: "center" as const,
+    }),
+    [],
+  );
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
@@ -368,12 +373,28 @@ export default function BalancesPrototypeScreen() {
     summary: apiSummary,
     loading: summaryLoading,
     refetch,
-    forceRefetch: refetchSummary,
   } = useGroupsSummary();
   usePrefetchContactsSummary(500);
   usePrefetchActivity(500);
+  const {
+    activity: apiActivity,
+    loading: activityLoading,
+    refetch: refetchActivity,
+  } = useRecentActivity(!isDemoOn);
 
   const summary = isDemoOn ? demo.summary : apiSummary;
+  const activity = isDemoOn ? demo.activity : apiActivity;
+  const [feedFilter, setFeedFilter] = useState<HomeFeedFilter>("all");
+  const [activitySearch, setActivitySearch] = useState("");
+  const [activitySearchOpen, setActivitySearchOpen] = useState(false);
+  const activitySearchRef = useRef<TextInput>(null);
+  const toast = useToast();
+  const {
+    toPay: billsToPay,
+    waiting: billsWaiting,
+    paid: billsPaid,
+    refetch: refetchBills,
+  } = useHomeBills(!isDemoOn);
   const [selectedStrip, setSelectedStrip] = useState<HomeBankStripRow | null>(null);
   const openedFromListRef = useRef(false);
   const [showAllBank, setShowAllBank] = useState(false);
@@ -401,7 +422,7 @@ export default function BalancesPrototypeScreen() {
   const [homeDateFilter, setHomeDateFilter] = useState<DateFilterPreset>("week");
   const [homeTxSource, setHomeTxSource] = useState<TxSourceTab>("all");
   const homeSearchInputRef = useRef<TextInput>(null);
-  const homeListRef = useRef<FlatList<HomeTransactionListItem>>(null);
+  const homeListRef = useRef<FlatList<HomeFeedItem>>(null);
   const homeTxScrollAnchorRef = useRef(0);
   const dismissHomeSearch = useCallback(() => {
     Keyboard.dismiss();
@@ -482,10 +503,51 @@ export default function BalancesPrototypeScreen() {
     !isDemoOn &&
     isSignedIn &&
     !summary &&
-    !hasCachedTx &&
     summaryLoading &&
-    txLoading &&
-    transactions.length === 0;
+    activityLoading &&
+    activity.length === 0;
+
+  const filteredFeed = useMemo(
+    () =>
+      buildHomeFeedItems({
+        activity,
+        billsToPay,
+        billsWaiting,
+        billsPaid,
+        filter: feedFilter,
+        search: activitySearch,
+      }),
+    [activity, billsToPay, billsWaiting, billsPaid, feedFilter, activitySearch],
+  );
+
+  const feedCount = filteredFeed.length;
+
+  const toggleActivitySearch = useCallback(() => {
+    setActivitySearchOpen((open) => {
+      const next = !open;
+      if (next) {
+        afterUiSettled(() => activitySearchRef.current?.focus());
+      } else {
+        setActivitySearch("");
+        Keyboard.dismiss();
+      }
+      return next;
+    });
+  }, []);
+
+  const handleBillNudge = useCallback(
+    async (bill: import("../../hooks/useBills").BillRow) => {
+      const res = await apiFetch(`/api/bills/${bill.id}/nudge`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.show(data.error ?? "Could not nudge");
+        return;
+      }
+      toast.show("Reminder sent");
+      void refetchBills();
+    },
+    [apiFetch, toast, refetchBills],
+  );
 
   const demoStripRows = useMemo(() => {
     if (!useDemoBankUi) return [];
@@ -727,7 +789,7 @@ export default function BalancesPrototypeScreen() {
 
   const filteredAllBankRows = useMemo(() => {
     if (!showAllBank) return [];
-    const q = committedSearch.trim().toLowerCase();
+    const q = searchMode === "keyword" ? bankSearch.trim().toLowerCase() : committedSearch.trim().toLowerCase();
     return allLinkedBankRows.filter((tx) => {
       if (bankFilter === "unsplit" && tx.alreadySplit) return false;
       if (datePreset === "receipts" && !tx.hasReceipt && !tx.receiptId) return false;
@@ -744,17 +806,17 @@ export default function BalancesPrototypeScreen() {
       const merchant = (tx.merchant || tx.rawDescription || "").toLowerCase();
       return merchant.includes(q) || String(Math.abs(Number(tx.amount)).toFixed(2)).includes(q);
     });
-  }, [allLinkedBankRows, bankFilter, committedSearch, dateFilterRange, datePreset, showAllBank]);
+  }, [allLinkedBankRows, bankFilter, bankSearch, committedSearch, searchMode, dateFilterRange, datePreset, showAllBank]);
 
   const onRefresh = useCallback(async () => {
     if (isDemoOn) return;
     setRefreshing(true);
     try {
-      await Promise.all([refetch(), runFullSync(false)]);
+      await Promise.all([refetch(), refetchActivity(true), refetchBills()]);
     } finally {
       setRefreshing(false);
     }
-  }, [isDemoOn, refetch, runFullSync]);
+  }, [isDemoOn, refetch, refetchActivity, refetchBills]);
 
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
@@ -762,30 +824,40 @@ export default function BalancesPrototypeScreen() {
   focusedRef.current = isFocused;
 
   useEffect(() => {
-    if (isFocused && !prevFocused.current && !isDemoOn) void refetch();
+    if (isFocused && !prevFocused.current && !isDemoOn) {
+      void refetch();
+      void refetchActivity(true);
+    }
     prevFocused.current = isFocused;
-  }, [isFocused, isDemoOn, refetch]);
+  }, [isFocused, isDemoOn, refetch, refetchActivity]);
 
   useEffect(() => {
     if (isDemoOn) return;
     const subs = [
       DeviceEventEmitter.addListener("groups-updated", () => {
-        void refetchSummary();
+        void refetch();
+        void refetchActivity(true);
+        void refetchBills();
       }),
       DeviceEventEmitter.addListener("expense-added", () => {
-        void refetchSummary();
+        void refetch();
+        void refetchActivity(true);
+        void refetchBills();
       }),
     ];
     return () => subs.forEach((s) => s.remove());
-  }, [isDemoOn, refetchSummary]);
+  }, [isDemoOn, refetch, refetchActivity, refetchBills]);
 
   useEffect(() => {
     if (isDemoOn) return;
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && focusedRef.current) void refetch();
+      if (state === "active" && focusedRef.current) {
+        void refetch();
+        void refetchActivity(true);
+      }
     });
     return () => sub.remove();
-  }, [isDemoOn, refetch]);
+  }, [isDemoOn, refetch, refetchActivity]);
 
   /** After disconnect, strip rows must stay empty; close sheet and reset dismiss state. */
   useEffect(() => {
@@ -811,37 +883,38 @@ export default function BalancesPrototypeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [askResults]);
 
-  const homeTxCount = filteredHomeTx.length;
-
-  const renderHomeTx = useCallback(
-    ({ item, index }: { item: HomeTransactionListItem; index: number }) => {
+  const renderFeedItem = useCallback(
+    ({ item, index }: { item: HomeFeedItem; index: number }) => {
       const isFirst = index === 0;
+      const isLast = index === feedCount - 1;
       return (
         <View
           style={[
             styles.homeTxGroupCell,
+            homeContentWidth,
             { backgroundColor: home.boxFill, borderColor: home.boxBorder },
             isFirst && styles.homeTxGroupFirst,
+            isLast && styles.homeTxGroupLast,
           ]}
         >
-          {!isFirst ? (
-            <View style={[styles.homeTxGroupSep, { backgroundColor: home.boxBorder }]} />
-          ) : null}
-          <HomeBankTransactionRow
-            item={item}
-            onPress={() => handleHomeTxPress(item)}
-            onSplit={() => handleHomeTxSplit(item)}
-            grouped
-          />
+          {item.kind === "bill" ? (
+            <HomeActivityBillRow
+              bill={item.bill}
+              showSep={!isLast}
+              onNudge={handleBillNudge}
+            />
+          ) : (
+            <HomeActivityRow item={item.activity} showSep={!isLast} />
+          )}
         </View>
       );
     },
-    [homeTxCount, home.boxFill, home.boxBorder, handleHomeTxPress, handleHomeTxSplit],
+    [feedCount, home.boxFill, home.boxBorder, handleBillNudge, homeContentWidth],
   );
 
   const homeListHeader = useMemo(
     () => (
-      <View style={[styles.homeHeader, { width: screenWidth, marginLeft: -txPad }]}>
+      <View style={[styles.homeHeader, { width: screenWidth, marginLeft: -balancePad }]}>
         <HomeHeroBackdrop topInset={insets.top} />
         <HomeWelcomeHeader topInset={insets.top} />
         <View
@@ -851,9 +924,9 @@ export default function BalancesPrototypeScreen() {
           ]}
         >
           <BalanceOverviewCard summary={summary} />
-          <HomeCoconutBalanceStrip />
+          <HomeCoconutBalanceCard />
         </View>
-        <View style={{ paddingHorizontal: txPad }}>
+        <View style={[homeContentWidth, { paddingHorizontal: 0 }]}>
         {showContactsBanner ? (
           <View style={[styles.contactsBanner, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 12 }}>
@@ -879,17 +952,18 @@ export default function BalancesPrototypeScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
-        <View
-          onLayout={(e) => {
-            homeTxScrollAnchorRef.current = e.nativeEvent.layout.y;
-          }}
-        >
-          <HomeBankTransactionsSection
-            hasTransactions={homeTxCount > 0}
-            searchActive={homeSearchActive}
-            onSearchActivate={activateHomeSearch}
+        <HomeActivitySectionHeader
+          searchActive={activitySearchOpen}
+          onToggleSearch={toggleActivitySearch}
+        />
+        {activitySearchOpen ? (
+          <HomeActivitySearchBar
+            inputRef={activitySearchRef}
+            value={activitySearch}
+            onChangeText={setActivitySearch}
           />
-        </View>
+        ) : null}
+        <HomeFeedSourceTabs value={feedFilter} onChange={setFeedFilter} />
         </View>
       </View>
     ),
@@ -897,40 +971,70 @@ export default function BalancesPrototypeScreen() {
       insets.top,
       screenWidth,
       balancePad,
-      txPad,
+      homeContentWidth,
       summary,
       showContactsBanner,
       theme,
       dismissContactsBanner,
       handleConnectContacts,
-      homeTxCount,
-      homeSearchActive,
-      activateHomeSearch,
+      feedFilter,
+      activitySearchOpen,
+      activitySearch,
+      toggleActivitySearch,
     ],
   );
 
-  const homeListEmpty = useMemo(
-    () =>
-      !homeSearchActive ? (
-        <HomeBankTransactionsEmpty
-          loading={!useDemoBankUi && txLoading && transactions.length === 0}
-          linked={linked}
-          useDemoUi={useDemoBankUi}
-          searchQuery={homeSearch}
-          txSource={homeTxSource}
-          onConnectBank={() => router.push("/setup")}
-        />
-      ) : null,
-    [
-      homeSearchActive,
-      useDemoBankUi,
-      txLoading,
-      transactions.length,
-      linked,
-      homeSearch,
-      homeTxSource,
-    ],
-  );
+  const homeListEmpty = useMemo(() => {
+    if (!isDemoOn && activityLoading && activity.length === 0) {
+      return (
+        <View
+          style={[
+            styles.feedEmpty,
+            homeContentWidth,
+            { backgroundColor: home.boxFill, borderColor: home.boxBorder },
+          ]}
+        >
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      );
+    }
+    return (
+      <View
+        style={[
+          styles.feedEmpty,
+          homeContentWidth,
+          { backgroundColor: home.boxFill, borderColor: home.boxBorder },
+        ]}
+      >
+        <Ionicons name="time-outline" size={28} color={theme.textTertiary} />
+        <Text style={[styles.feedEmptyTitle, { color: theme.text }]}>
+          {activitySearch.trim()
+            ? "No matches"
+            : feedFilter === "bills"
+              ? "No bills"
+              : "No activity yet"}
+        </Text>
+        <Text style={[styles.feedEmptySub, { color: theme.textTertiary }]}>
+          {activitySearch.trim()
+            ? "Try another name, amount, or merchant."
+            : feedFilter === "bills"
+              ? "Receipt collect and payment requests appear here."
+              : "Splits and payments show up as they happen."}
+        </Text>
+      </View>
+    );
+  }, [
+    isDemoOn,
+    activityLoading,
+    activity.length,
+    feedFilter,
+    activitySearch,
+    homeContentWidth,
+    home.boxFill,
+    home.boxBorder,
+    theme.text,
+    theme.textTertiary,
+  ]);
 
   const screenEdgeStyle = useMemo(
     () => [styles.screenRoot, { backgroundColor: CANVAS_BOTTOM }],
@@ -940,19 +1044,18 @@ export default function BalancesPrototypeScreen() {
   const listContentStyle = useMemo(() => {
     const tabBarClearance =
       tabBarHeight > 0 ? tabBarHeight : homeListBottomPadding(insets.bottom);
-    const hasHomeTxList = homeTxCount > 0;
+    const hasFeed = feedCount > 0;
     const paddingBottom =
-      tabBarClearance + (hasHomeTxList ? HOME_TX_FOOTER_EXTRA + 24 : 24);
+      tabBarClearance + (hasFeed ? HOME_TX_FOOTER_EXTRA + 24 : 24);
     return [
       styles.scrollContent,
       {
-        paddingHorizontal: txPad,
-        paddingRight: homeListPaddingRight(txPad),
+        paddingHorizontal: balancePad,
         paddingBottom,
-        ...(hasHomeTxList ? {} : { flexGrow: 1 }),
+        ...(hasFeed ? {} : { flexGrow: 1 }),
       },
     ];
-  }, [txPad, tabBarHeight, insets.bottom, homeTxCount]);
+  }, [balancePad, tabBarHeight, insets.bottom, feedCount]);
 
   if (initialHomeLoading) {
     return (
@@ -969,35 +1072,21 @@ export default function BalancesPrototypeScreen() {
       <StatusBar style="dark" />
       <HomeScreenBackground />
       <KeyboardAvoidingView
-        style={styles.flex1}
+        style={[styles.flex1, { backgroundColor: CANVAS_BOTTOM }]}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        {homeSearchActive ? (
-          <HomeTransactionSearchHeader
-            searchInputRef={homeSearchInputRef}
-            query={homeSearch}
-            onQueryChange={setHomeSearch}
-            dateFilter={homeDateFilter}
-            onDateFilterChange={setHomeDateFilter}
-            txSource={homeTxSource}
-            onTxSourceChange={setHomeTxSource}
-            onSubmitSearch={dismissHomeSearch}
-            onDone={dismissHomeSearch}
-          />
-        ) : null}
         <FlatList
           ref={homeListRef}
           {...FLAT_LIST_PERF}
           {...EDGE_TO_EDGE_SCROLL_PROPS}
-          data={filteredHomeTx}
+          data={filteredFeed}
           keyExtractor={(item) => item.id}
-          renderItem={renderHomeTx}
+          renderItem={renderFeedItem}
           ListHeaderComponent={homeListHeader}
           ListEmptyComponent={homeListEmpty}
-          ListFooterComponent={homeTxCount > 0 ? HomeTxListFooter : null}
           contentContainerStyle={listContentStyle}
-          style={styles.flex1}
+          style={[styles.flex1, { backgroundColor: CANVAS_BOTTOM }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -1576,7 +1665,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "transparent" },
   scroll: { flex: 1 },
   flex1: { flex: 1 },
-  scrollContent: { paddingHorizontal: 22, paddingRight: 76 },
+  scrollContent: {},
   homeTxGroupCell: {
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
@@ -1586,6 +1675,48 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
+  },
+  homeTxGroupLast: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    marginBottom: 8,
+  },
+  feedSectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  feedSectionTitle: {
+    fontSize: 11,
+    fontFamily: font.bold,
+    letterSpacing: 0.5,
+  },
+  feedSeeAll: {
+    fontSize: 13,
+    fontFamily: font.semibold,
+  },
+  feedEmpty: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  feedEmptyTitle: {
+    fontSize: 16,
+    fontFamily: font.semibold,
+    marginTop: 10,
+  },
+  feedEmptySub: {
+    fontSize: 13,
+    fontFamily: font.regular,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
   },
   homeTxGroupSep: {
     height: StyleSheet.hairlineWidth,

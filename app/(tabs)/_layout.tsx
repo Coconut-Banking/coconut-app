@@ -35,15 +35,14 @@ export default function TabLayout() {
         <TapToPayHeroModal />
         <Tabs
           tabBar={(props) => <CoconutTabBar {...props} />}
-          detachInactiveScreens
           screenOptions={{
             lazy: true,
-            freezeOnBlur: true,
             headerShown: false,
             headerStyle: { backgroundColor: theme.primaryLight },
             headerTintColor: theme.text,
             headerTitleStyle: { fontFamily: font.semibold },
             animation: "shift",
+            sceneStyle: { backgroundColor: CANVAS_BOTTOM },
             tabBarStyle: {
               backgroundColor: "transparent",
               borderTopWidth: 0,
@@ -64,10 +63,10 @@ export default function TabLayout() {
               sceneStyle: { backgroundColor: CANVAS_BOTTOM },
             }}
           />
-          <Tabs.Screen name="bank" options={{ title: "Bank", headerShown: false }} />
-          <Tabs.Screen name="shared" options={{ title: "Shared", headerShown: false }} />
-          <Tabs.Screen name="activity" options={{ title: "Activity", headerShown: false }} />
-          <Tabs.Screen name="settings" options={{ title: "Account", headerShown: false }} />
+          <Tabs.Screen name="bank" options={{ title: "Bank", headerShown: false, sceneStyle: { backgroundColor: CANVAS_BOTTOM } }} />
+          <Tabs.Screen name="shared" options={{ title: "Shared", headerShown: false, sceneStyle: { backgroundColor: CANVAS_BOTTOM } }} />
+          <Tabs.Screen name="activity" options={{ title: "Activity", headerShown: false, sceneStyle: { backgroundColor: CANVAS_BOTTOM } }} />
+          <Tabs.Screen name="settings" options={{ title: "Account", headerShown: false, sceneStyle: { backgroundColor: CANVAS_BOTTOM } }} />
 
           <Tabs.Screen name="add-expense" options={{ href: null, headerShown: false }} />
           <Tabs.Screen name="insights" options={{ href: null }} />

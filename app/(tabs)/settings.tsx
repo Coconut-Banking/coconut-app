@@ -29,7 +29,6 @@ import { useLocalSearchParams, useRouter, router as globalRouter } from "expo-ro
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../lib/theme-context";
-import type { ThemeMode } from "../../lib/colors";
 import { useDemoMode } from "../../lib/demo-mode-context";
 import { useSetup } from "../../lib/setup-context";
 import { resetSetupStep } from "../../app/setup";
@@ -45,6 +44,9 @@ import { Image } from "expo-image";
 import { afterUiSettledAsync } from "../../lib/after-ui-settled";
 import { CoconutWalletCard } from "../../components/settings/CoconutWalletCard";
 import { startConnectOnboarding } from "../../lib/stripe-connect-actions";
+import { PayoutTransferStatusCard } from "../../components/settings/PayoutTransferStatusCard";
+import type { TransferEligibility } from "../../lib/stripe-transfer-status";
+import { stripeConnectReturnFromParams } from "../../lib/stripe-connect-return";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -66,7 +68,7 @@ type PlaidAccount = {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { theme, mode, setMode } = useTheme();
+  const { theme } = useTheme();
   const { setIsDemoOn } = useDemoMode();
   const { resetSetup } = useSetup();
   const { user } = useUser();
@@ -160,6 +162,7 @@ export default function SettingsScreen() {
     connected?: string;
     error?: string;
     stripe_connect?: string;
+    status?: string;
   }>();
   const splitwiseErrorAlertShown = useRef(false);
 
@@ -191,6 +194,9 @@ export default function SettingsScreen() {
     onboardingComplete: boolean;
     chargesEnabled: boolean;
     payoutsEnabled: boolean;
+    detailsSubmitted?: boolean;
+    requiresVerification?: boolean;
+    transferEligibility?: TransferEligibility;
   } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectActionLoading, setConnectActionLoading] = useState(false);
@@ -220,8 +226,9 @@ export default function SettingsScreen() {
     }
   };
 
-  const fetchConnectStatus = useCallback(async () => {
+  const fetchConnectStatus = useCallback(async (forceRefresh = false) => {
     if (!user) return;
+    if (forceRefresh) invalidateApiCache("/api/stripe/connect/status");
     setConnectLoading(true);
     try {
       const res = await apiFetch("/api/stripe/connect/status");
@@ -538,21 +545,21 @@ export default function SettingsScreen() {
     }
   }, [splitwiseParams?.connected, splitwiseParams?.error, user]);
 
-  // Handle return from Stripe Connect onboarding
+  // Handle return from Stripe Connect onboarding (Safari deep link)
   useEffect(() => {
     if (!user) return;
     if (connectReturnHandled.current) return;
-    const sc = splitwiseParams?.stripe_connect;
-    if (sc === "complete") {
+    const action = stripeConnectReturnFromParams(splitwiseParams);
+    if (action === "complete") {
       connectReturnHandled.current = true;
       void fetchConnectStatus();
       router.replace("/(tabs)/settings");
-    } else if (sc === "refresh") {
+    } else if (action === "refresh") {
       connectReturnHandled.current = true;
       void startConnectOnboardingFlow();
       router.replace("/(tabs)/settings");
     }
-  }, [splitwiseParams?.stripe_connect, user]);
+  }, [splitwiseParams, user, fetchConnectStatus, startConnectOnboardingFlow]);
 
   useEffect(() => {
     const err = splitwiseParams?.splitwise_error;
@@ -959,12 +966,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const appearanceOptions: { value: ThemeMode; label: string }[] = [
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-    { value: "auto", label: "System" },
-  ];
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -1009,35 +1010,6 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
           ) : null}
-          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Appearance</Text>
-          <View style={styles.segmentRow}>
-            {appearanceOptions.map((opt) => {
-              const selected = mode === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[
-                    styles.segment,
-                    {
-                      borderColor: selected ? theme.primary : theme.border,
-                      backgroundColor: selected ? theme.primaryLight : theme.surfaceSecondary,
-                    },
-                  ]}
-                  onPress={() => setMode(opt.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      { color: selected ? theme.primary : theme.textSecondary, fontFamily: selected ? font.semibold : font.medium },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
 
           {biometricAvailable ? (
             <View style={styles.biometricRow}>
@@ -1194,66 +1166,18 @@ export default function SettingsScreen() {
         <CoconutWalletCard
           onSetupPayouts={startConnectOnboardingFlow}
           setupLoading={connectActionLoading}
+          connectStatus={connectStatus}
+          connectLoading={connectLoading}
         />
 
-        {/* Payments (Stripe Connect) */}
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Payout setup</Text>
-          <Text style={[styles.sectionBlurb, { color: theme.textTertiary }]}>
-            Link your bank so Coconut balance can cash out to you (required once for Tap to Pay deposits).
-          </Text>
-
-          {connectLoading && connectStatus === null ? (
-            <ActivityIndicator style={{ marginTop: 14 }} color={theme.primary} />
-          ) : connectStatus?.onboardingComplete ? (
-            <View style={[styles.resultBox, { backgroundColor: "#F5F3F2", borderColor: "#E3DBD8" }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="checkmark-circle" size={20} color={theme.positive} />
-                <Text style={[styles.resultTitle, { color: theme.text }]}>Payments enabled</Text>
-              </View>
-              <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
-                Tap to Pay funds will be deposited directly to your bank account.
-              </Text>
-            </View>
-          ) : connectStatus?.hasAccount ? (
-            <View style={{ gap: 12, marginTop: 4 }}>
-              <View style={[styles.resultBox, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Ionicons name="time-outline" size={20} color="#F59E0B" />
-                  <Text style={[styles.resultTitle, { color: theme.text }]}>Setup incomplete</Text>
-                </View>
-                <Text style={[styles.resultDetail, { color: theme.textQuaternary }]}>
-                  Finish setting up your account to receive payments.
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
-                onPress={startConnectOnboardingFlow}
-                disabled={connectActionLoading}
-              >
-                {connectActionLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Continue setup</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={{ gap: 12, marginTop: 4 }}>
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: theme.primary }, connectActionLoading && styles.disabled]}
-                onPress={startConnectOnboardingFlow}
-                disabled={connectActionLoading}
-              >
-                {connectActionLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Set up payments</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        <PayoutTransferStatusCard
+          connectStatus={connectStatus}
+          loading={connectLoading}
+          onPressSetup={startConnectOnboardingFlow}
+          setupLoading={connectActionLoading}
+          onRefresh={() => void fetchConnectStatus(true)}
+          refreshing={connectLoading}
+        />
 
         {/* Connected banks */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>

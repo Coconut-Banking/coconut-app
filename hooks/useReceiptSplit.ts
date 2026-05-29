@@ -13,7 +13,7 @@ import {
   type ReceiptUploadErrorCode,
 } from "../lib/receipt-upload-errors";
 
-export type Step = "upload" | "review" | "assign" | "summary";
+export type Step = "upload" | "review" | "choose" | "assign" | "summary";
 
 export interface Person {
   name: string;
@@ -239,7 +239,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           editExtras
         );
         setItemsWithExtras(withExtras);
-        setStep("assign");
+        setStep("choose");
         return;
       }
       setSaving(true);
@@ -302,7 +302,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           editExtras
         );
         setItemsWithExtras(withExtras);
-        setStep("assign");
+        setStep("choose");
       } catch (e) {
         setSaveError(
           e instanceof Error ? e.message : "Failed to save changes. Please try again."
@@ -422,6 +422,21 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
       return next;
     });
   }, []);
+
+  const assignAllToMe = useCallback(() => {
+    const me =
+      people.find((p) => p.name.toLowerCase().trim() === "you") ?? people[0];
+    if (!me) return;
+    setAssignments((prev) => {
+      const next = new Map(prev);
+      for (const item of itemsWithExtras) {
+        next.set(item.id, [
+          { name: me.name, memberId: me.memberId, email: me.email },
+        ]);
+      }
+      return next;
+    });
+  }, [people, itemsWithExtras]);
 
   const assignAll = useCallback(
     (itemId: string) => {
@@ -565,6 +580,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     assignments,
     toggleAssignment,
     assignAll,
+    assignAllToMe,
     itemsWithExtras,
     computeSummary,
     personShares,

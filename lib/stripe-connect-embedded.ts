@@ -1,11 +1,10 @@
 export type ConnectEmbeddedMode = "onboarding" | "payouts" | "payments" | "all";
 
-/** When true + publishable key set, use in-app Connect embedded components instead of Safari. */
+/** Embedded Connect is opt-in — native webview often blocks close on physical iOS. */
 export function isStripeConnectEmbeddedEnabled(): boolean {
-  return (
-    process.env.EXPO_PUBLIC_STRIPE_CONNECT_EMBEDDED === "1" ||
-    process.env.EXPO_PUBLIC_STRIPE_CONNECT_EMBEDDED === "true"
-  );
+  const flag = process.env.EXPO_PUBLIC_STRIPE_CONNECT_EMBEDDED?.trim().toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "yes") return true;
+  return false;
 }
 
 export function getStripePublishableKey(): string | null {

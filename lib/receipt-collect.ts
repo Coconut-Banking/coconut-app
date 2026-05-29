@@ -22,7 +22,7 @@ export async function startReceiptCollect(
   receiptId: string,
   groupId: string,
 ): Promise<
-  | { ok: true; collectUrl: string; token: string }
+  | { ok: true; collectUrl: string; token: string; groupId?: string }
   | { ok: false; error: string }
 > {
   const res = await apiFetch(`/api/receipt/${receiptId}/start-collect`, {
@@ -31,7 +31,25 @@ export async function startReceiptCollect(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: data.error ?? "Could not start table split" };
-  return { ok: true, collectUrl: data.collectUrl, token: data.token };
+  return { ok: true, collectUrl: data.collectUrl, token: data.token, groupId: data.groupId };
+}
+
+/** Ad-hoc table split — creates a bill group automatically; guests join by name on the link. */
+export async function startReceiptCollectAuto(
+  apiFetch: ApiFetch,
+  receiptId: string,
+  merchantName?: string,
+): Promise<
+  | { ok: true; collectUrl: string; token: string; groupId?: string }
+  | { ok: false; error: string }
+> {
+  const res = await apiFetch(`/api/receipt/${receiptId}/start-collect`, {
+    method: "POST",
+    body: { autoGroup: true, groupName: merchantName },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error ?? "Could not start share link" };
+  return { ok: true, collectUrl: data.collectUrl, token: data.token, groupId: data.groupId };
 }
 
 export async function fetchCollectStatus(

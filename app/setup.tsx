@@ -18,7 +18,6 @@ import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import { useIsFocused } from "@react-navigation/native";
-import { canUseStripeConnectEmbedded } from "../lib/stripe-connect-embedded";
 import { startConnectOnboarding } from "../lib/stripe-connect-actions";
 import type { LinkSuccess, LinkExit } from "react-native-plaid-link-sdk";
 
@@ -921,52 +920,22 @@ function StripeConnectStep({ onContinue }: { onContinue: () => void }) {
     setError(null);
     setNeedsVerification(false);
     try {
-      if (canUseStripeConnectEmbedded()) {
-        pollAfterEmbedded.current = true;
-        await startConnectOnboarding(apiFetch, false);
-        setLoading(false);
-        return;
-      }
-
-      const rawScheme = Constants.expoConfig?.scheme;
-      const scheme =
-        typeof rawScheme === "string"
-          ? rawScheme
-          : Array.isArray(rawScheme)
-            ? rawScheme[0] ?? "coconut"
-            : "coconut";
-
-      const res = await apiFetch("/api/stripe/connect/create-account", {
-        method: "POST",
-        body: { scheme },
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const msg = (data as { error?: string }).error ?? "Could not start setup";
-        if (msg.toLowerCase().includes("not configured")) {
-          onContinue();
-          return;
+      pollAfterEmbedded.current = true;
+      let hasAccount = false;
+      try {
+        const statusRes = await apiFetch("/api/stripe/connect/status");
+        if (statusRes.ok) {
+          const data = (await statusRes.json()) as { hasAccount?: boolean };
+          hasAccount = data.hasAccount ?? false;
         }
-        setError(msg);
-        setLoading(false);
-        return;
+      } catch {
+        /* use create-account path */
       }
-
-      const data = await res.json();
-      const url = (data as { url?: string }).url;
-      if (!url) {
-        setError("Could not get onboarding link. Try again.");
-        setLoading(false);
-        return;
-      }
-
-      await WebBrowser.openAuthSessionAsync(url, `${scheme}://stripe-connect-return`);
-      invalidateApiCache("/api/stripe/connect/status");
-      applyPollResult(await pollConnectStatus(apiFetch));
+      await startConnectOnboarding(apiFetch, hasAccount);
     } catch (e) {
       if (__DEV__) console.warn("[setup:stripe-connect]", e);
       setError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
     }
   };

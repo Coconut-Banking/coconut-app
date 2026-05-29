@@ -18,7 +18,7 @@
     "metro:kill": "bash scripts/kill-metro.sh",
     "ios:dev:device:install": "bash scripts/ios-dev-device-install.sh --install-only",
     "ios:dev:device:start": "npm run metro:kill && APP_VARIANT=dev REACT_NATIVE_PACKAGER_HOSTNAME=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo localhost) CI=false NODE_OPTIONS='--disable-warning=DEP0169' expo start --dev-client --port 8081 --clear",
-    "ios:dev:device:tunnel": "npm run metro:kill && APP_VARIANT=dev CI=false NODE_OPTIONS='--disable-warning=DEP0169' npx expo start --dev-client --tunnel --clear --port 8081",
+    "ios:dev:device:tunnel": "bash scripts/ios-dev-device-tunnel.sh",
     "web": "NODE_OPTIONS='--disable-warning=DEP0169' expo start --web",
     "test": "jest",
     "test:watch": "jest --watch",

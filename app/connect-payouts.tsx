@@ -1,85 +1,129 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  BackHandler,
   Pressable,
-  Alert,
-  DeviceEventEmitter,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ConnectPayouts } from "@stripe/stripe-react-native";
-import { ConnectEmbeddedProvider } from "../components/stripe/ConnectEmbeddedProvider";
-import { invalidateApiCache, useApiFetch } from "../lib/api";
+import ConnectPayoutsEmbedded from "../components/stripe/ConnectPayoutsEmbedded";
 import { canUseStripeConnectEmbedded } from "../lib/stripe-connect-embedded";
-import { openHostedConnectCashOut } from "../lib/stripe-connect-actions";
+import {
+  dismissConnectFlow,
+  openHostedConnectCashOut,
+} from "../lib/stripe-connect-actions";
+import { useApiFetch } from "../lib/api";
 import { useTheme } from "../lib/theme-context";
 import { font } from "../lib/theme";
-import { useEffect } from "react";
 
 /**
- * In-app cash out / payout management via Stripe Connect embedded Payouts.
+ * Cash out / payout settings: in-app Stripe Connect when embedded is enabled, else Safari.
  */
 export default function ConnectPayoutsScreen() {
-  const { theme } = useTheme();
-  const apiFetch = useApiFetch();
-
-  useEffect(() => {
-    if (!canUseStripeConnectEmbedded()) {
-      void openHostedConnectCashOut(apiFetch).finally(() => {
-        if (router.canGoBack()) router.back();
-      });
-    }
-  }, [apiFetch]);
-
   const handleClose = useCallback(() => {
-    invalidateApiCache("/api/stripe/wallet");
-    invalidateApiCache("/api/stripe/connect/status");
-    DeviceEventEmitter.emit("groups-updated");
-    if (router.canGoBack()) router.back();
+    dismissConnectFlow();
   }, []);
 
-  const handleLoadError = useCallback(
-    (event: { error?: { message?: string } }) => {
-      Alert.alert(
-        "Payouts unavailable",
-        event.error?.message ?? "Could not load in-app payouts.",
-        [
-          {
-            text: "Open in browser",
-            onPress: () => {
-              void openHostedConnectCashOut(apiFetch).finally(handleClose);
-            },
-          },
-          { text: "Close", style: "cancel", onPress: handleClose },
-        ],
-      );
-    },
-    [apiFetch, handleClose],
-  );
-
-  if (!canUseStripeConnectEmbedded()) {
-    return null;
+  if (canUseStripeConnectEmbedded()) {
+    return <ConnectPayoutsEmbedded onClose={handleClose} />;
   }
 
+  return <ConnectPayoutsSafariBridge onClose={handleClose} />;
+}
+
+function ConnectPayoutsSafariBridge({ onClose }: { onClose: () => void }) {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const apiFetch = useApiFetch();
+  const launched = useRef(false);
+  const [opening, setOpening] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const openSafari = useCallback(async () => {
+    setOpening(true);
+    setError(null);
+    try {
+      const ok = await openHostedConnectCashOut(apiFetch);
+      if (!ok) {
+        setError("Could not open payout settings. Try again or close this screen.");
+        return;
+      }
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setOpening(false);
+    }
+  }, [apiFetch, onClose]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (launched.current) return;
+    launched.current = true;
+    void openSafari();
+  }, [openSafari]);
+
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]} edges={["top"]}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Cash out</Text>
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 8 }]}>
         <Pressable
-          onPress={handleClose}
-          hitSlop={12}
+          onPress={onClose}
+          hitSlop={16}
+          style={[styles.closeBtn, { backgroundColor: theme.surface }]}
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel="Close cash out"
         >
           <Ionicons name="close" size={24} color={theme.text} />
         </Pressable>
       </View>
-      <ConnectEmbeddedProvider mode="payouts">
-        <ConnectPayouts style={styles.payouts} onLoadError={handleLoadError} />
-      </ConnectEmbeddedProvider>
+
+      <View style={styles.body}>
+        {opening ? (
+          <>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.title, { color: theme.text }]}>Opening Stripe…</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+              Cash out and payout settings open in Safari.
+            </Text>
+          </>
+        ) : error ? (
+          <>
+            <Ionicons name="alert-circle-outline" size={40} color={theme.textTertiary} />
+            <Text style={[styles.title, { color: theme.text }]}>Could not open Stripe</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>{error}</Text>
+            <Pressable
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+              onPress={() => void openSafari()}
+            >
+              <Text style={styles.primaryBtnText}>Try again</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Ionicons name="checkmark-circle-outline" size={40} color={theme.primary} />
+            <Text style={[styles.title, { color: theme.text }]}>Stripe opened</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+              Manage payouts in Safari, then tap Close to return to Coconut.
+            </Text>
+            <Pressable
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+              onPress={() => void openSafari()}
+            >
+              <Text style={styles.primaryBtnText}>Open Stripe again</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -90,18 +134,45 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  closeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
+  },
+  body: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    gap: 12,
   },
   title: {
     fontSize: 20,
     fontFamily: font.bold,
-    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 8,
   },
-  payouts: {
-    flex: 1,
+  subtitle: {
+    fontSize: 15,
+    fontFamily: font.regular,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  primaryBtn: {
+    marginTop: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  primaryBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: font.semibold,
   },
 });

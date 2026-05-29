@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../lib/theme-context";
-import type { ThemeMode } from "../../lib/colors";
 import { useBiometricLock } from "../../lib/biometric-lock-context";
 import { authenticate, getBiometricLabel } from "../../lib/biometric-lock";
 import {
@@ -21,88 +20,8 @@ import {
 import { font, radii } from "../../lib/theme";
 import { settingsStyles as s } from "./styles";
 
-function AppearancePicker({ mode, setMode }: { mode: ThemeMode; setMode: (m: ThemeMode) => void }) {
-  const { theme, isDark } = useTheme();
-
-  const effectiveDark = mode === "dark" || (mode === "auto" && isDark);
-
-  const toggleDark = useCallback(() => {
-    setMode(effectiveDark ? "light" : "dark");
-  }, [effectiveDark, setMode]);
-
-  const toggleSystem = useCallback(() => {
-    setMode(mode === "auto" ? (isDark ? "dark" : "light") : "auto");
-  }, [mode, isDark, setMode]);
-
-  return (
-    <View style={{ gap: 10 }}>
-      {/* Dark / Light cards */}
-      <TouchableOpacity
-        style={[
-          styles.modeCard,
-          {
-            backgroundColor: effectiveDark ? theme.primaryLight : theme.surfaceSecondary,
-            borderColor: effectiveDark ? theme.accent : theme.border,
-          },
-        ]}
-        onPress={toggleDark}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.modeIcon, { backgroundColor: effectiveDark ? "rgba(96,165,250,0.15)" : theme.surfaceTertiary }]}>
-          <Ionicons name="moon" size={20} color={effectiveDark ? theme.accent : theme.textTertiary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.modeTitle, { color: theme.text }]}>Dark Mode</Text>
-          <Text style={[styles.modeSub, { color: theme.textTertiary }]}>
-            {effectiveDark ? "Enabled — Easy on the eyes" : "Off"}
-          </Text>
-        </View>
-        <View style={[styles.toggle, { backgroundColor: effectiveDark ? theme.accent : theme.surfaceTertiary, borderColor: effectiveDark ? theme.accent : theme.border }]}>
-          <View style={[styles.toggleThumb, effectiveDark ? styles.toggleThumbOn : styles.toggleThumbOff]} />
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[
-          styles.modeCard,
-          {
-            backgroundColor: !effectiveDark ? theme.primaryLight : theme.surfaceSecondary,
-            borderColor: !effectiveDark ? theme.accent : theme.border,
-          },
-        ]}
-        onPress={() => { if (effectiveDark) setMode("light"); }}
-        activeOpacity={effectiveDark ? 0.7 : 1}
-      >
-        <View style={[styles.modeIcon, { backgroundColor: !effectiveDark ? "rgba(96,165,250,0.15)" : theme.surfaceTertiary }]}>
-          <Ionicons name="sunny" size={20} color={!effectiveDark ? theme.accent : theme.textTertiary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.modeTitle, { color: theme.text }]}>Pure White</Text>
-          <Text style={[styles.modeSub, { color: theme.textTertiary }]}>Clean & minimal</Text>
-        </View>
-        {!effectiveDark && (
-          <Ionicons name="checkmark-circle" size={22} color={theme.accent} />
-        )}
-      </TouchableOpacity>
-
-      {/* System follow toggle */}
-      <TouchableOpacity
-        style={[styles.systemRow, { backgroundColor: theme.surfaceSecondary, borderColor: mode === "auto" ? theme.accent : theme.border }]}
-        onPress={toggleSystem}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="phone-portrait-outline" size={16} color={mode === "auto" ? theme.accent : theme.textTertiary} />
-        <Text style={[styles.systemLabel, { color: theme.text }]}>Match system</Text>
-        <View style={[styles.toggleSm, { backgroundColor: mode === "auto" ? theme.accent : theme.surfaceTertiary, borderColor: mode === "auto" ? theme.accent : theme.border }]}>
-          <View style={[styles.toggleSmThumb, mode === "auto" ? styles.toggleThumbOn : styles.toggleThumbOff]} />
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 export function PreferencesCard() {
-  const { theme, mode, setMode } = useTheme();
+  const { theme } = useTheme();
   const {
     biometricAvailable,
     biometricType,
@@ -126,11 +45,6 @@ export function PreferencesCard() {
       ]}
     >
       <Text style={[s.sectionTitle, { color: theme.text }]}>Preferences</Text>
-
-      <Text style={[styles.fieldLabel, { color: theme.textTertiary }]}>
-        APPEARANCE
-      </Text>
-      <AppearancePicker mode={mode} setMode={setMode} />
 
       {biometricAvailable ? (
         <View style={[styles.biometricRow, { borderTopColor: theme.border }]}>

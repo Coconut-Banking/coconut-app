@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +32,8 @@ export default function ReceiptCollectScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -127,26 +130,85 @@ export default function ReceiptCollectScreen() {
     );
   }
 
+  const joinAsGuest = async () => {
+    const name = guestName.trim();
+    if (!name || !token) return;
+    setJoining(true);
+    try {
+      const res = await fetch(
+        `${API_URL}/api/receipt/collect/${encodeURIComponent(token)}/join`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ displayName: name }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert("Error", data.error ?? "Could not join");
+        return;
+      }
+      setMemberId(data.memberId);
+      setParticipants((prev) => [
+        ...prev,
+        { member_id: data.memberId, display_name: name, status: "invited" },
+      ]);
+    } catch {
+      Alert.alert("Error", "Network error");
+    } finally {
+      setJoining(false);
+    }
+  };
+
   if (!memberId) {
+    const listed = participants.filter(
+      (p) => p.display_name.toLowerCase() !== "you" || participants.length > 1,
+    );
     return (
       <SafeAreaView style={[s.root, { backgroundColor: theme.background }]}>
         <ScrollView contentContainerStyle={s.pad}>
           <Text style={[s.title, { color: theme.text }]}>{merchantName}</Text>
-          <Text style={[s.sub, { color: theme.textTertiary }]}>Pick your name</Text>
-          <View style={s.grid}>
-            {participants.map((p) => (
-              <TouchableOpacity
-                key={p.member_id}
-                style={[s.nameBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
-                disabled={p.status === "submitted"}
-                onPress={() => setMemberId(p.member_id)}
-              >
-                <Text style={[s.nameBtnText, { color: theme.text }]}>
-                  {p.display_name}
-                  {p.status === "submitted" ? " ✓" : ""}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={[s.sub, { color: theme.textTertiary }]}>
+            {listed.length > 0 ? "Pick your name" : "Enter your name to join"}
+          </Text>
+          {listed.length > 0 ? (
+            <View style={s.grid}>
+              {listed.map((p) => (
+                <TouchableOpacity
+                  key={p.member_id}
+                  style={[s.nameBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  disabled={p.status === "submitted"}
+                  onPress={() => setMemberId(p.member_id)}
+                >
+                  <Text style={[s.nameBtnText, { color: theme.text }]}>
+                    {p.display_name}
+                    {p.status === "submitted" ? " ✓" : ""}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          <View style={[s.joinBox, { borderColor: theme.borderLight, backgroundColor: theme.surface }]}>
+            <TextInput
+              style={[s.joinInput, { color: theme.text, borderColor: theme.border }]}
+              value={guestName}
+              onChangeText={setGuestName}
+              placeholder="Your name"
+              placeholderTextColor={theme.textTertiary}
+              autoCorrect={false}
+              onSubmitEditing={() => void joinAsGuest()}
+            />
+            <TouchableOpacity
+              style={[s.joinBtn, { backgroundColor: theme.primary }, joining && { opacity: 0.6 }]}
+              onPress={() => void joinAsGuest()}
+              disabled={joining || !guestName.trim()}
+            >
+              {joining ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={s.joinBtnText}>Continue</Text>
+              )}
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -218,4 +280,15 @@ const s = StyleSheet.create({
   itemName: { fontFamily: font.medium, fontSize: 15, flex: 1, marginRight: 8 },
   submitBtn: { marginTop: 16, paddingVertical: 14, borderRadius: radii.lg, alignItems: "center" },
   submitText: { color: "#fff", fontFamily: font.semibold, fontSize: 16 },
+  joinBox: { marginTop: 20, padding: 14, borderRadius: radii.lg, borderWidth: 1, gap: 10 },
+  joinInput: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontFamily: font.regular,
+    fontSize: 16,
+  },
+  joinBtn: { paddingVertical: 12, borderRadius: radii.lg, alignItems: "center" },
+  joinBtnText: { color: "#fff", fontFamily: font.semibold, fontSize: 15 },
 });

@@ -58,12 +58,13 @@ export default {
     orientation: "portrait",
     icon: "./assets/icon.png",
     scheme,
-    userInterfaceStyle: "automatic",
+    userInterfaceStyle: "light",
     ios: {
       supportsTablet: true,
       bundleIdentifier: bundleId,
       buildNumber: "2",
       infoPlist: {
+        UIUserInterfaceStyle: "Light",
         ITSAppUsesNonExemptEncryption: false,
         NSContactsUsageDescription:
           "Coconut uses your contacts to help you quickly add friends to split expenses with.",

@@ -10,10 +10,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "@clerk/expo";
 import { useIsFocused } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import Constants from "expo-constants";
 import { useTheme } from "../../lib/theme-context";
 import { useApiFetch } from "../../lib/api";
+import { startConnectOnboarding as openConnectOnboarding } from "../../lib/stripe-connect-actions";
+import { stripeConnectReturnFromParams } from "../../lib/stripe-connect-return";
 import { settingsStyles as s } from "./styles";
 import { CoconutWalletCard } from "./CoconutWalletCard";
 
@@ -23,7 +23,7 @@ export function PaymentsCard() {
   const apiFetch = useApiFetch();
   const isFocused = useIsFocused();
   const router = useRouter();
-  const params = useLocalSearchParams<{ stripe_connect?: string }>();
+  const params = useLocalSearchParams<{ stripe_connect?: string; status?: string }>();
   const connectReturnHandled = useRef(false);
 
   const [connectStatus, setConnectStatus] = useState<{
@@ -62,38 +62,7 @@ export function PaymentsCard() {
   const startConnectOnboarding = useCallback(async () => {
     setConnectActionLoading(true);
     try {
-      const endpoint = connectStatus?.hasAccount
-        ? "/api/stripe/connect/onboarding-link"
-        : "/api/stripe/connect/create-account";
-      const rawScheme = Constants.expoConfig?.scheme;
-      const scheme =
-        typeof rawScheme === "string"
-          ? rawScheme
-          : Array.isArray(rawScheme)
-            ? rawScheme[0] ?? "coconut"
-            : "coconut";
-      const res = await apiFetch(endpoint, {
-        method: "POST",
-        body: { scheme },
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        Alert.alert(
-          "Error",
-          (data as { error?: string }).error ?? "Could not start setup",
-        );
-        return;
-      }
-      const data = await res.json();
-      const url = (data as { url?: string }).url;
-      if (!url) {
-        Alert.alert("Error", "Could not get onboarding URL");
-        return;
-      }
-      await WebBrowser.openAuthSessionAsync(
-        url,
-        `${scheme}://stripe-connect-return`,
-      );
+      await openConnectOnboarding(apiFetch, connectStatus?.hasAccount ?? false);
       void fetchConnectStatus();
     } catch {
       Alert.alert(
@@ -108,17 +77,17 @@ export function PaymentsCard() {
   useEffect(() => {
     if (!user) return;
     if (connectReturnHandled.current) return;
-    const sc = params?.stripe_connect;
-    if (sc === "complete") {
+    const action = stripeConnectReturnFromParams(params);
+    if (action === "complete") {
       connectReturnHandled.current = true;
       void fetchConnectStatus();
       router.replace("/(tabs)/settings");
-    } else if (sc === "refresh") {
+    } else if (action === "refresh") {
       connectReturnHandled.current = true;
       void startConnectOnboarding();
       router.replace("/(tabs)/settings");
     }
-  }, [params?.stripe_connect, user, fetchConnectStatus, startConnectOnboarding, router]);
+  }, [params, user, fetchConnectStatus, startConnectOnboarding, router]);
 
   return (
     <>

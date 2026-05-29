@@ -7,12 +7,26 @@ import { useCoconutWallet } from "../../hooks/useCoconutWallet";
 import { AutoPayoutSettings } from "./AutoPayoutSettings";
 import { settingsStyles as s } from "./styles";
 
+type ConnectStatus = {
+  hasAccount?: boolean;
+  onboardingComplete?: boolean;
+  payoutsEnabled?: boolean;
+  transferEligibility?: "none" | "setup_required" | "action_required" | "pending_review" | "active";
+} | null;
+
 type Props = {
   onSetupPayouts: () => void;
   setupLoading?: boolean;
+  connectStatus?: ConnectStatus;
+  connectLoading?: boolean;
 };
 
-export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
+export function CoconutWalletCard({
+  onSetupPayouts,
+  setupLoading,
+  connectStatus,
+  connectLoading,
+}: Props) {
   const { theme } = useTheme();
   const { wallet, loading, openCashOut, cashOutLoading } = useCoconutWallet();
 
@@ -23,13 +37,24 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
   const showHeldLine =
     (wallet?.chargesEnabled ?? false) && coconutHeld > 0.005;
 
-  const blurb = wallet?.chargesEnabled
-    ? wallet.payoutsEnabled
-      ? "Available in your payment account"
-      : "Add your bank to transfer this balance"
-    : coconutHeld > 0.005
-      ? "Held in Coconut until you set up payouts"
-      : "Tap to Pay and payment links add to this balance";
+  const payoutsReady =
+    connectStatus?.transferEligibility === "active" ||
+    Boolean(connectStatus?.onboardingComplete && wallet?.payoutsEnabled);
+  const pendingReview = connectStatus?.transferEligibility === "pending_review";
+  const needsSetup =
+    connectStatus?.transferEligibility === "setup_required" ||
+    connectStatus?.transferEligibility === "none" ||
+    !connectStatus?.onboardingComplete;
+
+  const blurb = payoutsReady
+    ? "Ready to cash out · Tap to Pay deposits land here"
+    : pendingReview
+      ? "Stripe is reviewing your info — transfers unlock soon"
+      : needsSetup
+        ? "One-time setup (~2 min) to receive Tap to Pay & card payments"
+        : wallet?.chargesEnabled
+          ? "Finish payout setup to transfer to your bank"
+          : "Set up once to collect with Tap to Pay";
 
   return (
     <View
@@ -49,7 +74,7 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
         </Text>
       </View>
 
-      {loading && !wallet ? (
+      {(loading && !wallet) || connectLoading ? (
         <ActivityIndicator style={{ marginTop: 16 }} color={theme.text} />
       ) : (
         <>
@@ -113,7 +138,7 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
                   <Text style={s.primaryBtnText}>Cash out</Text>
                 )}
               </TouchableOpacity>
-            ) : wallet?.canSetupPayouts ? (
+            ) : needsSetup || wallet?.canSetupPayouts ? (
               <TouchableOpacity
                 style={[
                   s.primaryBtn,
@@ -128,43 +153,16 @@ export function CoconutWalletCard({ onSetupPayouts, setupLoading }: Props) {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={s.primaryBtnText}>
-                    {wallet?.chargesEnabled && !wallet?.payoutsEnabled
-                      ? "Add bank account"
-                      : "Set up payouts"}
+                    {connectStatus?.hasAccount ? "Continue setup" : "Connect payouts"}
                   </Text>
                 )}
               </TouchableOpacity>
             ) : null}
           </View>
 
-          <View
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: radii.md,
-              backgroundColor: theme.surfaceTertiary,
-              gap: 6,
-            }}
-          >
-            <Text style={{ fontSize: 12, fontFamily: font.semibold, color: theme.textSecondary, lineHeight: 18 }}>
-              Different from Home split balance
-            </Text>
-            <Text style={{ fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, lineHeight: 18 }}>
-              Home shows who owes whom from expenses and splits. This balance is real money you collected (Tap to Pay and
-              payment links). Settling up on a split reduces what friends owe you; collecting payment adds here.
-            </Text>
-            <Text style={{ fontSize: 12, fontFamily: font.regular, color: theme.textTertiary, lineHeight: 18 }}>
-              {wallet?.autoPayout?.enabled && wallet.autoPayout.thresholdUsd != null
-                ? `Automatic transfers on: we send to your bank when balance is over ${formatSplitCurrencyAmount(wallet.autoPayout.thresholdUsd, currency)} (usually 2–4 business days). Manual cash out still works anytime.`
-                : wallet?.canCashOut
-                  ? "Turn on automatic transfers below, or cash out manually anytime (usually 2–4 business days)."
-                  : wallet?.chargesEnabled && !wallet?.payoutsEnabled
-                    ? "Your payment account is ready — add a bank account to cash out."
-                    : "After payout setup, Tap to Pay and payment links add here."}
-            </Text>
-          </View>
-
-          <AutoPayoutSettings payoutsReady={Boolean(wallet?.payoutsEnabled && wallet?.canCashOut)} />
+          {payoutsReady ? (
+            <AutoPayoutSettings payoutsReady />
+          ) : null}
         </>
       )}
     </View>

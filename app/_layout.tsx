@@ -190,8 +190,15 @@ function AuthSwitch() {
         <Stack.Screen name="pay/[token]" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="receipt/collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
-        <Stack.Screen name="connect-onboarding" options={{ headerShown: false, presentation: "fullScreenModal" }} />
-        <Stack.Screen name="connect-payouts" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen
+          name="connect-onboarding"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: true }}
+        />
+        <Stack.Screen
+          name="connect-payouts"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: true }}
+        />
+        <Stack.Screen name="stripe-connect-return" options={{ headerShown: false }} />
         <Stack.Screen name="scan-receipt" options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
       </Stack>
     );
@@ -202,10 +209,18 @@ function AuthSwitch() {
   const needRealSignIn = !isSignedIn && !isDemoOn;
 
   const showAuth = waitingDemoHydration || !isLoaded || needRealSignIn || forceAuthWhileSignedIn;
-  const signedInAndReady = !showAuth && setupHydrated;
-  const needsSetup = signedInAndReady && !isDemoOn && !setupComplete;
+  const signedInAndReady = !showAuth && isLoaded && isSignedIn && (setupHydrated || isDemoOn);
+  const needsSetup = setupHydrated && !showAuth && isSignedIn && !isDemoOn && !setupComplete;
 
-  const target = showAuth ? "/(auth)" : needsSetup ? "/setup" : signedInAndReady ? "/(tabs)" : null;
+  const target = showAuth
+    ? "/(auth)"
+    : needsSetup
+      ? "/setup"
+      : signedInAndReady
+        ? "/(tabs)"
+        : isSignedIn && isLoaded
+          ? "/(tabs)"
+          : null;
 
   return (
     <BiometricLockProvider isSignedIn={!showAuth}>
@@ -226,8 +241,17 @@ function AuthSwitch() {
         <Stack.Screen name="splitwise-callback" options={{ headerShown: false }} />
         <Stack.Screen name="join/[token]" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="pay/[token]" options={{ headerShown: false, presentation: "modal" }} />
-        <Stack.Screen name="connect-onboarding" options={{ headerShown: false, presentation: "fullScreenModal" }} />
-        <Stack.Screen name="connect-payouts" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="receipt/collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen name="collect/[token]" options={{ headerShown: false, presentation: "modal" }} />
+        <Stack.Screen
+          name="connect-onboarding"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: true }}
+        />
+        <Stack.Screen
+          name="connect-payouts"
+          options={{ headerShown: false, presentation: "modal", gestureEnabled: true }}
+        />
+        <Stack.Screen name="stripe-connect-return" options={{ headerShown: false }} />
         <Stack.Screen name="scan-receipt" options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
       </Stack>
       <NavigateOnChange target={target} />
@@ -374,7 +398,9 @@ export default function RootLayout() {
     onLayoutReady();
   }, [onLayoutReady]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: "#F6F0E2" }} />;
+  }
 
   if (!publishableKey) {
     return (

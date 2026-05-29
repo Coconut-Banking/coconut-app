@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DeviceEventEmitter } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { openConnectCashOut } from "../lib/stripe-connect-actions";
@@ -30,23 +30,26 @@ export function useCoconutWallet(enabled = true) {
   const apiFetch = useApiFetch();
   const isFocused = useIsFocused();
   const [wallet, setWallet] = useState<CoconutWallet | null>(null);
+  const walletRef = useRef<CoconutWallet | null>(null);
+  walletRef.current = wallet;
   const [loading, setLoading] = useState(false);
   const [cashOutLoading, setCashOutLoading] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!enabled) return;
-    setLoading(true);
+    const silent = opts?.silent ?? false;
+    if (!silent || walletRef.current === null) setLoading(true);
     try {
       invalidateApiCache("/api/stripe/wallet");
       const res = await apiFetch("/api/stripe/wallet");
       if (!res.ok) {
-        setWallet(null);
+        if (!silent) setWallet(null);
         return;
       }
       const data = (await res.json()) as CoconutWallet;
       setWallet(data);
     } catch {
-      setWallet(null);
+      if (!silent) setWallet(null);
     } finally {
       setLoading(false);
     }
@@ -59,7 +62,7 @@ export function useCoconutWallet(enabled = true) {
 
   useEffect(() => {
     if (!enabled) return;
-    const onRefresh = () => void refresh();
+    const onRefresh = () => void refresh({ silent: true });
     const subs = [
       DeviceEventEmitter.addListener(TAP_TO_PAY_SETTLED_EVENT, onRefresh),
       DeviceEventEmitter.addListener("groups-updated", onRefresh),

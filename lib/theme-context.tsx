@@ -1,9 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
-import { useColorScheme } from "react-native";
 import { themeStorageGet, themeStorageSet } from "./theme-storage";
 import {
   colors,
-  getDarkThemeByVariant,
   type ThemeColors,
   type ThemeMode,
   type ThemeVariant,
@@ -22,7 +20,7 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  mode: "auto",
+  mode: "light",
   setMode: () => {},
   variant: "forest",
   setVariant: () => {},
@@ -31,39 +29,38 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useColorScheme();
-  const [mode, setModeState] = useState<ThemeMode>("auto");
   const [variant, setVariantState] = useState<ThemeVariant>("forest");
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    Promise.all([themeStorageGet(STORAGE_KEY), themeStorageGet(STORAGE_VARIANT_KEY)]).then(([v, vv]) => {
-      if (v === "light" || v === "dark" || v === "auto") setModeState(v);
-      else setModeState("auto");
-      if (vv === "forest" || vv === "midnight" || vv === "espresso") setVariantState(vv);
-      setLoaded(true);
-    });
+    Promise.all([themeStorageGet(STORAGE_KEY), themeStorageGet(STORAGE_VARIANT_KEY)]).then(
+      ([storedMode, storedVariant]) => {
+        // Light mode only — migrate any saved dark/auto preference.
+        if (storedMode !== "light") {
+          void themeStorageSet(STORAGE_KEY, "light");
+        }
+        if (storedVariant === "forest" || storedVariant === "midnight" || storedVariant === "espresso") {
+          setVariantState(storedVariant);
+        }
+      },
+    );
   }, []);
 
-  const setMode = (m: ThemeMode) => {
-    setModeState(m);
-    void themeStorageSet(STORAGE_KEY, m);
+  const setMode = (_m: ThemeMode) => {
+    void themeStorageSet(STORAGE_KEY, "light");
   };
   const setVariant = (v: ThemeVariant) => {
     setVariantState(v);
     void themeStorageSet(STORAGE_VARIANT_KEY, v);
   };
 
-  // Auto mode follows device setting; defaults to dark when device preference is unset.
-  const isDark = mode === "dark" || (mode === "auto" && systemScheme !== "light");
-  const theme = isDark ? getDarkThemeByVariant(variant) : colors.light;
+  const mode: ThemeMode = "light";
+  const isDark = false;
+  const theme = colors.light;
 
   const value = useMemo(
     () => ({ mode, setMode, variant, setVariant, theme, isDark }),
-    [mode, variant, theme, isDark]
+    [variant, theme],
   );
-
-  if (!loaded) return null;
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

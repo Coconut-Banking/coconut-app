@@ -274,10 +274,8 @@ export function useGroupsSummary(options?: UseGroupsSummaryOptions) {
   // and after mutations so the UI doesn't show stale balances.
   const forceRefetch = useCallback(async () => {
     _memSummary.delete(summaryPath);
-    _staleSummary.delete(summaryPath);
     invalidateApiCache(summaryPath);
-    setSummary(null);
-    setLoading(true);
+    // Keep _staleSummary + current summary visible until the network responds.
     await fetchSummary(false);
   }, [fetchSummary, summaryPath]);
 

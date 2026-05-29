@@ -18,7 +18,8 @@ const SetupContext = createContext<SetupContextValue>({
 });
 
 export function SetupProvider({ children }: { children: React.ReactNode }) {
-  const [setupComplete, setSetupComplete] = useState(false);
+  // Optimistic true until SecureStore hydrates — avoids flashing /setup (black screen) for returning users.
+  const [setupComplete, setSetupComplete] = useState(true);
   const [setupHydrated, setSetupHydrated] = useState(false);
 
   useEffect(() => {

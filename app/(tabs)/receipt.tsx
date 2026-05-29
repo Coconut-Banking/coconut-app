@@ -47,15 +47,20 @@ import {
   receiptPersonTint,
 } from "../../lib/receipt-person-palette";
 import { ReceiptUploadFailure } from "../../components/receipt/ReceiptUploadFailure";
-import { ReceiptTableCollect } from "../../components/receipt/ReceiptTableCollect";
+import { ReceiptSplitChoose } from "../../components/receipt/ReceiptSplitChoose";
 import { LinkQrSheet } from "../../components/share/LinkQrSheet";
 
 const STEPS: { key: Step; label: string }[] = [
-  { key: "upload", label: "Upload" },
-  { key: "review", label: "Review" },
-  { key: "assign", label: "Assign" },
-  { key: "summary", label: "Summary" },
+  { key: "upload", label: "Scan" },
+  { key: "review", label: "Items" },
+  { key: "choose", label: "Split" },
+  { key: "summary", label: "Collect" },
 ];
+
+function progressIndex(step: Step): number {
+  if (step === "assign") return STEPS.findIndex((s) => s.key === "choose");
+  return STEPS.findIndex((s) => s.key === step);
+}
 
 function normalizePersonName(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, " ");
@@ -168,6 +173,22 @@ const st = StyleSheet.create({
   },
   tableBannerTitle: { fontSize: 15, fontFamily: font.bold },
   tableBannerSub: { fontSize: 12, fontFamily: font.regular, marginTop: 2 },
+  quickMeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+  },
+  quickMeText: { fontFamily: font.semibold, fontSize: 15 },
+  peopleHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   uploadCard: {
     borderRadius: radii.xl,
     borderWidth: 1,
@@ -416,7 +437,7 @@ export default function ReceiptScreen() {
   const { isDemoOn } = useDemoMode();
   const demo = useDemoData();
   const rs = useReceiptSplitWithOptions(apiFetch, { demo: isDemoOn });
-  const stepIdx = STEPS.findIndex((s) => s.key === rs.step);
+  const stepIdx = progressIndex(rs.step);
   const scrollRef = useRef<ScrollView>(null);
   const authReady = SKIP_AUTH || isDemoOn || (isLoaded && isSignedIn);
   const pendingUploadRef = useRef<{
@@ -499,6 +520,21 @@ export default function ReceiptScreen() {
           <UploadStep rs={rs} onGoBack={goBack} onUploadImage={runPendingUpload} />
         )}
         {rs.step === "review" && <ReviewStep rs={rs} />}
+        {rs.step === "choose" && rs.receiptId ? (
+          <ReceiptSplitChoose
+            receiptId={rs.receiptId}
+            merchantName={rs.editMerchant}
+            total={rs.editTotal}
+            apiFetch={apiFetch}
+            onSplitMyself={() => {
+              if (rs.people.length === 0) {
+                rs.addPerson("You", { hasAccount: true });
+              }
+              rs.setStep("assign");
+            }}
+            onDone={() => rs.reset()}
+          />
+        ) : null}
         {rs.step === "assign" && <AssignStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
         {rs.step === "summary" && <SummaryStep rs={rs} apiFetch={apiFetch} isDemoOn={isDemoOn} demo={demo} />}
       </ScrollView>
@@ -960,67 +996,7 @@ function AssignStep({
     tryAddPerson(trimmedSearch, { hasAccount: false });
   };
 
-  const [tableMode, setTableMode] = useState(false);
-  const [tableGroup, setTableGroup] = useState<{ id: string; name: string } | null>(null);
-
-  const tableGroupId = useMemo(() => {
-    const ids = rs.people.map((p) => p.groupId).filter(Boolean) as string[];
-    if (ids.length === 0) return null;
-    const unique = [...new Set(ids)];
-    return unique.length === 1 ? unique[0] : null;
-  }, [rs.people]);
-
-  const tableGroupName = useMemo(() => {
-    if (!tableGroupId) return null;
-    return rs.people.find((p) => p.groupId === tableGroupId)?.groupName ?? null;
-  }, [rs.people, tableGroupId]);
-
-  const groupsFromContacts = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of contacts) {
-      if (c.groupId && c.groupName) map.set(c.groupId, c.groupName);
-    }
-    return [...map.entries()].map(([id, name]) => ({ id, name }));
-  }, [contacts]);
-
-  const startTableCollect = useCallback(async () => {
-    if (!rs.receiptId) {
-      Alert.alert("Save receipt", "Finish review first.");
-      return;
-    }
-    let gid = tableGroupId ?? tableGroup?.id;
-    let gname = tableGroupName ?? tableGroup?.name ?? "Group";
-    if (!gid) {
-      if (groupsFromContacts.length === 1) {
-        gid = groupsFromContacts[0].id;
-        gname = groupsFromContacts[0].name;
-      } else if (groupsFromContacts.length > 1) {
-        Alert.alert(
-          "Choose a group",
-          groupsFromContacts.map((g) => g.name).join(", "),
-          [
-            ...groupsFromContacts.map((g) => ({
-              text: g.name,
-              onPress: () => {
-                setTableGroup({ id: g.id, name: g.name });
-                setTableMode(true);
-              },
-            })),
-            { text: "Cancel", style: "cancel" as const },
-          ],
-        );
-        return;
-      } else {
-        Alert.alert(
-          "Pick a group",
-          "Add someone from a group, or create a group in Shared first.",
-        );
-        return;
-      }
-    }
-    setTableGroup({ id: gid, name: gname });
-    setTableMode(true);
-  }, [rs.receiptId, tableGroupId, tableGroupName, tableGroup, groupsFromContacts]);
+  const [showAddPeople, setShowAddPeople] = useState(false);
 
   const unassignedCount = rs.itemsWithExtras.filter(
     (item) => (rs.assignments.get(item.id) ?? []).length === 0
@@ -1045,53 +1021,43 @@ function AssignStep({
     trimmedSearch.length > 0 &&
     (filtered.length > 0 || (!searchIsDuplicate && trimmedSearch.length > 0));
 
-  if (tableMode && tableGroup && rs.receiptId) {
-    return (
-      <ReceiptTableCollect
-        receiptId={rs.receiptId}
-        groupId={tableGroup.id}
-        groupName={tableGroup.name}
-        merchantName={rs.editMerchant}
-        apiFetch={apiFetch}
-        onBack={() => setTableMode(false)}
-        onClosed={() => {
-          setTableMode(false);
-          rs.computeSummary();
-          rs.setStep("summary");
-        }}
-      />
-    );
-  }
-
   return (
     <View style={{ gap: 16 }}>
-      {rs.receiptId ? (
-        <TouchableOpacity
-          style={[st.tableBanner, { backgroundColor: theme.surfaceSecondary, borderColor: theme.borderLight }]}
-          onPress={() => void startTableCollect()}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="qr-code-outline" size={22} color={theme.primary} />
-          <View style={{ flex: 1 }}>
-            <Text style={[st.tableBannerTitle, { color: theme.text }]}>Split with table</Text>
-            <Text style={[st.tableBannerSub, { color: theme.textTertiary }]}>
-              Everyone scans a QR and picks their items
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
-        </TouchableOpacity>
-      ) : null}
+      <TouchableOpacity
+        style={[st.quickMeBtn, { backgroundColor: theme.primaryLight, borderColor: theme.borderLight }]}
+        onPress={() => {
+          if (rs.people.length === 0) rs.addPerson("You", { hasAccount: true });
+          rs.assignAllToMe();
+          sfx.pop();
+        }}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="flash-outline" size={18} color={theme.primary} />
+        <Text style={[st.quickMeText, { color: theme.primary }]}>Assign everything to me</Text>
+      </TouchableOpacity>
 
-      {/* People section — inline chips like Add expense */}
       <View
         style={[
           st.peopleCard,
           { backgroundColor: theme.surface, borderColor: theme.borderLight },
         ]}
       >
-        <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>
-          People at the table
-        </Text>
+        <TouchableOpacity
+          style={st.peopleHeaderRow}
+          onPress={() => setShowAddPeople((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={[st.label, { color: theme.textTertiary, marginBottom: 0 }]}>
+            {rs.people.length <= 1 ? "Add others (optional)" : "People"}
+          </Text>
+          <Ionicons
+            name={showAddPeople || rs.people.length > 1 ? "chevron-up" : "chevron-down"}
+            size={18}
+            color={theme.textTertiary}
+          />
+        </TouchableOpacity>
+        {(showAddPeople || rs.people.length > 1) ? (
+        <>
         <View style={st.peopleInlineRow}>
           <Text style={[st.peopleInlineLabel, { color: theme.textSecondary }]}>
             With{" "}
@@ -1242,6 +1208,8 @@ function AssignStep({
             ) : null}
           </View>
         ) : null}
+        </>
+        ) : null}
       </View>
 
       {/* Items with inline assignment */}
@@ -1257,8 +1225,10 @@ function AssignStep({
         )}
         {rs.people.length === 0 && (
           <View style={st.emptyAssign}>
-            <Ionicons name="person-add-outline" size={24} color={theme.border} />
-            <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>Add people above to start assigning items</Text>
+            <Ionicons name="hand-left-outline" size={24} color={theme.border} />
+            <Text style={[st.emptyAssignText, { color: theme.textQuaternary }]}>
+              Tap &quot;Assign everything to me&quot; or add someone above
+            </Text>
           </View>
         )}
         {filteredItems.length === 0 && itemSearch.trim() && (
@@ -1370,7 +1340,7 @@ function AssignStep({
 
       {/* Nav */}
       <View style={st.nav}>
-        <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("review")}>
+        <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("choose")}>
           <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <View style={{ alignItems: "flex-end", gap: 4 }}>
@@ -1723,47 +1693,24 @@ function SummaryStep({
                 style={[
                   smst.actionBtn,
                   smst.actionBtnPrimary,
-                  { backgroundColor: theme.text, flex: 1.4 },
-                  (!finished || isLinkLoading) && { opacity: 0.65 },
-                ]}
-                onPress={() => handleSendPaymentLink(person)}
-                disabled={!finished || isLinkLoading}
-                activeOpacity={0.85}
-              >
-                {isLinkLoading ? (
-                  <ActivityIndicator size="small" color={theme.surface} />
-                ) : (
-                  <>
-                    <Ionicons name="paper-plane-outline" size={14} color={theme.surface} />
-                    <Text style={[smst.actionBtnText, { color: theme.surface }]}>Send link</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  smst.actionBtn,
-                  {
-                    backgroundColor: isTapPaid ? theme.successLight : theme.surface,
-                    borderColor: isTapPaid ? theme.success : theme.border,
-                  },
+                  { backgroundColor: theme.primary, flex: 1 },
+                  (!finished || isTapPaid) && { opacity: 0.65 },
                 ]}
                 onPress={() => openTapToPay(person)}
                 activeOpacity={0.85}
-                disabled={isTapPaid}
+                disabled={!finished || isTapPaid}
               >
                 {isTapPaid ? (
-                  <Ionicons name="checkmark" size={15} color={theme.success} />
+                  <>
+                    <Ionicons name="checkmark" size={15} color="#fff" />
+                    <Text style={[smst.actionBtnText, { color: "#fff" }]}>Paid</Text>
+                  </>
                 ) : (
-                  <Ionicons name="phone-portrait-outline" size={15} color={theme.text} />
+                  <>
+                    <Ionicons name="phone-portrait-outline" size={15} color="#fff" />
+                    <Text style={[smst.actionBtnText, { color: "#fff" }]}>Tap to Pay</Text>
+                  </>
                 )}
-                <Text
-                  style={[
-                    smst.actionBtnText,
-                    { color: isTapPaid ? theme.success : theme.text },
-                  ]}
-                >
-                  {isTapPaid ? "Paid" : "Tap"}
-                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -1777,19 +1724,29 @@ function SummaryStep({
                 disabled={isTabbed}
                 activeOpacity={0.85}
               >
-                {isTabbed ? (
-                  <Ionicons name="checkmark" size={15} color={theme.success} />
-                ) : null}
                 <Text
                   style={[
                     smst.actionBtnText,
                     { color: isTabbed ? theme.success : theme.textSecondary },
                   ]}
                 >
-                  {isTabbed ? "Tabbed" : "Tab it"}
+                  {isTabbed ? "Tabbed" : "Tab"}
                 </Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              onPress={() => handleSendPaymentLink(person)}
+              disabled={!finished || isLinkLoading}
+              style={{ alignSelf: "flex-start", paddingVertical: 4 }}
+            >
+              {isLinkLoading ? (
+                <ActivityIndicator size="small" color={theme.textTertiary} />
+              ) : (
+                <Text style={{ fontSize: 13, fontFamily: font.medium, color: theme.textTertiary }}>
+                  Or send a payment link
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         );
       })}
@@ -1811,8 +1768,15 @@ function SummaryStep({
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={[smst.doneBtn, { backgroundColor: theme.text }]} onPress={rs.reset} activeOpacity={0.8}>
-        <Text style={[smst.doneBtnText, { color: theme.surface }]}>Done</Text>
+      <TouchableOpacity
+        style={[smst.doneBtn, { backgroundColor: theme.text }]}
+        onPress={() => {
+          rs.reset();
+          router.replace("/(tabs)/shared");
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={[smst.doneBtnText, { color: theme.surface }]}>View in Shared</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={{ alignSelf: "center", paddingVertical: 8 }} onPress={() => rs.setStep("assign")}>
