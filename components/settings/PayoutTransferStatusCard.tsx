@@ -16,6 +16,8 @@ export type ConnectStatusForTransfer = ConnectStatusPayload;
 type Props = {
   connectStatus: ConnectStatusForTransfer;
   loading?: boolean;
+  /** Right after hosted onboarding — API/DB may lag before Stripe sync. */
+  optimisticPendingReview?: boolean;
   onPressSetup?: () => void;
   setupLoading?: boolean;
   onRefresh?: () => void;
@@ -25,13 +27,21 @@ type Props = {
 export function PayoutTransferStatusCard({
   connectStatus,
   loading,
+  optimisticPendingReview,
   onPressSetup,
   setupLoading,
   onRefresh,
   refreshing,
 }: Props) {
   const { theme } = useTheme();
-  const eligibility = deriveTransferEligibility(connectStatus);
+  let eligibility = deriveTransferEligibility(connectStatus);
+  if (
+    optimisticPendingReview &&
+    connectStatus?.hasAccount &&
+    (eligibility === "setup_required" || eligibility === "none")
+  ) {
+    eligibility = "pending_review";
+  }
 
   if (loading && !connectStatus) {
     return (

@@ -200,6 +200,7 @@ export default function SettingsScreen() {
   } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectActionLoading, setConnectActionLoading] = useState(false);
+  const [connectPendingReview, setConnectPendingReview] = useState(false);
   const connectReturnHandled = useRef(false);
 
   const fetchAccounts = async (forceRefresh = false) => {
@@ -236,6 +237,10 @@ export default function SettingsScreen() {
       const data = await res.json();
       if (__DEV__) console.log("[connect/status]", data);
       setConnectStatus(data as typeof connectStatus);
+      const te = (data as { transferEligibility?: TransferEligibility }).transferEligibility;
+      if (te === "active" || te === "pending_review" || te === "action_required") {
+        setConnectPendingReview(false);
+      }
     } catch {
       setConnectStatus(null);
     } finally {
@@ -553,6 +558,7 @@ export default function SettingsScreen() {
     const action = stripeConnectReturnFromParams(splitwiseParams);
     if (action === "complete") {
       connectReturnHandled.current = true;
+      setConnectPendingReview(true);
       void fetchConnectStatus(true);
       router.replace("/(tabs)/settings");
     } else if (action === "refresh") {
@@ -565,6 +571,7 @@ export default function SettingsScreen() {
   // Safari onboarding closed (success or dismiss) — refresh payout status
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("stripe-connect-return", () => {
+      setConnectPendingReview(true);
       void fetchConnectStatus(true);
     });
     return () => sub.remove();
@@ -1182,6 +1189,7 @@ export default function SettingsScreen() {
         <PayoutTransferStatusCard
           connectStatus={connectStatus}
           loading={connectLoading}
+          optimisticPendingReview={connectPendingReview}
           onPressSetup={startConnectOnboardingFlow}
           setupLoading={connectActionLoading}
           onRefresh={() => void fetchConnectStatus(true)}
