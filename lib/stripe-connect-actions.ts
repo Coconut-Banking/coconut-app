@@ -49,6 +49,7 @@ export async function openHostedConnectOnboarding(
   invalidateApiCache("/api/stripe/connect/status");
   invalidateApiCache("/api/stripe/wallet");
   DeviceEventEmitter.emit("groups-updated");
+  DeviceEventEmitter.emit("stripe-connect-return", { action: "complete" });
 
   if (result.type === "success" && result.url) {
     const action = parseStripeConnectReturnUrl(result.url);

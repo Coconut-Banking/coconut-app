@@ -4,16 +4,14 @@ import { useTheme } from "../../lib/theme-context";
 import { font } from "../../lib/theme";
 import {
   TRANSFER_STATUS_COPY,
+  deriveTransferEligibility,
   transferStatusBadge,
+  type ConnectStatusPayload,
   type TransferEligibility,
 } from "../../lib/stripe-transfer-status";
 import { settingsStyles as s } from "./styles";
 
-export type ConnectStatusForTransfer = {
-  hasAccount?: boolean;
-  transferEligibility?: TransferEligibility;
-  requiresVerification?: boolean;
-} | null;
+export type ConnectStatusForTransfer = ConnectStatusPayload;
 
 type Props = {
   connectStatus: ConnectStatusForTransfer;
@@ -33,9 +31,7 @@ export function PayoutTransferStatusCard({
   refreshing,
 }: Props) {
   const { theme } = useTheme();
-  const eligibility: TransferEligibility =
-    connectStatus?.transferEligibility ??
-    (connectStatus?.requiresVerification ? "action_required" : "none");
+  const eligibility = deriveTransferEligibility(connectStatus);
 
   if (loading && !connectStatus) {
     return (

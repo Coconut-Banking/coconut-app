@@ -234,6 +234,7 @@ export default function SettingsScreen() {
       const res = await apiFetch("/api/stripe/connect/status");
       if (!res.ok) { setConnectStatus(null); return; }
       const data = await res.json();
+      if (__DEV__) console.log("[connect/status]", data);
       setConnectStatus(data as typeof connectStatus);
     } catch {
       setConnectStatus(null);
@@ -552,7 +553,7 @@ export default function SettingsScreen() {
     const action = stripeConnectReturnFromParams(splitwiseParams);
     if (action === "complete") {
       connectReturnHandled.current = true;
-      void fetchConnectStatus();
+      void fetchConnectStatus(true);
       router.replace("/(tabs)/settings");
     } else if (action === "refresh") {
       connectReturnHandled.current = true;
@@ -560,6 +561,14 @@ export default function SettingsScreen() {
       router.replace("/(tabs)/settings");
     }
   }, [splitwiseParams, user, fetchConnectStatus, startConnectOnboardingFlow]);
+
+  // Safari onboarding closed (success or dismiss) — refresh payout status
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("stripe-connect-return", () => {
+      void fetchConnectStatus(true);
+    });
+    return () => sub.remove();
+  }, [fetchConnectStatus]);
 
   useEffect(() => {
     const err = splitwiseParams?.splitwise_error;

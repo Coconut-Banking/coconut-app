@@ -38,6 +38,36 @@ export const TRANSFER_STATUS_COPY: Record<
   },
 };
 
+/** Connect status payload from GET /api/stripe/connect/status (new + legacy fields). */
+export type ConnectStatusPayload = {
+  hasAccount?: boolean;
+  onboardingComplete?: boolean;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+  requiresVerification?: boolean;
+  transferEligibility?: TransferEligibility;
+} | null;
+
+/**
+ * Derive eligibility when API omits transferEligibility (older deploy) or Stripe sync lags.
+ * Never map hasAccount → "none" (that showed "Not connected" after onboarding).
+ */
+export function deriveTransferEligibility(status: ConnectStatusPayload): TransferEligibility {
+  if (status?.transferEligibility) return status.transferEligibility;
+  if (!status?.hasAccount) return "none";
+  if (status.payoutsEnabled) return "active";
+  if (status.requiresVerification) return "action_required";
+  if (
+    status.detailsSubmitted ||
+    status.onboardingComplete ||
+    status.chargesEnabled
+  ) {
+    return "pending_review";
+  }
+  return "setup_required";
+}
+
 /** Badge label for compact display. */
 export function transferStatusBadge(eligibility: TransferEligibility): string {
   switch (eligibility) {

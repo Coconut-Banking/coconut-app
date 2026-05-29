@@ -5,6 +5,7 @@ import { font, radii } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
 import { useCoconutWallet } from "../../hooks/useCoconutWallet";
 import { AutoPayoutSettings } from "./AutoPayoutSettings";
+import { deriveTransferEligibility } from "../../lib/stripe-transfer-status";
 import { settingsStyles as s } from "./styles";
 
 type ConnectStatus = {
@@ -37,14 +38,14 @@ export function CoconutWalletCard({
   const showHeldLine =
     (wallet?.chargesEnabled ?? false) && coconutHeld > 0.005;
 
+  const eligibility = deriveTransferEligibility(connectStatus ?? null);
   const payoutsReady =
-    connectStatus?.transferEligibility === "active" ||
+    eligibility === "active" ||
     Boolean(connectStatus?.onboardingComplete && wallet?.payoutsEnabled);
-  const pendingReview = connectStatus?.transferEligibility === "pending_review";
+  const pendingReview = eligibility === "pending_review";
   const needsSetup =
-    connectStatus?.transferEligibility === "setup_required" ||
-    connectStatus?.transferEligibility === "none" ||
-    !connectStatus?.onboardingComplete;
+    eligibility === "setup_required" ||
+    eligibility === "none";
 
   const blurb = payoutsReady
     ? "Ready to cash out · Tap to Pay deposits land here"
