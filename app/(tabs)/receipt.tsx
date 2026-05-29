@@ -35,7 +35,10 @@ import {
   deliverPaymentLink,
   findSettlementForPerson,
 } from "../../lib/payment-link";
-import { takePendingReceiptScan } from "../../lib/pending-receipt-scan";
+import {
+  clearPendingReceiptScan,
+  takePendingReceiptScan,
+} from "../../lib/pending-receipt-scan";
 import {
   TAP_TO_PAY_SETTLED_EVENT,
   type TapToPaySettledPayload,
@@ -448,6 +451,7 @@ export default function ReceiptScreen() {
     name: string;
   } | null>(null);
   const resumeHandled = useRef(false);
+  const lastPendingUriRef = useRef<string | null>(null);
 
   useEffect(() => {
     const id = typeof resumeReceiptId === "string" ? resumeReceiptId : undefined;
@@ -461,18 +465,23 @@ export default function ReceiptScreen() {
   }, [resumeReceiptId, authReady, rs.resumeCollectingBill]);
 
   const runPendingUpload = useCallback(
-    (payload: { uri: string; mimeType: string; name: string }) => {
+    (payload: { uri: string; mimeType: string; name: string }, opts?: { isNewScan?: boolean }) => {
+      if (opts?.isNewScan) {
+        lastPendingUriRef.current = null;
+        rs.prepareForNewScan();
+      }
       if (!authReady || rs.uploading) {
         pendingUploadRef.current = payload;
         return;
       }
       pendingUploadRef.current = null;
+      lastPendingUriRef.current = payload.uri;
       void rs.uploadReceipt(payload.uri, {
         mimeType: payload.mimeType,
         name: payload.name,
       });
     },
-    [authReady, rs.uploading, rs.uploadReceipt],
+    [authReady, rs.uploading, rs.uploadReceipt, rs.prepareForNewScan],
   );
 
   useEffect(() => {
@@ -487,6 +496,9 @@ export default function ReceiptScreen() {
       const handoff = takePendingReceiptScan();
       const uri = handoff?.uri ?? pendingScanUri;
       if (!uri) return;
+      // Only auto-run a new scan from camera/gallery handoff — not when resuming a draft.
+      if (!handoff && rs.step !== "upload") return;
+      if (lastPendingUriRef.current === uri) return;
       const mimeType = handoff?.mimeType ?? pendingScanMime ?? "image/jpeg";
       const name =
         handoff?.name ??
@@ -499,9 +511,13 @@ export default function ReceiptScreen() {
           pendingScanName: undefined,
         });
       }
-      runPendingUpload({ uri, mimeType, name });
+      runPendingUpload({ uri, mimeType, name }, { isNewScan: true });
+      return () => {
+        pendingUploadRef.current = null;
+      };
     }, [
       rs.uploading,
+      rs.step,
       pendingScanUri,
       pendingScanMime,
       pendingScanName,
@@ -510,6 +526,14 @@ export default function ReceiptScreen() {
   );
 
   const goBack = () => {
+    if (rs.uploading) {
+      rs.cancelInFlightUpload();
+      clearPendingReceiptScan();
+      pendingUploadRef.current = null;
+      lastPendingUriRef.current = null;
+    } else if (rs.step !== "upload") {
+      rs.pauseToUpload();
+    }
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)");
   };
@@ -566,7 +590,10 @@ function UploadStep({
 }: {
   rs: ReturnType<typeof useReceiptSplitWithOptions>;
   onGoBack: () => void;
-  onUploadImage: (payload: { uri: string; mimeType: string; name: string }) => void;
+  onUploadImage: (
+    payload: { uri: string; mimeType: string; name: string },
+    opts?: { isNewScan?: boolean },
+  ) => void;
 }) {
   const { theme } = useTheme();
   const shell = useCoconutShell();
@@ -774,7 +801,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplitWithOptions> 
       )}
       {/* Nav */}
       <View style={st.nav}>
-        <TouchableOpacity style={st.navBack} onPress={() => rs.setStep("upload")}>
+        <TouchableOpacity style={st.navBack} onPress={() => rs.pauseToUpload()}>
           <Ionicons name="chevron-back" size={18} color={theme.textTertiary} /><Text style={[st.navBackText, { color: theme.textTertiary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity

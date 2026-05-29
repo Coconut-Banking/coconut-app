@@ -24,6 +24,8 @@ import {
   PanResponder,
   useWindowDimensions,
   FlatList,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -57,6 +59,7 @@ import { HomeCoconutBalanceCard } from "../../components/home/HomeCoconutBalance
 import type { HomeTransactionListItem } from "../../components/home/HomeBankTransactionRow";
 import { HomeActivityRow } from "../../components/home/HomeActivityRow";
 import { HomeActivityBillRow } from "../../components/home/HomeActivityBillRow";
+import { BillDetailSheet } from "../../components/home/BillDetailSheet";
 import { HomeFeedSourceTabs } from "../../components/home/HomeFeedSourceTabs";
 import { HomeActivitySectionHeader } from "../../components/home/HomeActivitySectionHeader";
 import { HomeActivitySearchBar } from "../../components/home/HomeActivitySearchBar";
@@ -92,6 +95,8 @@ import { CalendarPicker } from "../../components/CalendarPicker";
 import { sfx } from "../../lib/sounds";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
+import { useFabScroll } from "../../lib/fab-scroll-context";
+import { SCROLL_COLLAPSE_THRESHOLD } from "../../components/FloatingActionButtons";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
 function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null; category?: string }): HomeBankStripRow {
@@ -421,6 +426,20 @@ export default function BalancesPrototypeScreen() {
   const homeSearchInputRef = useRef<TextInput>(null);
   const homeListRef = useRef<FlatList<HomeFeedItem>>(null);
   const homeTxScrollAnchorRef = useRef(0);
+  const { setCollapsed: setFabCollapsed } = useFabScroll();
+
+  const onHomeFeedScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = e.nativeEvent.contentOffset.y;
+      setFabCollapsed(y > SCROLL_COLLAPSE_THRESHOLD);
+    },
+    [setFabCollapsed],
+  );
+
+  useEffect(() => {
+    return () => setFabCollapsed(false);
+  }, [setFabCollapsed]);
+
   const dismissHomeSearch = useCallback(() => {
     Keyboard.dismiss();
     setHomeSearchActive(false);
@@ -530,9 +549,11 @@ export default function BalancesPrototypeScreen() {
     });
   }, []);
 
+  const [billDetailId, setBillDetailId] = useState<string | null>(null);
+
   const handleBillNudge = useCallback(
-    async (bill: import("../../hooks/useBills").BillRow) => {
-      const res = await apiFetch(`/api/bills/${bill.id}/nudge`, { method: "POST" });
+    async (billId: string) => {
+      const res = await apiFetch(`/api/bills/${billId}/nudge`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         toast.show(data.error ?? "Could not nudge");
@@ -896,7 +917,7 @@ export default function BalancesPrototypeScreen() {
             <HomeActivityBillRow
               bill={item.bill}
               showSep={!isLast}
-              onNudge={handleBillNudge}
+              onOpenDetail={(b) => setBillDetailId(b.id)}
             />
           ) : (
             <HomeActivityRow item={item.activity} showSep={!isLast} />
@@ -904,7 +925,7 @@ export default function BalancesPrototypeScreen() {
         </View>
       );
     },
-    [feedCount, home.boxFill, home.boxBorder, handleBillNudge, homeContentWidth],
+    [feedCount, home.boxFill, home.boxBorder, homeContentWidth],
   );
 
   const homeListHeader = useMemo(
@@ -1085,6 +1106,8 @@ export default function BalancesPrototypeScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          onScroll={onHomeFeedScroll}
+          scrollEventThrottle={16}
           refreshControl={
             isDemoOn ? undefined : (
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
@@ -1092,6 +1115,13 @@ export default function BalancesPrototypeScreen() {
           }
         />
       </KeyboardAvoidingView>
+
+      <BillDetailSheet
+        billId={billDetailId}
+        onClose={() => setBillDetailId(null)}
+        onNudge={handleBillNudge}
+        onPaid={() => void refetchBills()}
+      />
 
       {selectedStrip && !showAllBank ? <Modal visible={true} transparent animationType="slide" onRequestClose={closeDetail}>
         <Pressable style={styles.sheetOverlay} onPress={closeDetail}>

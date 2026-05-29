@@ -47,16 +47,25 @@ export function CoconutFlowHeader({
             hitSlop={10}
             style={({ pressed }) => [
               styles.savePill,
-              { backgroundColor: saveDisabled ? shell.boxFill : shell.cta },
+              saveDisabled
+                ? { backgroundColor: shell.inputBorder, borderWidth: 1, borderColor: shell.cardBorder }
+                : { backgroundColor: shell.cta },
               pressed && !saveDisabled && { backgroundColor: shell.ctaPressed },
             ]}
           >
             {saving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator size="small" color={saveDisabled ? shell.inkMuted : "#FFFFFF"} />
             ) : saved ? (
               <Ionicons name="checkmark" size={18} color="#FFFFFF" />
             ) : (
-              <Text style={[styles.saveText, { opacity: saveDisabled ? 0.45 : 1 }]}>{saveLabel}</Text>
+              <Text
+                style={[
+                  styles.saveText,
+                  saveDisabled && { color: shell.inkMuted },
+                ]}
+              >
+                {saveLabel}
+              </Text>
             )}
           </Pressable>
         ) : null}

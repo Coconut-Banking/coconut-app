@@ -2402,13 +2402,13 @@ return StyleSheet.create({
 
   primaryBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: isDark ? theme.text : theme.primary, paddingVertical: 16, borderRadius: radii.lg,
+    backgroundColor: shell.cta, paddingVertical: 16, borderRadius: radii.lg,
   },
   primaryBtnDark: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: theme.text, paddingVertical: 16, borderRadius: radii.lg,
+    backgroundColor: shell.cta, paddingVertical: 16, borderRadius: radii.lg,
   },
-  primaryBtnText: { fontFamily: font.bold, fontSize: 16, color: isDark ? theme.background : "#fff" },
+  primaryBtnText: { fontFamily: font.bold, fontSize: 16, color: "#FFFFFF" },
 
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.overlay, justifyContent: "center", paddingHorizontal: 24, zIndex: 20 },
   modalCard: { backgroundColor: theme.card, borderRadius: radii["2xl"], padding: 20, borderWidth: 1, borderColor: theme.cardBorder },
@@ -2440,9 +2440,9 @@ return StyleSheet.create({
   sheetHint: { fontFamily: font.extrabold, fontSize: 11, color: theme.textTertiary, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
   sheetBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: isDark ? theme.text : theme.primary, paddingVertical: 16, borderRadius: radii.lg, marginBottom: 10,
+    backgroundColor: shell.cta, paddingVertical: 16, borderRadius: radii.lg, marginBottom: 10,
   },
-  sheetBtnTxt: { fontFamily: font.bold, fontSize: 16, color: isDark ? theme.background : "#fff" },
+  sheetBtnTxt: { fontFamily: font.bold, fontSize: 16, color: "#FFFFFF" },
   sheetBtnAmt: { fontFamily: font.regular, fontSize: 14, color: isDark ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.7)" },
   sheetBtnOutline: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,

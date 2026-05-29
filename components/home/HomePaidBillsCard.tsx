@@ -9,7 +9,13 @@ import { useBills, type BillRow } from "../../hooks/useBills";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
 import { useDemoMode } from "../../lib/demo-mode-context";
 
-function PaidBillRow({ bill }: { bill: BillRow }) {
+function PaidBillRow({
+  bill,
+  onPress,
+}: {
+  bill: BillRow;
+  onPress: (bill: BillRow) => void;
+}) {
   const { theme } = useTheme();
   const home = useHomePalette();
   const when = bill.paidAt
@@ -17,7 +23,11 @@ function PaidBillRow({ bill }: { bill: BillRow }) {
     : "";
 
   return (
-    <View style={[styles.row, { borderTopColor: home.boxBorder }]}>
+    <TouchableOpacity
+      style={[styles.row, { borderTopColor: home.boxBorder }]}
+      activeOpacity={0.75}
+      onPress={() => onPress(bill)}
+    >
       <View style={[styles.check, { backgroundColor: home.moneyInSoft }]}>
         <Ionicons name="checkmark" size={14} color={home.moneyInText} />
       </View>
@@ -33,12 +43,16 @@ function PaidBillRow({ bill }: { bill: BillRow }) {
       <Text style={[styles.amount, { color: theme.text }]}>
         {formatSplitCurrencyAmount(bill.amount, bill.currency)}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 /** Shown on home only when the user has at least one paid bill. */
-export const HomePaidBillsCard = React.memo(function HomePaidBillsCard() {
+export const HomePaidBillsCard = React.memo(function HomePaidBillsCard({
+  onOpenBillDetail,
+}: {
+  onOpenBillDetail?: (bill: BillRow) => void;
+}) {
   const { theme } = useTheme();
   const home = useHomePalette();
   const { isDemoOn } = useDemoMode();
@@ -73,7 +87,13 @@ export const HomePaidBillsCard = React.memo(function HomePaidBillsCard() {
       {loading && bills.length === 0 ? (
         <ActivityIndicator style={{ marginVertical: space.sm }} color={theme.primary} />
       ) : (
-        bills.slice(0, 3).map((b) => <PaidBillRow key={b.id} bill={b} />)
+        bills.slice(0, 3).map((b) => (
+          <PaidBillRow
+            key={b.id}
+            bill={b}
+            onPress={(row) => onOpenBillDetail?.(row)}
+          />
+        ))
       )}
     </View>
   );

@@ -1,10 +1,13 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   Animated,
+  LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
+  Text,
+  UIManager,
   View,
-  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, usePathname, type Href } from "expo-router";
@@ -12,19 +15,30 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getExpensePrefillTarget } from "../lib/add-expense-prefill";
 import { sfx } from "../lib/sounds";
 import { useHomePalette } from "../lib/home-theme";
+import { useFabScroll } from "../lib/fab-scroll-context";
+import { font } from "../lib/theme";
+import { FabGlassSurface } from "./FabGlassSurface";
 
 const FAB_SIZE = 50;
 const FAB_RADIUS = 25;
 const STACK_GAP = 12;
 const BOTTOM_OFFSET = 88;
 const RIGHT_OFFSET = 14;
+const SCROLL_COLLAPSE_THRESHOLD = 16;
+
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const fabShadow = Platform.select({
   ios: {
     shadowColor: "#493D32",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
   },
   android: { elevation: 8 },
   default: {},
@@ -45,18 +59,29 @@ const HIDDEN_ROUTES = new Set([
   "/scan-receipt",
 ]);
 
+function isHomePath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/(tabs)" ||
+    pathname === "/(tabs)/index" ||
+    pathname.endsWith("/index")
+  );
+}
+
 function StackedFab({
   icon,
   label,
   onPress,
   testID,
-  shellColor,
+  inkColor,
+  collapsed,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
   testID?: string;
-  shellColor: string;
+  inkColor: string;
+  collapsed: boolean;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -78,38 +103,48 @@ function StackedFab({
     }).start();
   };
 
+  const shapeStyle = collapsed ? styles.fabCollapsed : styles.fabExpanded;
+
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={[fabShadow, { transform: [{ scale }] }]}>
       <Pressable
         onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
-        style={({ pressed }) => [
-          styles.fab,
-          fabShadow,
-          { backgroundColor: shellColor },
-          pressed && styles.fabPressed,
-        ]}
+        style={({ pressed }) => [pressed && styles.fabPressed]}
         accessibilityRole="button"
         accessibilityLabel={label}
         testID={testID}
       >
-        <Ionicons name={icon} size={26} color="#FFFFFF" />
+        <FabGlassSurface style={shapeStyle}>
+          <Ionicons name={icon} size={collapsed ? 24 : 20} color={inkColor} />
+          {!collapsed ? (
+            <Text style={[styles.fabLabel, { color: inkColor }]} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+        </FabGlassSurface>
       </Pressable>
     </Animated.View>
   );
 }
 
-/** Figma stacked FABs — camera (scan) top, receipt/add below. */
+/** Stacked FABs — liquid glass, labels by default; icon-only when Home list scrolls. */
 export function FloatingActionButtons({ visible = true }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const home = useHomePalette();
+  const { collapsed: scrollCollapsed } = useFabScroll();
 
   const bottom = insets.bottom + BOTTOM_OFFSET;
   const right = Math.max(insets.right, RIGHT_OFFSET);
   const hideOnRoute = HIDDEN_ROUTES.has(pathname);
+  const collapsed = isHomePath(pathname) && scrollCollapsed;
+
+  useEffect(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, [collapsed]);
 
   const goAddExpense = useCallback(() => {
     void sfx.pop();
@@ -141,23 +176,27 @@ export function FloatingActionButtons({ visible = true }: Props) {
       <View style={[styles.stack, { bottom, right }]} pointerEvents="box-none">
         <StackedFab
           icon="camera-outline"
-          label="Take a picture"
+          label="Scan receipt"
           onPress={goTakePicture}
           testID="fab-camera"
-          shellColor={home.coconutShell}
+          inkColor={home.ink}
+          collapsed={collapsed}
         />
         <View style={{ height: STACK_GAP }} />
         <StackedFab
           icon="document-text-outline"
-          label="Add expense"
+          label="Log expense"
           onPress={goAddExpense}
           testID="fab-add-expense"
-          shellColor={home.coconutShell}
+          inkColor={home.ink}
+          collapsed={collapsed}
         />
       </View>
     </View>
   );
 }
+
+export { SCROLL_COLLAPSE_THRESHOLD };
 
 const styles = StyleSheet.create({
   root: {
@@ -166,16 +205,29 @@ const styles = StyleSheet.create({
   },
   stack: {
     position: "absolute",
-    alignItems: "center",
+    alignItems: "flex-end",
   },
-  fab: {
+  fabExpanded: {
+    flexDirection: "row",
+    height: FAB_SIZE,
+    paddingLeft: 14,
+    paddingRight: 16,
+    borderRadius: FAB_RADIUS,
+    gap: 8,
+    minWidth: FAB_SIZE,
+  },
+  fabCollapsed: {
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_RADIUS,
-    alignItems: "center",
-    justifyContent: "center",
+  },
+  fabLabel: {
+    fontSize: 11,
+    fontFamily: font.semibold,
+    letterSpacing: 0.66,
+    textTransform: "uppercase",
   },
   fabPressed: {
-    opacity: 0.94,
+    opacity: 0.88,
   },
 });

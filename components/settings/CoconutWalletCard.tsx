@@ -38,6 +38,7 @@ export function CoconutWalletCard({
   const currency = wallet?.currency ?? "USD";
   const available = wallet?.available ?? 0;
   const pending = wallet?.pending ?? 0;
+  const displayBalance = Math.round((available + pending) * 100) / 100;
   const coconutHeld = wallet?.coconutHeld ?? 0;
   const showHeldLine =
     (wallet?.chargesEnabled ?? false) && coconutHeld > 0.005;
@@ -103,11 +104,25 @@ export function CoconutWalletCard({
               marginTop: 8,
             }}
           >
-            {formatSplitCurrencyAmount(available, currency)}
+            {formatSplitCurrencyAmount(displayBalance, currency)}
           </Text>
           <Text style={[s.sectionBlurb, { color: theme.textTertiary, marginTop: 4 }]}>
             {blurb}
           </Text>
+
+          {pending > 0.005 && payoutsReady ? (
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: font.medium,
+                color: theme.textSecondary,
+                marginTop: 6,
+              }}
+            >
+              {formatSplitCurrencyAmount(available, currency)} available to cash out ·{" "}
+              {formatSplitCurrencyAmount(pending, currency)} processing
+            </Text>
+          ) : null}
 
           {showHeldLine ? (
             <Text
@@ -119,19 +134,6 @@ export function CoconutWalletCard({
               }}
             >
               {formatSplitCurrencyAmount(coconutHeld, currency)} collected before payout setup
-            </Text>
-          ) : null}
-
-          {pending > 0.005 ? (
-            <Text
-              style={{
-                fontSize: 13,
-                fontFamily: font.medium,
-                color: theme.textSecondary,
-                marginTop: 8,
-              }}
-            >
-              {formatSplitCurrencyAmount(pending, currency)} processing
             </Text>
           ) : null}
 

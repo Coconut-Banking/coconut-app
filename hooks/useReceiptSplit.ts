@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   distributeExtras,
   computePersonShares,
@@ -61,6 +61,8 @@ export function useReceiptSplitWithOptions(apiFetch: ApiFetch, opts?: { demo?: b
 
 function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   const demoMode = opts.demo;
+  /** Ignore in-flight parse results after abandon, reset, or a newer upload. */
+  const uploadGenerationRef = useRef(0);
   const [step, setStep] = useState<Step>("upload");
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -105,11 +107,42 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const clearDraftForNewScan = useCallback(() => {
+    setReceiptId(null);
+    setEditItems([]);
+    setEditSubtotal(0);
+    setEditTax(0);
+    setEditTip(0);
+    setEditExtras([]);
+    setEditTotal(0);
+    setEditMerchant("");
+    setPeople([]);
+    setAssignments(new Map());
+    setItemsWithExtras([]);
+    setPersonShares([]);
+    setSaveError(null);
+    setStep("upload");
+  }, []);
+
+  const clearUploadSurface = useCallback(() => {
+    setUploadError(null);
+    setUploadErrorCode(null);
+    setImageUri(null);
+    setIsPdf(false);
+  }, []);
+
+  const cancelInFlightUpload = useCallback(() => {
+    uploadGenerationRef.current += 1;
+    setUploading(false);
+  }, []);
+
   const uploadReceipt = useCallback(
     async (
       uri: string,
       opts?: { mimeType?: string; name?: string }
     ) => {
+      const generation = uploadGenerationRef.current + 1;
+      uploadGenerationRef.current = generation;
       setUploading(true);
       setUploadError(null);
       setUploadErrorCode(null);
@@ -147,6 +180,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         setEditExtras([]);
         setEditTotal(total);
         setEditMerchant(demoMerchant);
+        if (generation !== uploadGenerationRef.current) return;
         setStep("review");
         setUploading(false);
         return;
@@ -177,9 +211,12 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         }
         if (!res.ok) {
           const parsed = parseReceiptUploadError(data, res.status);
+          if (generation !== uploadGenerationRef.current) return;
           setUploadErrorCode(parsed.code);
           throw new Error(parsed.message);
         }
+
+        if (generation !== uploadGenerationRef.current) return;
 
         const items = (data.receipt_items ?? []).sort(
           (a: { sort_order: number }, b: { sort_order: number }) =>
@@ -212,6 +249,7 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
         setEditMerchant(data.merchant_name ?? "");
         setStep("review");
       } catch (e) {
+        if (generation !== uploadGenerationRef.current) return;
         setImageUri(uri);
         if (e instanceof Error) {
           setUploadError(e.message);
@@ -221,7 +259,9 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
           setUploadErrorCode("generic");
         }
       } finally {
-        setUploading(false);
+        if (generation === uploadGenerationRef.current) {
+          setUploading(false);
+        }
       }
     },
     [apiFetch, demoMode]
@@ -511,20 +551,21 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   );
 
   const clearUploadFailure = useCallback(() => {
-    setUploadError(null);
-    setUploadErrorCode(null);
-    setImageUri(null);
-    setIsPdf(false);
-  }, []);
+    clearUploadSurface();
+  }, [clearUploadSurface]);
 
-  /** Clear stale preview/errors before camera or photo library. */
-  const prepareForNewScan = useCallback(() => {
-    setUploadError(null);
-    setUploadErrorCode(null);
-    setImageUri(null);
-    setIsPdf(false);
+  /** Leave review/split steps but keep parsed receipt for the upload-screen banner. */
+  const pauseToUpload = useCallback(() => {
+    setSaveError(null);
     setStep("upload");
   }, []);
+
+  /** Clear stale preview/errors and in-progress receipt before camera or photo library. */
+  const prepareForNewScan = useCallback(() => {
+    cancelInFlightUpload();
+    clearUploadSurface();
+    clearDraftForNewScan();
+  }, [cancelInFlightUpload, clearUploadSurface, clearDraftForNewScan]);
 
   const resumeCollectingBill = useCallback(
     async (id: string) => {
@@ -552,24 +593,10 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
   );
 
   const reset = useCallback(() => {
-    setStep("upload");
-    setReceiptId(null);
-    setImageUri(null);
-    setIsPdf(false);
-    setUploadError(null);
-    setUploadErrorCode(null);
-    setEditItems([]);
-    setEditSubtotal(0);
-    setEditTax(0);
-    setEditTip(0);
-    setEditExtras([]);
-    setEditTotal(0);
-    setEditMerchant("");
-    setPeople([]);
-    setAssignments(new Map());
-    setItemsWithExtras([]);
-    setPersonShares([]);
-  }, []);
+    cancelInFlightUpload();
+    clearUploadSurface();
+    clearDraftForNewScan();
+  }, [cancelInFlightUpload, clearUploadSurface, clearDraftForNewScan]);
 
   return {
     step,
@@ -582,6 +609,9 @@ function useReceiptSplitInternal(apiFetch: ApiFetch, opts: { demo: boolean }) {
     uploadError,
     uploadErrorCode,
     clearUploadFailure,
+    clearDraftForNewScan,
+    pauseToUpload,
+    cancelInFlightUpload,
     prepareForNewScan,
     uploadReceipt,
     editItems,

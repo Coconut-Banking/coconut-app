@@ -17,8 +17,8 @@ export type BillRow = {
   lastNudgedAt: string | null;
   isPayer: boolean;
   isReceiver: boolean;
-  /** Open table split — not a payment request yet */
-  receiptId?: string;
+  /** Linked receipt scan (collect flow or paid bill detail). */
+  receiptId?: string | null;
   collectGuestCount?: number;
   collectGuestsSubmitted?: number;
 };

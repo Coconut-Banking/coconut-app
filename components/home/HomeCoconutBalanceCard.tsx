@@ -31,12 +31,13 @@ export const HomeCoconutBalanceCard = React.memo(function HomeCoconutBalanceCard
   const currency = wallet?.currency ?? "USD";
   const available = wallet?.available ?? 0;
   const pending = wallet?.pending ?? 0;
+  const displayBalance = Math.round((available + pending) * 100) / 100;
   const canSetup = wallet?.canSetupPayouts ?? true;
   const ready = wallet?.chargesEnabled && wallet?.payoutsEnabled;
 
   const subtitle = ready
     ? pending > 0.005
-      ? `${formatSplitCurrencyAmount(pending, currency)} processing`
+      ? `${formatSplitCurrencyAmount(available, currency)} available now · ${formatSplitCurrencyAmount(pending, currency)} processing`
       : "Available to cash out"
     : canSetup
       ? "Finish setup to move money to your bank"
@@ -61,7 +62,7 @@ export const HomeCoconutBalanceCard = React.memo(function HomeCoconutBalanceCard
         }
       }}
       accessibilityRole="button"
-      accessibilityLabel={`Coconut balance ${formatSplitCurrencyAmount(available, currency)}`}
+      accessibilityLabel={`Coconut balance ${formatSplitCurrencyAmount(displayBalance, currency)}`}
     >
       <View style={styles.topRow}>
         <View style={styles.brandRow}>
@@ -82,7 +83,7 @@ export const HomeCoconutBalanceCard = React.memo(function HomeCoconutBalanceCard
           numberOfLines={1}
           minimumFontScale={0.65}
         >
-          {formatSplitCurrencyAmount(available, currency)}
+          {formatSplitCurrencyAmount(displayBalance, currency)}
         </Text>
       )}
 

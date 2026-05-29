@@ -4,6 +4,7 @@ import { useTheme } from "../../lib/theme-context";
 import { font } from "../../lib/theme";
 import { CoconutTabBar } from "../../components/navigation/CoconutTabBar";
 import { FloatingActionButtons } from "../../components/FloatingActionButtons";
+import { FabScrollProvider } from "../../lib/fab-scroll-context";
 import { TapToPayHeroModal } from "../../components/TapToPayHeroModal";
 import { usePrefetchContactsSummary, usePrefetchActivity } from "../../hooks/useGroups";
 import { usePrefetchTransactions } from "../../hooks/useTransactions";
@@ -32,6 +33,7 @@ export default function TabLayout() {
     <>
       <Wrapper>
         <NavigationThemeBridge>
+        <FabScrollProvider>
         <TapToPayHeroModal />
         <Tabs
           tabBar={(props) => <CoconutTabBar {...props} />}
@@ -76,6 +78,7 @@ export default function TabLayout() {
           <Tabs.Screen name="email-receipts" options={{ href: null, headerShown: false }} />
         </Tabs>
         <FloatingActionButtons />
+        </FabScrollProvider>
         </NavigationThemeBridge>
       </Wrapper>
     </>

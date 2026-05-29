@@ -20,11 +20,11 @@ function billStatusLabel(bill: BillRow): string {
 export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
   bill,
   showSep,
-  onNudge,
+  onOpenDetail,
 }: {
   bill: BillRow;
   showSep: boolean;
-  onNudge?: (bill: BillRow) => void;
+  onOpenDetail?: (bill: BillRow) => void;
 }) {
   const { theme } = useTheme();
   const home = useHomePalette();
@@ -46,18 +46,12 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
       router.push("/(tabs)/receipt");
       return;
     }
-    if (bill.isPayer && bill.payUrl) void Linking.openURL(bill.payUrl);
-    else if (bill.isReceiver && onNudge) onNudge(bill);
-  }, [bill, collecting, onNudge]);
+    onOpenDetail?.(bill);
+  }, [bill, collecting, onOpenDetail]);
 
   return (
     <View>
-      <TouchableOpacity
-        style={styles.row}
-        activeOpacity={0.75}
-        onPress={onPress}
-        disabled={paid && !bill.payUrl && !collecting}
-      >
+      <TouchableOpacity style={styles.row} activeOpacity={0.75} onPress={onPress}>
         <View
           style={[
             styles.icon,
@@ -81,7 +75,9 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
               ? guestTotal > 0
                 ? `${guestDone} of ${guestTotal} picked items · tap to continue`
                 : "Waiting for guests · tap to continue"
-              : `${bill.groupName}${bill.isPayer ? ` · to ${bill.receiverName}` : ` · from ${bill.payerName}`}`}
+              : paid
+                ? `${bill.groupName} · tap for receipt`
+                : `${bill.groupName}${bill.isPayer ? ` · to ${bill.receiverName}` : ` · from ${bill.payerName}`}`}
           </Text>
         </View>
         <View style={styles.right}>
@@ -99,6 +95,7 @@ export const HomeActivityBillRow = React.memo(function HomeActivityBillRow({
             {status}
           </Text>
         </View>
+        <Ionicons name="chevron-forward" size={16} color={theme.textQuaternary} style={{ marginLeft: 4 }} />
       </TouchableOpacity>
       {showSep ? <View style={[styles.sep, { backgroundColor: theme.borderLight }]} /> : null}
     </View>
