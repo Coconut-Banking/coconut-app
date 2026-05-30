@@ -6,6 +6,7 @@ import { useAuth } from "@clerk/expo";
 import { useSignIn } from "@clerk/expo/legacy";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "../lib/theme-context";
+import { devLog } from "../lib/dev-log";
 
 const STUCK_TIMEOUT_MS = 5000;
 const WEB_APP_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") || "https://coconut-app.dev";
@@ -45,11 +46,11 @@ export default function AuthHandoffScreen() {
     })() : null);
 
   useEffect(() => {
-    console.log("[AuthHandoff] ticket=", !!ticket, "signIn=", !!signIn, "isLoaded=", isLoaded);
+    devLog("[AuthHandoff] ticket=", !!ticket, "signIn=", !!signIn, "isLoaded=", isLoaded);
     if (!ticket || !signIn || !setActive || processedRef.current) return;
 
     processedRef.current = true;
-    console.log("[AuthHandoff] exchanging ticket...");
+    devLog("[AuthHandoff] exchanging ticket...");
 
     (async () => {
       try {
@@ -57,7 +58,7 @@ export default function AuthHandoffScreen() {
         const sessionId = result?.createdSessionId;
         if (sessionId && setActive) {
           await setActive({ session: sessionId });
-          console.log("[AuthHandoff] session set, navigating to tabs");
+          devLog("[AuthHandoff] session set, navigating to tabs");
           router.replace("/(tabs)");
         } else {
           setError("Session could not be established");

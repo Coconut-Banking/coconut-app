@@ -1,4 +1,7 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+
+export const SCROLL_COLLAPSE_THRESHOLD = 16;
 
 type FabScrollContextValue = {
   collapsed: boolean;
@@ -24,4 +27,20 @@ export function useFabScroll(): FabScrollContextValue {
     return { collapsed: false, setCollapsed: () => {} };
   }
   return ctx;
+}
+
+/** Wire to a screen's primary vertical ScrollView / FlatList — collapses FAB labels on scroll. */
+export function useFabScrollCollapse() {
+  const { setCollapsed } = useFabScroll();
+
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      setCollapsed(e.nativeEvent.contentOffset.y > SCROLL_COLLAPSE_THRESHOLD);
+    },
+    [setCollapsed],
+  );
+
+  useEffect(() => () => setCollapsed(false), [setCollapsed]);
+
+  return onScroll;
 }

@@ -49,6 +49,7 @@ import { BASE_URL } from "../../../lib/invite";
 import { LinkQrSheet } from "../../../components/share/LinkQrSheet";
 import { startPayCollect } from "../../../lib/receipt-collect";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
+import { useFabScrollCollapse } from "../../../lib/fab-scroll-context";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic"];
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -109,6 +110,7 @@ export default function GroupScreen() {
   const detail = isDemoOn && id ? demo.groupDetails[id] ?? null : realDetail;
   const { currencyCode: myCurrency } = useCurrency();
   const toast = useToast();
+  const onFabScroll = useFabScrollCollapse();
 
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -754,6 +756,8 @@ export default function GroupScreen() {
         style={s.scroll}
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         {/* Header: avatar + name + actions */}

@@ -2,7 +2,6 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import { useUser } from "@clerk/expo";
 import { router } from "expo-router";
-import Animated, { FadeInDown } from "react-native-reanimated";
 import { MemberAvatar } from "../MemberAvatar";
 import { SnapPress } from "../ui";
 import { useHasUnseenActivity } from "../../hooks/useGroups";
@@ -30,10 +29,7 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
     "there";
 
   return (
-    <Animated.View
-      entering={FadeInDown.duration(380).delay(40)}
-      style={[styles.wrap, { minHeight: homeHeaderContentHeight(topInset) }]}
-    >
+    <View style={[styles.wrap, { minHeight: homeHeaderContentHeight(topInset) }]}>
       <View
         style={[
           styles.notifRow,
@@ -58,7 +54,7 @@ export const HomeWelcomeHeader = React.memo(function HomeWelcomeHeader({
           variant="soft"
         />
       </SnapPress>
-    </Animated.View>
+    </View>
   );
 });
 

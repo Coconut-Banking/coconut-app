@@ -41,6 +41,11 @@ import { useToast } from "../../components/Toast";
 import { haptic } from "../../components/ui";
 import { sfx } from "../../lib/sounds";
 import { useCurrency } from "../../hooks/useCurrency";
+import {
+  computeEqualShares,
+  computePercentShares,
+  computeSharesByRatio,
+} from "../../lib/expense-shares";
 
 type Target = { type: "group" | "friend"; key: string; name: string; imageUrl?: string | null };
 type SplitMethod = "equal" | "exact" | "percent" | "shares";
@@ -521,15 +526,37 @@ export default function AddExpenseScreen() {
   const shares = useMemo(() => {
     if (total <= 0 || splitPeople.length === 0) return splitPeople.map((p) => ({ ...p, share: 0 }));
     switch (splitMethod) {
-      case "equal":
-        return splitPeople.map((p) => ({ ...p, share: total / splitPeople.length }));
+      case "equal": {
+        const computed = computeEqualShares(
+          total,
+          splitPeople.map((p) => p.key),
+        );
+        const byId = new Map(computed.map((c) => [c.memberId, c.amount]));
+        return splitPeople.map((p) => ({ ...p, share: byId.get(p.key) ?? 0 }));
+      }
       case "exact":
         return splitPeople.map((p) => ({ ...p, share: parseFloat(customSplits[p.key] || "0") || 0 }));
-      case "percent":
-        return splitPeople.map((p) => ({ ...p, share: (total * (parseFloat(customSplits[p.key] || "0") || 0)) / 100 }));
+      case "percent": {
+        const computed = computePercentShares(
+          total,
+          splitPeople.map((p) => ({
+            memberId: p.key,
+            percent: parseFloat(customSplits[p.key] || "0") || 0,
+          })),
+        );
+        const byId = new Map(computed.map((c) => [c.memberId, c.amount]));
+        return splitPeople.map((p) => ({ ...p, share: byId.get(p.key) ?? 0 }));
+      }
       case "shares": {
-        const sum = splitPeople.reduce((acc, p) => acc + (parseFloat(customSplits[p.key] || "1") || 1), 0);
-        return splitPeople.map((p) => ({ ...p, share: (total * (parseFloat(customSplits[p.key] || "1") || 1)) / sum }));
+        const computed = computeSharesByRatio(
+          total,
+          splitPeople.map((p) => ({
+            memberId: p.key,
+            weight: parseFloat(customSplits[p.key] || "1") || 1,
+          })),
+        );
+        const byId = new Map(computed.map((c) => [c.memberId, c.amount]));
+        return splitPeople.map((p) => ({ ...p, share: byId.get(p.key) ?? 0 }));
       }
     }
   }, [splitPeople, total, splitMethod, customSplits]);

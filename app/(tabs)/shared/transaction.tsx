@@ -22,6 +22,7 @@ import { formatSplitCurrencyAmount } from "../../../lib/format-split-money";
 import { useCurrency } from "../../../hooks/useCurrency";
 import { MerchantLogo } from "../../../components/merchant/MerchantLogo";
 import { MemberAvatar } from "../../../components/MemberAvatar";
+import { useFabScrollCollapse } from "../../../lib/fab-scroll-context";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -39,6 +40,7 @@ export default function TransactionScreen() {
   const [editing, setEditing] = useState(false);
   const [editDesc, setEditDesc] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const onFabScroll = useFabScrollCollapse();
 
   useEffect(() => {
     if (detail) {
@@ -209,6 +211,8 @@ export default function TransactionScreen() {
         style={s.scroll}
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {/* Hero */}

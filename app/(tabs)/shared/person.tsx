@@ -39,6 +39,8 @@ import { setExpensePrefillTarget } from "../../../lib/add-expense-prefill";
 import { prewarmFriendGroupCache } from "../add-expense";
 import { openVenmo, openPayPal, openCashApp } from "../../../lib/p2p-deeplinks";
 import { PartialSettleModal } from "../../../components/PartialSettleModal";
+import { allocateCrossGroupSettlementPayments } from "../../../lib/expense-shares";
+import { useFabScrollCollapse } from "../../../lib/fab-scroll-context";
 
 /** Friend detail — aligned to `MobileAppPage` `FriendDetail` + existing settlement APIs */
 export default function PersonScreen() {
@@ -66,6 +68,7 @@ export default function PersonScreen() {
   const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
   const [pendingP2PPlatform, setPendingP2PPlatform] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
+  const onFabScroll = useFabScrollCollapse();
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
@@ -169,39 +172,23 @@ export default function PersonScreen() {
     setRecordingSettlement(true);
     try {
       const settlements = detail.settlements ?? [];
-      const totalOwed = settlements.reduce((s, se) => s + se.amount, 0);
-
-      const requests: Array<{ groupId: string; payerMemberId: string; receiverMemberId: string; amount: number; currency: string }> = [];
-      if (settlements.length === 1) {
-        const se = settlements[0];
-        requests.push({
+      const allocated = allocateCrossGroupSettlementPayments(
+        amount,
+        settlements.map((se) => ({
           groupId: se.groupId,
           payerMemberId: se.fromMemberId,
           receiverMemberId: se.toMemberId,
-          amount,
+          amountOwed: se.amount,
           currency: se.currency ?? "USD",
-        });
-      } else {
-        let remaining = amount;
-        for (const se of settlements) {
-          if (remaining <= 0.005) break;
-          const proportion = totalOwed > 0 ? se.amount / totalOwed : 1 / settlements.length;
-          const seAmount = Math.min(
-            Math.round(amount * proportion * 100) / 100,
-            se.amount,
-            remaining,
-          );
-          if (seAmount < 0.01) continue;
-          remaining -= seAmount;
-          requests.push({
-            groupId: se.groupId,
-            payerMemberId: se.fromMemberId,
-            receiverMemberId: se.toMemberId,
-            amount: seAmount,
-            currency: se.currency ?? "USD",
-          });
-        }
-      }
+        })),
+      );
+      const requests = allocated.map((row) => ({
+        groupId: row.groupId,
+        payerMemberId: row.payerMemberId,
+        receiverMemberId: row.receiverMemberId,
+        amount: row.payAmount,
+        currency: row.currency,
+      }));
 
       // Send sequentially to avoid race conditions where parallel POSTs
       // both check the balance before either inserts.
@@ -286,8 +273,7 @@ export default function PersonScreen() {
   };
 
   const handles = detail.p2pHandles;
-  const venmoRecipient = handles?.venmo_username || detail.email;
-  const hasVenmo = !!venmoRecipient;
+  const hasVenmo = !!handles?.venmo_username;
   const hasPayPal = !!handles?.paypal_username;
   const hasCashApp = !!handles?.cashapp_cashtag;
   const hasAnyP2P = hasVenmo || hasPayPal || hasCashApp;
@@ -345,11 +331,18 @@ export default function PersonScreen() {
       Alert.alert("Demo", `Opening ${names[platform]}...`);
       return;
     }
+    if (platform === "venmo" && !handles?.venmo_username) {
+      Alert.alert(
+        "Venmo username needed",
+        `Ask ${detail.displayName.split(" ")[0]} to add their Venmo @username in Account settings.`,
+      );
+      return;
+    }
     setSettleSheetOpen(false);
     setPendingP2PPlatform(platform);
     try {
       if (platform === "venmo") {
-        await openVenmo(settleAmount, venmoRecipient, settleNote);
+        await openVenmo(settleAmount, handles!.venmo_username!, settleNote);
       } else if (platform === "paypal") {
         await openPayPal(settleAmount, handles?.paypal_username);
       } else {
@@ -386,6 +379,8 @@ export default function PersonScreen() {
         style={s.scroll}
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         <View style={s.hero}>
@@ -581,7 +576,7 @@ export default function PersonScreen() {
                 <Ionicons name="logo-apple" size={20} color="#fff" />
                 <View style={{ flex: 1 }}>
                   <Text style={s.sheetBtnAccentText}>Pay with Apple Pay</Text>
-                  <Text style={s.sheetBtnAccentSub}>Secure link · card also accepted</Text>
+                  <Text style={s.sheetBtnAccentSub}>In-app · card also accepted</Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -596,7 +591,7 @@ export default function PersonScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={s.sheetBtnOutlineText}>Venmo</Text>
                   <Text style={s.sheetBtnOutlineSub}>
-                    {handles?.venmo_username ? `Pay @${handles.venmo_username}` : `Pay ${venmoRecipient}`}
+                    Pay @{handles!.venmo_username}
                   </Text>
                 </View>
               </TouchableOpacity>

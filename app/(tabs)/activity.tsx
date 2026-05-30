@@ -25,6 +25,7 @@ import { useDemoData } from "../../lib/demo-context";
 import { font, radii, prototype, colors } from "../../lib/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FLAT_LIST_PERF } from "../../lib/list-performance";
+import { useFabScrollCollapse } from "../../lib/fab-scroll-context";
 
 type ActivityFilter = "all" | "get_back" | "owe" | "settled";
 
@@ -142,6 +143,7 @@ export default function ActivityTabScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
+  const onFabScroll = useFabScrollCollapse();
 
   const filteredActivity = useMemo(() => {
     let items = activity;
@@ -272,6 +274,8 @@ export default function ActivityTabScreen() {
         contentContainerStyle={[styles.page, showInitialLoading && styles.pageLoading]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
         refreshControl={
           isDemoOn ? undefined : (
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />

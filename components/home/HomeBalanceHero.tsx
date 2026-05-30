@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, { LinearTransition } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { GroupsSummary } from "../../hooks/useGroups";
@@ -23,6 +23,8 @@ import {
 } from "../../lib/home-balance";
 import { Image as ExpoImage } from "expo-image";
 import { sfx } from "../../lib/sounds";
+
+const EXPAND_TRANSITION = LinearTransition.duration(220);
 
 type OweRow = HomeOweRow & { onPress: () => void };
 
@@ -142,7 +144,7 @@ export const HomeBalanceHero = React.memo(function HomeBalanceHero({
                   />
                 ) : null}
               </View>
-              <Text style={[styles.statAmount, { color: home.ink }]}>
+              <Text style={[styles.statAmount, { color: home.moneyInText }]}>
                 {formatSplitCurrencyAmount(owedTotal, currency)}
               </Text>
             </Pressable>
@@ -169,7 +171,7 @@ export const HomeBalanceHero = React.memo(function HomeBalanceHero({
                   />
                 ) : null}
               </View>
-              <Text style={[styles.statAmount, { color: home.ink }]}>
+              <Text style={[styles.statAmount, { color: home.moneyOutText }]}>
                 {formatSplitCurrencyAmount(oweTotal, currency)}
               </Text>
             </Pressable>
@@ -177,8 +179,7 @@ export const HomeBalanceHero = React.memo(function HomeBalanceHero({
 
           {owedOpen ? (
             <Animated.View
-              entering={FadeIn.duration(180)}
-              exiting={FadeOut.duration(120)}
+              layout={EXPAND_TRANSITION}
               style={[styles.detailCard, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}
             >
               {owedToYou.map((r, i) => (
@@ -189,8 +190,7 @@ export const HomeBalanceHero = React.memo(function HomeBalanceHero({
 
           {oweOpen ? (
             <Animated.View
-              entering={FadeIn.duration(180)}
-              exiting={FadeOut.duration(120)}
+              layout={EXPAND_TRANSITION}
               style={[styles.detailCard, { backgroundColor: home.boxFill, borderColor: home.boxBorder }]}
             >
               {youOwe.map((r, i) => (
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   },
   statTitle: {
     fontSize: 13,
-    fontFamily: font.semibold,
+    fontFamily: font.bold,
     flex: 1,
   },
   statAmount: {

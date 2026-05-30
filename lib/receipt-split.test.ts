@@ -102,4 +102,21 @@ describe("computePersonShares", () => {
     const shares = computePersonShares(items, new Map());
     expect(shares).toHaveLength(0);
   });
+
+  it("3-way cent split matches web (3.34 + 3.33 + 3.33 = 10)", () => {
+    const oneItem: ReceiptItemWithExtras[] = [
+      { id: "1", name: "App", quantity: 1, unitPrice: 10, totalPrice: 10, proportionalExtra: 0, finalPrice: 10 },
+    ];
+    const assignments = new Map([
+      ["1", [
+        { name: "A", memberId: "a" },
+        { name: "B", memberId: "b" },
+        { name: "C", memberId: "c" },
+      ]],
+    ]);
+    const shares = computePersonShares(oneItem, assignments);
+    const total = shares.reduce((s, p) => s + p.totalOwed, 0);
+    expect(Math.round(total * 100)).toBe(1000);
+    expect(shares.map((p) => p.totalOwed).sort((a, b) => b - a)).toEqual([3.34, 3.33, 3.33]);
+  });
 });

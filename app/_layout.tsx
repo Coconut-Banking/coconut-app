@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type ReactNode } from "react";
-import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from "react-native";
+import { View, Text, StyleSheet, Platform, DeviceEventEmitter, Alert } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Stack, router } from "expo-router";
@@ -37,6 +37,7 @@ import {
   Inter_900Black,
 } from "@expo-google-fonts/inter";
 import * as SplashScreen from "expo-splash-screen";
+import { devLog, devWarn } from "../lib/dev-log";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -97,7 +98,7 @@ function AuthSwitch() {
   useEffect(() => {
     if (SKIP_AUTH) return;
     const showAuth = !isLoaded || !isSignedIn || (FORCE_SIGN_OUT_ON_LAUNCH && isSignedIn);
-    console.log(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} setup=${setupComplete} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : setupComplete || isDemoOn ? "TABS" : "SETUP"}`);
+    devLog(`[AuthSwitch] isLoaded=${isLoaded} isSignedIn=${isSignedIn} setup=${setupComplete} FORCE_SIGN_OUT=${FORCE_SIGN_OUT_ON_LAUNCH} → ${showAuth ? "AUTH" : setupComplete || isDemoOn ? "TABS" : "SETUP"}`);
   }, [isLoaded, isSignedIn, setupComplete, isDemoOn, instance]);
 
   const signingOutRef = useRef(false);
@@ -106,7 +107,12 @@ function AuthSwitch() {
     const sub = DeviceEventEmitter.addListener("session-expired", () => {
       if (!isSignedIn || signingOutRef.current) return;
       signingOutRef.current = true;
-      console.warn("[AuthSwitch] session-expired event — signing out");
+      Alert.alert(
+        "Session expired",
+        "Please sign in again to continue.",
+        [{ text: "OK" }],
+      );
+      if (__DEV__) console.warn("[AuthSwitch] session-expired event — signing out");
       signOut?.()
         .catch((e: unknown) => console.warn("[AuthSwitch] session-expired signOut failed:", e))
         .finally(() => { signingOutRef.current = false; });
@@ -119,10 +125,10 @@ function AuthSwitch() {
     setForceSignOutDone(true);
     void SecureStore.setItemAsync(FORCE_SIGN_OUT_KEY, "true");
     if (isSignedIn) {
-      console.log("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
+      devLog("[AuthSwitch] FORCE_SIGN_OUT: calling signOut()...");
       signOut?.()
-        .then(() => console.log("[AuthSwitch] FORCE_SIGN_OUT: signOut() done"))
-        .catch((e: unknown) => console.warn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
+        .then(() => devLog("[AuthSwitch] FORCE_SIGN_OUT: signOut() done"))
+        .catch((e: unknown) => devWarn("[AuthSwitch] FORCE_SIGN_OUT failed:", e));
     }
   }, [isLoaded, isSignedIn, signOut, forceSignOutDone]);
 
@@ -273,12 +279,12 @@ function PushNotificationRegistrar() {
 
     registerForPushNotifications().then((token) => {
       if (!token) return;
-      console.log("[push] Expo push token:", token);
+      devLog("[push] Expo push token:", token);
       apiFetch("/api/push-token", {
         method: "POST",
         body: { token, platform: Platform.OS },
       }).catch((e: unknown) =>
-        console.warn("[push] Failed to register push token:", e)
+        devWarn("[push] Failed to register push token:", e)
       );
     });
 
@@ -291,7 +297,7 @@ function PushNotificationRegistrar() {
       const type = typeof data.type === "string" ? data.type : undefined;
       const groupId = typeof data.groupId === "string" ? data.groupId : undefined;
 
-      console.log("[push] Notification tapped:", data);
+      devLog("[push] Notification tapped:", data);
 
       if (
         (type === "manual_expense" || type === "split_transaction" || type === "settlement") &&
@@ -304,7 +310,7 @@ function PushNotificationRegistrar() {
     });
 
     const receivedSub = addNotificationReceivedListener((notification) => {
-      console.log("[push] Notification received:", notification.request.content);
+      devLog("[push] Notification received:", notification.request.content);
     });
 
     return () => {
@@ -321,9 +327,7 @@ function RealtimeSyncWrapper() {
 }
 
 function ProTierWrapper({ children }: { children: ReactNode }) {
-  const apiFetch = useApiFetch();
-  const { userId } = useAuth();
-  return <ProTierProvider apiFetch={apiFetch} clerkUserId={userId}>{children}</ProTierProvider>;
+  return <ProTierProvider>{children}</ProTierProvider>;
 }
 
 function NavigateOnChange({ target }: { target: string | null }) {

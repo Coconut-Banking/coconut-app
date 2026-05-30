@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +12,10 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useTheme } from "../../lib/theme-context";
 import { font, radii, shadow } from "../../lib/theme";
 import { formatSplitCurrencyAmount } from "../../lib/format-split-money";
+import {
+  fetchPayLinkIntent,
+  presentPayLinkPaymentSheet,
+} from "../../lib/stripe-payment-sheet";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://coconut-app.dev";
 
@@ -31,8 +34,10 @@ export default function PayLinkScreen() {
   const { token, paid } = useLocalSearchParams<{ token: string; paid?: string }>();
   const [preview, setPreview] = useState<PayPreview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [payLoading, setPayLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paidSuccess, setPaidSuccess] = useState(paid === "1");
+  const sheetAttempted = useRef(false);
 
   const fetchPreview = useCallback(async () => {
     if (!token) return;
@@ -56,26 +61,45 @@ export default function PayLinkScreen() {
     fetchPreview();
   }, [fetchPreview]);
 
-  const startCheckout = async () => {
-    if (!token) return;
-    setCheckoutLoading(true);
+  const startNativePay = useCallback(async () => {
+    if (!token || !preview?.payable) return;
+    setPayLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/pay/${encodeURIComponent(token)}/checkout`, {
-        method: "POST",
+      const intent = await fetchPayLinkIntent(API_URL, token);
+      const result = await presentPayLinkPaymentSheet({
+        clientSecret: intent.clientSecret,
+        payerName: preview.payerName,
+        receiverName: preview.receiverName,
       });
-      const data = await res.json();
-      if (!res.ok || !data.url) {
-        setError(data.error ?? "Could not start checkout");
+      if (result.ok) {
+        setPaidSuccess(true);
         return;
       }
-      await Linking.openURL(data.url as string);
-    } catch {
-      setError("Could not open checkout");
+      if (!result.cancelled) {
+        setError(result.message);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not open Apple Pay");
     } finally {
-      setCheckoutLoading(false);
+      setPayLoading(false);
     }
-  };
+  }, [token, preview]);
+
+  // Uber-style: auto-present native sheet once preview is ready.
+  useEffect(() => {
+    if (
+      loading ||
+      paidSuccess ||
+      !preview?.payable ||
+      !token ||
+      sheetAttempted.current
+    ) {
+      return;
+    }
+    sheetAttempted.current = true;
+    void startNativePay();
+  }, [loading, paidSuccess, preview, token, startNativePay]);
 
   const dismiss = () => {
     if (router.canGoBack()) router.back();
@@ -87,6 +111,9 @@ export default function PayLinkScreen() {
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
         <View style={st.centered}>
           <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[st.footer, { color: theme.textTertiary, marginTop: 16 }]}>
+            Preparing Apple Pay…
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -109,7 +136,7 @@ export default function PayLinkScreen() {
     );
   }
 
-  if (paid === "1") {
+  if (paidSuccess) {
     return (
       <SafeAreaView style={[st.container, { backgroundColor: theme.background }]}>
         <TouchableOpacity style={st.closeBtn} onPress={dismiss}>
@@ -144,7 +171,7 @@ export default function PayLinkScreen() {
       </TouchableOpacity>
       <View style={st.centered}>
         <View style={[st.card, { backgroundColor: theme.surface, borderColor: theme.borderLight }]}>
-          <Text style={[st.kicker, { color: theme.textTertiary }]}>Pay with Apple Pay or card</Text>
+          <Text style={[st.kicker, { color: theme.textTertiary }]}>Pay with Apple Pay</Text>
           <Text style={[st.names, { color: theme.textSecondary }]}>
             {preview.payerName} → {preview.receiverName}
           </Text>
@@ -159,21 +186,21 @@ export default function PayLinkScreen() {
             <>
               {error ? <Text style={st.errorText}>{error}</Text> : null}
               <TouchableOpacity
-                style={[st.primaryBtn, { backgroundColor: theme.primary, opacity: checkoutLoading ? 0.7 : 1 }]}
-                onPress={startCheckout}
-                disabled={checkoutLoading}
+                style={[st.primaryBtn, { backgroundColor: theme.primary, opacity: payLoading ? 0.7 : 1 }]}
+                onPress={() => void startNativePay()}
+                disabled={payLoading}
               >
-                {checkoutLoading ? (
+                {payLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
                     <Ionicons name="logo-apple" size={18} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={st.primaryBtnText}>Pay with Apple Pay or card</Text>
+                    <Text style={st.primaryBtnText}>Pay with Apple Pay</Text>
                   </>
                 )}
               </TouchableOpacity>
               <Text style={[st.footer, { color: theme.textTertiary }]}>
-                Secure Stripe checkout on your phone — Apple Pay when available
+                Secure in-app checkout — card also accepted
               </Text>
             </>
           )}

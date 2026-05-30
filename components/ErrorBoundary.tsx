@@ -12,6 +12,13 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true };
   }
 
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    if (__DEV__) {
+      console.error("[ErrorBoundary]", error, info.componentStack);
+    }
+    // Sentry: captureException(error) when @sentry/react-native is configured.
+  }
+
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;

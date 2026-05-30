@@ -36,6 +36,7 @@ import { FLAT_LIST_PERF } from "../../lib/list-performance";
 import { TransactionSourceTabs } from "../../components/transactions/TransactionSourceTabs";
 import { transactionHasEmailReceipt, type TxSourceTab } from "../../lib/transaction-filters";
 import { resolvePurchaseLocation } from "../../lib/transaction-location";
+import { useFabScrollCollapse } from "../../lib/fab-scroll-context";
 
 const EMPTY_TX_LIST: Transaction[] = [];
 
@@ -300,6 +301,7 @@ export default function BankTabScreen() {
   const [itemizedLoading, setItemizedLoading] = useState(false);
   const [itemizedError, setItemizedError] = useState<string | null>(null);
   const apiFetch = useApiFetch();
+  const onFabScroll = useFabScrollCollapse();
 
   useEffect(() => {
     if (!selectedStrip) {
@@ -879,6 +881,8 @@ export default function BankTabScreen() {
                 contentContainerStyle={styles.page}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
+                onScroll={onFabScroll}
+                scrollEventThrottle={16}
               >
                 {renderAskSection()}
               </ScrollView>
@@ -892,6 +896,8 @@ export default function BankTabScreen() {
                 contentContainerStyle={styles.page}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
+                onScroll={onFabScroll}
+                scrollEventThrottle={16}
                 extraData={`${flatListData.length}-${bankSearch}`}
                 refreshControl={
                   isDemoOn ? undefined : (

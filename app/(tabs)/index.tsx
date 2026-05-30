@@ -24,8 +24,6 @@ import {
   PanResponder,
   useWindowDimensions,
   FlatList,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -95,8 +93,7 @@ import { CalendarPicker } from "../../components/CalendarPicker";
 import { sfx } from "../../lib/sounds";
 import { TapToPayButtonIcon } from "../../components/TapToPayButtonIcon";
 import { useDeviceContacts } from "../../hooks/useDeviceContacts";
-import { useFabScroll } from "../../lib/fab-scroll-context";
-import { SCROLL_COLLAPSE_THRESHOLD } from "../../components/FloatingActionButtons";
+import { useFabScrollCollapse } from "../../lib/fab-scroll-context";
 
 /** Convert a raw bank Transaction into a sheet-compatible row (no receipt match). */
 function txToSheetRow(tx: { id: string; merchant?: string; rawDescription?: string; amount: number; dateStr?: string; date?: string; alreadySplit?: boolean; receiptId?: string | null; hasReceipt?: boolean; logoUrl?: string | null; category?: string }): HomeBankStripRow {
@@ -426,19 +423,7 @@ export default function BalancesPrototypeScreen() {
   const homeSearchInputRef = useRef<TextInput>(null);
   const homeListRef = useRef<FlatList<HomeFeedItem>>(null);
   const homeTxScrollAnchorRef = useRef(0);
-  const { setCollapsed: setFabCollapsed } = useFabScroll();
-
-  const onHomeFeedScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const y = e.nativeEvent.contentOffset.y;
-      setFabCollapsed(y > SCROLL_COLLAPSE_THRESHOLD);
-    },
-    [setFabCollapsed],
-  );
-
-  useEffect(() => {
-    return () => setFabCollapsed(false);
-  }, [setFabCollapsed]);
+  const onHomeFeedScroll = useFabScrollCollapse();
 
   const dismissHomeSearch = useCallback(() => {
     Keyboard.dismiss();

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import Animated, { LinearTransition } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { GroupsSummary } from "../../hooks/useGroups";
@@ -144,8 +144,6 @@ function FigmaOweBand({
 
       {expanded && rows.length > 0 ? (
         <Animated.View
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(160)}
           layout={EXPAND_TRANSITION}
           style={[styles.expandedList, { borderColor: theme.borderLight, backgroundColor: home.boxFill }]}
         >
@@ -353,7 +351,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexShrink: 0,
     fontSize: 16,
-    fontFamily: font.regular,
+    fontFamily: font.bold,
     letterSpacing: 0.32,
     textAlign: "center",
     textTransform: "lowercase",

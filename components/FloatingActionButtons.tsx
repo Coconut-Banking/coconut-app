@@ -24,8 +24,6 @@ const FAB_RADIUS = 25;
 const STACK_GAP = 12;
 const BOTTOM_OFFSET = 88;
 const RIGHT_OFFSET = 14;
-const SCROLL_COLLAPSE_THRESHOLD = 16;
-
 if (
   Platform.OS === "android" &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -58,15 +56,6 @@ const HIDDEN_ROUTES = new Set([
   "/(tabs)/tap-to-pay-education",
   "/scan-receipt",
 ]);
-
-function isHomePath(pathname: string): boolean {
-  return (
-    pathname === "/" ||
-    pathname === "/(tabs)" ||
-    pathname === "/(tabs)/index" ||
-    pathname.endsWith("/index")
-  );
-}
 
 function StackedFab({
   icon,
@@ -129,18 +118,22 @@ function StackedFab({
   );
 }
 
-/** Stacked FABs — liquid glass, labels by default; icon-only when Home list scrolls. */
+/** Stacked FABs — liquid glass, labels by default; icon-only when the active list scrolls. */
 export function FloatingActionButtons({ visible = true }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const home = useHomePalette();
-  const { collapsed: scrollCollapsed } = useFabScroll();
+  const { collapsed: scrollCollapsed, setCollapsed } = useFabScroll();
 
   const bottom = insets.bottom + BOTTOM_OFFSET;
   const right = Math.max(insets.right, RIGHT_OFFSET);
   const hideOnRoute = HIDDEN_ROUTES.has(pathname);
-  const collapsed = isHomePath(pathname) && scrollCollapsed;
+  const collapsed = scrollCollapsed;
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [pathname, setCollapsed]);
 
   useEffect(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -196,7 +189,7 @@ export function FloatingActionButtons({ visible = true }: Props) {
   );
 }
 
-export { SCROLL_COLLAPSE_THRESHOLD };
+export { SCROLL_COLLAPSE_THRESHOLD } from "../lib/fab-scroll-context";
 
 const styles = StyleSheet.create({
   root: {

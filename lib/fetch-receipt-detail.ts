@@ -6,6 +6,7 @@
  * Fallback: GET /api/receipt/:receiptId/items — if your API only exposes line items here.
  */
 import type { ReceiptItem } from "./receipt-split";
+import { devLog } from "./dev-log";
 
 export type ReceiptDetailPayload = {
   id?: string;
@@ -78,18 +79,18 @@ export async function fetchReceiptDetailForTransaction(
   ];
 
   for (const path of paths) {
-    console.log("[fetchReceiptDetail] trying:", path);
+    devLog("[fetchReceiptDetail] trying:", path);
     const res = await apiFetch(path, { method: "GET" });
-    console.log("[fetchReceiptDetail] status:", res.status, "for", path);
-    if (res.status === 404) { console.log("[fetchReceiptDetail] 404 →", path); continue; }
-    if (!res.ok) { console.log("[fetchReceiptDetail] non-ok", res.status, "→", path); continue; }
+    devLog("[fetchReceiptDetail] status:", res.status, "for", path);
+    if (res.status === 404) { devLog("[fetchReceiptDetail] 404 →", path); continue; }
+    if (!res.ok) { devLog("[fetchReceiptDetail] non-ok", res.status, "→", path); continue; }
     const rawText = await res.text();
-    console.log("[fetchReceiptDetail] raw response:", rawText.slice(0, 800));
+    devLog("[fetchReceiptDetail] raw response:", rawText.slice(0, 800));
     const data = JSON.parse(rawText) as ReceiptDetailPayload;
-    console.log("[fetchReceiptDetail] keys:", Object.keys(data));
-    console.log("[fetchReceiptDetail] merchant_type:", data.merchant_type);
-    console.log("[fetchReceiptDetail] merchant_details:", JSON.stringify(data.merchant_details));
-    console.log("[fetchReceiptDetail] rideshare:", JSON.stringify((data as Record<string, unknown>).rideshare ?? "(none)"));
+    devLog("[fetchReceiptDetail] keys:", Object.keys(data));
+    devLog("[fetchReceiptDetail] merchant_type:", data.merchant_type);
+    devLog("[fetchReceiptDetail] merchant_details:", JSON.stringify(data.merchant_details));
+    devLog("[fetchReceiptDetail] rideshare:", JSON.stringify((data as Record<string, unknown>).rideshare ?? "(none)"));
     const items = mapItems(data);
     const subFromItems = items.reduce((s, i) => s + i.totalPrice, 0);
     const subtotal = Number(data.subtotal ?? subFromItems);
@@ -114,6 +115,6 @@ export async function fetchReceiptDetailForTransaction(
       extras,
     };
   }
-  console.log("[fetchReceiptDetail] all paths failed, returning null");
+  devLog("[fetchReceiptDetail] all paths failed, returning null");
   return null;
 }

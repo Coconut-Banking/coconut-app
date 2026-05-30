@@ -2,7 +2,6 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import Animated, { FadeIn } from "react-native-reanimated";
 import { font, radii } from "../../lib/theme";
 import { type DateFilterPreset } from "./HomeSpeedDialSearch";
 import { useHomePalette } from "../../lib/home-theme";
@@ -36,7 +35,7 @@ export const HomeBankTransactionsSection = React.memo(function HomeBankTransacti
   const home = useHomePalette();
 
   return (
-    <Animated.View entering={FadeIn.duration(400).delay(120)} style={styles.section}>
+    <View style={styles.section}>
       {!searchActive ? (
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: home.sectionTitle }]}>BANK TRANSACTIONS</Text>
@@ -62,7 +61,7 @@ export const HomeBankTransactionsSection = React.memo(function HomeBankTransacti
           </Text>
         </View>
       ) : null}
-    </Animated.View>
+    </View>
   );
 });
 

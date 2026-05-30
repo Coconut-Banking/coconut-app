@@ -48,6 +48,7 @@ import { startConnectOnboarding } from "../../lib/stripe-connect-actions";
 import { PayoutTransferStatusCard } from "../../components/settings/PayoutTransferStatusCard";
 import type { TransferEligibility } from "../../lib/stripe-transfer-status";
 import { stripeConnectReturnFromParams } from "../../lib/stripe-connect-return";
+import { useFabScrollCollapse } from "../../lib/fab-scroll-context";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://coconut-app.dev";
 
@@ -84,6 +85,7 @@ export default function SettingsScreen() {
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const isFocused = useIsFocused();
   const prevFocused = useRef(false);
+  const onFabScroll = useFabScrollCollapse();
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState<string | null>(null);
@@ -1007,7 +1009,13 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={onFabScroll}
+        scrollEventThrottle={16}
+      >
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
 
         {/* Preferences */}
@@ -1494,7 +1502,9 @@ export default function SettingsScreen() {
         </View>
         ) : null}
 
-        {/* Collapsible Developer Tools */}
+        {__DEV__ ? (
+        <>
+        {/* Collapsible Developer Tools — dev builds only */}
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <TouchableOpacity
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
@@ -1663,6 +1673,8 @@ export default function SettingsScreen() {
         >
           <Text style={[styles.signOutText, { color: theme.textSecondary }]}>Re-run new user setup</Text>
         </TouchableOpacity>
+        </>
+        ) : null}
 
         <TouchableOpacity
           style={[

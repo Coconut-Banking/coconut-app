@@ -25,12 +25,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Animated, {
+  cancelAnimation,
   interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
-import { useIsFocused } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useAuth } from "@clerk/expo";
 import { useApiFetch, invalidateApiCache } from "../../../lib/api";
 import { useGroupsSummary, clearMemSummaryCache } from "../../../hooks/useGroups";
@@ -45,6 +46,7 @@ import * as Clipboard from "expo-clipboard";
 import { useToast } from "../../../components/Toast";
 import { useDeviceContacts, type DeviceContact } from "../../../hooks/useDeviceContacts";
 import { BillsHubSection } from "../../../components/bills/BillsHubSection";
+import { useFabScrollCollapse } from "../../../lib/fab-scroll-context";
 
 const AVATAR_COLORS = ["#4A6CF7", "#E8507A", "#F59E0B", "#8B5CF6", "#64748B", "#334155"] as const;
 
@@ -289,6 +291,7 @@ export default function SharedIndex() {
   const [archivedLoading, setArchivedLoading] = useState(false);
   const prevFocused = useRef(false);
   const prevDemoOn = useRef(isDemoOn);
+  const onFabScroll = useFabScrollCollapse();
   const optimisticStoreKey = `coconut.optimistic.friends.${userId ?? "anon"}`;
 
   const { width: screenWidth } = useWindowDimensions();
@@ -302,6 +305,15 @@ export default function SharedIndex() {
       scrollX.value = e.contentOffset.x;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        cancelAnimation(scrollX);
+        scrollX.value = 0;
+      };
+    }, [scrollX]),
+  );
 
   const tabIndicatorStyle = useAnimatedStyle(() => ({
     transform: [
@@ -1116,6 +1128,8 @@ export default function SharedIndex() {
           style={{ width: screenWidth }}
           contentContainerStyle={st.page}
           showsVerticalScrollIndicator={false}
+          onScroll={onFabScroll}
+          scrollEventThrottle={16}
           refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
         >
           {!friends.length ? (
@@ -1143,6 +1157,8 @@ export default function SharedIndex() {
           style={{ width: screenWidth }}
           contentContainerStyle={st.page}
           showsVerticalScrollIndicator={false}
+          onScroll={onFabScroll}
+          scrollEventThrottle={16}
           refreshControl={!isDemoOn ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
         >
           {!visibleGroups.length ? (

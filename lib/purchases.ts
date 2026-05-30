@@ -1,9 +1,14 @@
 import { Platform, Alert } from "react-native";
-import Purchases, {
-  type PurchasesPackage,
-  type CustomerInfo,
-  LOG_LEVEL,
-} from "react-native-purchases";
+import type { CustomerInfo, PurchasesPackage } from "react-native-purchases";
+import { SUBSCRIPTIONS_ENABLED } from "./subscriptions-enabled";
+
+export type { PurchasesPackage };
+
+async function loadPurchases() {
+  if (!SUBSCRIPTIONS_ENABLED) return null;
+  const mod = await import("react-native-purchases");
+  return { Purchases: mod.default, LOG_LEVEL: mod.LOG_LEVEL };
+}
 
 const REVENUECAT_IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? "";
 const REVENUECAT_ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? "";
@@ -13,16 +18,25 @@ const PRO_ENTITLEMENT = "pro";
 let _configured = false;
 
 export function configurePurchases(clerkUserId?: string) {
-  if (_configured) return;
-  const key = Platform.OS === "ios" ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
-  if (!key) {
-    console.warn("[purchases] No RevenueCat API key — skipping init");
-    return;
-  }
-  Purchases.setLogLevel(LOG_LEVEL.WARN);
-  Purchases.configure({ apiKey: key, appUserID: clerkUserId ?? undefined });
-  _configured = true;
-  console.log("[purchases] RevenueCat configured", { platform: Platform.OS, userId: clerkUserId ?? "anonymous" });
+  if (!SUBSCRIPTIONS_ENABLED || _configured) return;
+  void (async () => {
+    const rc = await loadPurchases();
+    if (!rc) return;
+    const key = Platform.OS === "ios" ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
+    if (!key) {
+      if (__DEV__) console.warn("[purchases] No RevenueCat API key — skipping init");
+      return;
+    }
+    rc.Purchases.setLogLevel(rc.LOG_LEVEL.WARN);
+    rc.Purchases.configure({ apiKey: key, appUserID: clerkUserId ?? undefined });
+    _configured = true;
+    if (__DEV__) {
+      console.log("[purchases] RevenueCat configured", {
+        platform: Platform.OS,
+        userId: clerkUserId ?? "anonymous",
+      });
+    }
+  })();
 }
 
 export function isConfigured() {
@@ -33,8 +47,11 @@ export async function getOfferings(): Promise<{
   monthly: PurchasesPackage | null;
   annual: PurchasesPackage | null;
 }> {
+  if (!SUBSCRIPTIONS_ENABLED) return { monthly: null, annual: null };
+  const rc = await loadPurchases();
+  if (!rc || !_configured) return { monthly: null, annual: null };
   try {
-    const offerings = await Purchases.getOfferings();
+    const offerings = await rc.Purchases.getOfferings();
     const current = offerings.current;
     if (!current) return { monthly: null, annual: null };
     return {
@@ -52,8 +69,11 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<{
   customerInfo?: CustomerInfo;
   cancelled?: boolean;
 }> {
+  if (!SUBSCRIPTIONS_ENABLED) return { success: false };
+  const rc = await loadPurchases();
+  if (!rc) return { success: false };
   try {
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    const { customerInfo } = await rc.Purchases.purchasePackage(pkg);
     const isPro = customerInfo.entitlements.active[PRO_ENTITLEMENT] !== undefined;
     return { success: isPro, customerInfo };
   } catch (e: any) {
@@ -71,8 +91,11 @@ export async function restorePurchases(): Promise<{
   isPro: boolean;
   customerInfo?: CustomerInfo;
 }> {
+  if (!SUBSCRIPTIONS_ENABLED) return { success: false, isPro: false };
+  const rc = await loadPurchases();
+  if (!rc) return { success: false, isPro: false };
   try {
-    const customerInfo = await Purchases.restorePurchases();
+    const customerInfo = await rc.Purchases.restorePurchases();
     const isPro = customerInfo.entitlements.active[PRO_ENTITLEMENT] !== undefined;
     return { success: true, isPro, customerInfo };
   } catch (e: any) {
@@ -83,8 +106,11 @@ export async function restorePurchases(): Promise<{
 }
 
 export async function checkProStatus(): Promise<boolean> {
+  if (!SUBSCRIPTIONS_ENABLED || !_configured) return false;
+  const rc = await loadPurchases();
+  if (!rc) return false;
   try {
-    const customerInfo = await Purchases.getCustomerInfo();
+    const customerInfo = await rc.Purchases.getCustomerInfo();
     return customerInfo.entitlements.active[PRO_ENTITLEMENT] !== undefined;
   } catch {
     return false;
@@ -92,18 +118,22 @@ export async function checkProStatus(): Promise<boolean> {
 }
 
 export async function loginUser(clerkUserId: string) {
-  if (!_configured) return;
+  if (!SUBSCRIPTIONS_ENABLED || !_configured) return;
+  const rc = await loadPurchases();
+  if (!rc) return;
   try {
-    await Purchases.logIn(clerkUserId);
+    await rc.Purchases.logIn(clerkUserId);
   } catch (e) {
     console.warn("[purchases] logIn failed:", e);
   }
 }
 
 export async function logoutUser() {
-  if (!_configured) return;
+  if (!SUBSCRIPTIONS_ENABLED || !_configured) return;
+  const rc = await loadPurchases();
+  if (!rc) return;
   try {
-    await Purchases.logOut();
+    await rc.Purchases.logOut();
   } catch (e) {
     console.warn("[purchases] logOut failed:", e);
   }

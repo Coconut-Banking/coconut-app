@@ -2,7 +2,10 @@ module.exports = {
   projects: [
     {
       displayName: "unit",
-      testMatch: ["<rootDir>/lib/__tests__/**/*.test.ts"],
+      testMatch: [
+        "<rootDir>/lib/**/*.test.ts",
+        "<rootDir>/hooks/**/*.test.ts",
+      ],
       transform: {
         "^.+\\.tsx?$": ["babel-jest", { presets: ["babel-preset-expo"] }],
       },

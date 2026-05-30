@@ -20,6 +20,7 @@ import { font, radii } from "../../lib/theme";
 import { CoconutMark } from "../../components/brand/CoconutMark";
 
 const GOOGLE_OAUTH_TIMEOUT_MS = 120000;
+const SIGN_IN_TIMEOUT_MS = 20000;
 
 function getClerkErrorMessage(e: unknown, fallback: string): string {
   const err = e as { errors?: Array<{ longMessage?: string; message?: string }>; message?: string };
@@ -71,7 +72,11 @@ export default function SignInScreen() {
       );
       if (result.createdSessionId && result.setActive) {
         resetSetup();
-        await result.setActive({ session: result.createdSessionId });
+        await withTimeout(
+          result.setActive({ session: result.createdSessionId }),
+          SIGN_IN_TIMEOUT_MS,
+          "Sign in",
+        );
         setIsDemoOn(false);
         return;
       }
